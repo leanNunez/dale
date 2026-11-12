@@ -15,21 +15,27 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.exc import InterfaceError, OperationalError
 
-from dale.brain.application.ports import ErpPort, ProposalRepository
+from dale.brain.application.ports import ErpPort, HandoffPort, ProposalRepository
 from dale.brain.application.shown import order_confirmed
+from dale.brain.domain.handoff import MAX_NOTE, MODEL_REASONS, HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine
 from dale.brain.domain.session import GroundingLedger, SessionContext
 from dale.erp_sim.public import OrderConfirmation, QuoteLineRequest, QuoteRequest
 from dale.shared.errors import ErrorCode, Failure, Ok, message_for
-from dale.shared.ids import IdGenerator, ProductId, new_proposal_id
+from dale.shared.ids import CompanyId, IdGenerator, ProductId, new_proposal_id
 from dale.shared.money import pesos
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
-from dale.shared.shown_events import ProposalSummary, ShownEvent, ShownLine
+from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownEvent, ShownLine
 
 logger = logging.getLogger(__name__)
 MAX_QUERY, MAX_PRICE_IDS, MAX_LINES = 100, 20, 30
 NOT_CONFIRMED = "NOT confirmed: only the customer's Dale key confirms it. Never say it is."
 EARLIER_ORDERED = "The earlier proposal WAS confirmed: its order exists. Nothing new was prepared."
+HANDOFF_RECORDED = "Recorded. A person will contact the customer. Promise no exception or time."
+# The only text that promises a person: shown only after the handoff row is written (R7, B31).
+HANDOFF_NOTICE = (
+    "Listo, dejé registrada tu consulta. Una persona del equipo se va a comunicar con vos."
+)
 
 
 def _object(properties: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +58,7 @@ TOOL_SCHEMAS = (
     _tool(
         "search_products",
         "Searches the catalog; best match first.",
-        query={"type": "string", "description": f"1 to {MAX_QUERY} characters"},
+        query={"type": "string", "description": f"1 to {MAX_QUERY} characters, one line"},
     ),
     _tool(
         "get_prices",
@@ -65,6 +71,15 @@ TOOL_SCHEMAS = (
         "Prepares a proposal at server prices. It does NOT confirm the order.",
         lines=_array(_object({"product_id": _ID, "quantity": _QTY}), f"1 to {MAX_LINES} lines"),
     ),
+    _tool(
+        "request_human_handoff",
+        "Asks a person to take over. It grants no exception, price, minimum or delivery date.",
+        reason={"enum": [r.value for r in MODEL_REASONS]},  # the SDK sends enum with no type
+        note={
+            "type": "string",
+            "description": f"Up to {MAX_NOTE} characters, one line; may be empty",
+        },
+    ),
 )
 
 
@@ -72,16 +87,20 @@ class _Input(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
+# Every tool string: no C0 control character, NUL included (Postgres text refuses NUL; B68).
+_Text = Annotated[str, Field(pattern=r"^[^\x00-\x1f]*$")]
+
+
 class _Search(_Input):
-    query: Annotated[str, Field(min_length=1, max_length=MAX_QUERY)]
+    query: Annotated[_Text, Field(min_length=1, max_length=MAX_QUERY)]
 
 
 class _Prices(_Input):
-    product_ids: Annotated[list[str], Field(min_length=1, max_length=MAX_PRICE_IDS)]
+    product_ids: Annotated[list[_Text], Field(min_length=1, max_length=MAX_PRICE_IDS)]
 
 
 class _Line(_Input):
-    product_id: str  # parsed by the handler: an id that does not parse is ungrounded
+    product_id: _Text  # parsed by the handler: an id that does not parse is ungrounded
     quantity: int  # range checked by the handler, so it gets its own catalog code
 
 
@@ -89,11 +108,17 @@ class _Prepare(_Input):
     lines: Annotated[list[_Line], Field(min_length=1, max_length=MAX_LINES)]
 
 
+class _Handoff(_Input):
+    reason: Annotated[HandoffReason, Field(strict=False)]  # a JSON string; the handler narrows it
+    note: Annotated[_Text, Field(max_length=MAX_NOTE)]
+
+
 INPUT_MODELS: dict[str, type[BaseModel]] = {
     "search_products": _Search,
     "get_prices": _Prices,
     "check_delivery": _Input,  # no properties at all
     "prepare_order": _Prepare,
+    "request_human_handoff": _Handoff,
 }
 
 
@@ -113,6 +138,12 @@ def _ok(payload: dict[str, Any], *shown: ShownEvent) -> ToolOutcome:
 def _error(code: ErrorCode) -> ToolOutcome:
     payload = {"code": code.value, "message": message_for(code)}
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), True)
+
+
+def _unavailable(tool: str, company: CompanyId, error: Exception) -> ToolOutcome:
+    """A lost connection to the brain's tables, logged with no customer data."""
+    logger.error("%s failed for company %s: %s", tool, company, type(error).__name__)
+    return _error(ErrorCode.RULES_UNAVAILABLE)
 
 
 def _earlier_ordered(done: OrderConfirmation) -> ToolOutcome:
@@ -137,9 +168,15 @@ class Tools:
     """One per conversation: its grounding ledger lives exactly as long as the conversation."""
 
     def __init__(
-        self, session: SessionContext, erp: ErpPort, proposals: ProposalRepository, ids: IdGenerator
+        self,
+        session: SessionContext,
+        erp: ErpPort,
+        proposals: ProposalRepository,
+        ids: IdGenerator,
+        handoffs: HandoffPort,
     ) -> None:
         self._session, self._erp, self._proposals, self._ids = session, erp, proposals, ids
+        self._handoffs = handoffs
         self._ledger = GroundingLedger()
 
     def run(self, name: str, tool_input: object) -> ToolOutcome:
@@ -212,8 +249,7 @@ class Tools:
                     return _earlier_ordered(done)
                 stored = locked.save_prepared(proposal)
         except (OperationalError, InterfaceError) as error:  # database down; other errors raise
-            logger.error("prepare_order failed for company %s: %s", company, type(error).__name__)
-            return _error(ErrorCode.RULES_UNAVAILABLE)
+            return _unavailable("prepare_order", company, error)
         shown = tuple(
             ShownLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in stored.lines
         )
@@ -224,3 +260,14 @@ class Tools:
         view = {"confirmed": False, "note": NOT_CONFIRMED, "lines": rows}  # and no proposal id
         view |= {"total": pesos(stored.total), "delivery_date": str(stored.delivery_date)}
         return _ok(view, summary)
+
+    def _request_human_handoff(self, data: _Handoff) -> ToolOutcome:
+        """R7: the notice that promises a person is shown only after the row is written. A
+        failed write is an error result for the model and shows nothing (S7.4)."""
+        if data.reason not in MODEL_REASONS:
+            return _error(ErrorCode.INVALID_TOOL_INPUT)  # agent_refusal is code's own (D10)
+        try:
+            self._handoffs.request_handoff(self._session, data.reason, data.note or None)
+        except (OperationalError, InterfaceError) as error:  # other errors raise
+            return _unavailable("request_human_handoff", self._session.company_id, error)
+        return _ok({"recorded": True, "note": HANDOFF_RECORDED}, HandoffNotice(HANDOFF_NOTICE))

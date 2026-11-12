@@ -19,13 +19,21 @@ from sqlalchemy.exc import (
 )
 
 from dale.brain.application.shown import order_confirmed
-from dale.brain.application.tools import EARLIER_ORDERED, INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
+from dale.brain.application.tools import (
+    EARLIER_ORDERED,
+    HANDOFF_NOTICE,
+    HANDOFF_RECORDED,
+    INPUT_MODELS,
+    NOT_CONFIRMED,
+    TOOL_SCHEMAS,
+)
+from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
 from dale.erp_sim.public import OrderConfirmation, QuoteLine
 from dale.shared.errors import ErrorCode
 from dale.shared.ids import OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
-from dale.shared.shown_events import ProposalSummary, ShownLine
+from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownLine
 from tests.unit.brain.fakes import (
     COLA,
     COLA15,
@@ -39,11 +47,17 @@ from tests.unit.brain.fakes import (
     SESSION,
     UNPRICED,
     FakeErp,
+    FakeHandoffs,
     FakeProposals,
     error_code,
     prepare,
     tools,
 )
+
+
+def handoff(**fields: object) -> dict[str, object]:
+    return {"reason": "exception_request", "note": "pide bajar el mínimo"} | fields
+
 
 FORBIDDEN = ("price", "total", "amount", "cents", "company", "customer", "proposal", "date")
 OTHER = str(UUID(int=9))
@@ -69,13 +83,16 @@ def objects(node: object) -> list[dict[str, Any]]:
 
 
 def test_tools_are_closed_strict_and_require_every_property() -> None:
+    """R9: exactly five tools, and none confirms (R4): only the Dale key does."""
     assert [s["name"] for s in TOOL_SCHEMAS] == list(INPUT_MODELS)
     assert list(INPUT_MODELS) == [
         "search_products",
         "get_prices",
         "check_delivery",
         "prepare_order",
+        "request_human_handoff",
     ]
+    assert [n for n in INPUT_MODELS if "confirm" in n] == []
     for schema in TOOL_SCHEMAS:
         assert schema["strict"] is True
         for obj in objects(schema["input_schema"]):
@@ -118,14 +135,38 @@ def test_schema_is_in_the_strict_subset_and_matches_its_validator(schema: dict[s
         ("check_delivery", {"customer_id": OTHER}, "invalid_tool_input"),
         ("check_delivery", None, "invalid_tool_input"),
         ("confirm_order", {}, "unknown_tool"),
+        ("request_human_handoff", handoff(note="x" * 501), "invalid_tool_input"),
+        ("request_human_handoff", handoff(reason="discount"), "invalid_tool_input"),
+        ("request_human_handoff", handoff(reason="agent_refusal"), "invalid_tool_input"),
+        ("request_human_handoff", handoff(reason="Complaint"), "invalid_tool_input"),
+        ("request_human_handoff", {"reason": "complaint"}, "invalid_tool_input"),
+        ("request_human_handoff", handoff(customer_id=OTHER), "invalid_tool_input"),
     ],
 )
 def test_bad_input_is_an_error_result_with_no_effect(name: str, tool_input: Any, code: str) -> None:
-    erp = FakeErp()
-    t = tools(erp)
+    erp, written = FakeErp(), FakeHandoffs()
+    t = tools(erp, handoffs=written)
     outcome = t.run(name, tool_input)
     assert outcome.is_error and error_code(outcome.content) == code and outcome.shown == ()
-    assert erp.calls == [] and not t._ledger.grounds(COLA)
+    assert erp.calls == [] == written.written and not t._ledger.grounds(COLA)
+
+
+@pytest.mark.parametrize("control", [chr(c) for c in range(0x20)], ids=lambda c: f"U+{ord(c):04X}")
+def test_a_control_character_in_any_tool_string_has_no_effect(control: str) -> None:
+    """B68: every C0 control character (NUL included) in a query, a note or an id is
+    invalid_tool_input before any call or write; other characters, accents and emoji pass."""
+    for name, tool_input in (
+        ("search_products", {"query": f"cola{control}"}),
+        ("get_prices", {"product_ids": [str(COLA) + control]}),
+        ("prepare_order", prepare((f"{control}{COLA}", 20))),
+        ("request_human_handoff", handoff(note=f"pide{control}bajar el mínimo")),
+    ):
+        erp, proposals, written = FakeErp(), FakeProposals(), FakeHandoffs()
+        outcome = tools(erp, proposals, written).run(name, tool_input)
+        assert error_code(outcome.content) == "invalid_tool_input" and outcome.shown == ()
+        assert erp.calls == [] == proposals.saved and written.written == []
+    fine = tools().run("request_human_handoff", handoff(note="¿Me bajás el mínimo? 🙏\x7f"))
+    assert not fine.is_error and not tools().run("search_products", {"query": "ñandú"}).is_error
 
 
 def test_ambiguous_search_shows_every_match_and_reads_use_the_session() -> None:
@@ -226,6 +267,34 @@ def test_a_bug_in_the_proposal_write_raises(error: type[IntegrityError]) -> None
         t.run("search_products", {"query": "cola"})
         with pytest.raises(type(bug)):  # a wiring or data bug is not an outage
             t.run("prepare_order", prepare((COLA, 20)))
+
+
+@pytest.mark.parametrize(("note", "stored"), [("x" * 500, "x" * 500), ("", None)])
+def test_a_written_handoff_alone_shows_the_promise_of_a_person(note: str, stored: Any) -> None:
+    """R7: the HandoffNotice comes after the write, and a handoff orders or prepares nothing."""
+    erp, proposals, written = FakeErp(), FakeProposals(), FakeHandoffs()
+    outcome = tools(erp, proposals, written).run("request_human_handoff", handoff(note=note))
+    assert written.written == [(SESSION, HandoffReason.EXCEPTION_REQUEST, stored)]
+    assert not outcome.is_error and outcome.shown == (HandoffNotice(HANDOFF_NOTICE),)
+    assert json.loads(outcome.content) == {"recorded": True, "note": HANDOFF_RECORDED}
+    assert "una persona" in HANDOFF_NOTICE.lower() and erp.calls == [] == proposals.saved
+
+
+@pytest.mark.parametrize("error", [OperationalError, InterfaceError])
+def test_a_failed_handoff_write_tells_the_model_and_promises_nothing(
+    caplog: pytest.LogCaptureFixture, error: type[OperationalError]
+) -> None:
+    """S7.4: an error result for the model and no HandoffNotice."""
+    down = FakeHandoffs(error("INSERT", {"note": "secret"}, Exception("down")))
+    with caplog.at_level(logging.ERROR):
+        outcome = tools(handoffs=down).run("request_human_handoff", handoff())
+    assert error_code(outcome.content) == "rules_unavailable" and outcome.shown == ()
+    assert caplog.messages == [
+        f"request_human_handoff failed for company {COMPANY}: {error.__name__}"
+    ]
+    bug = FakeHandoffs(IntegrityError("INSERT", {}, Exception("bug")))
+    with pytest.raises(IntegrityError):  # a wiring or data bug is not an outage
+        tools(handoffs=bug).run("request_human_handoff", handoff())
 
 
 ONE, EARLIER_ID = ProposalLine(COLA, 1, PRICES[COLA], PRICES[COLA]), ProposalId(UUID(int=41))
