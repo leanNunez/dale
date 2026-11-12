@@ -50,6 +50,11 @@ class Evaluation:
     delivery_date: date
 
 
+def cutoff_for(zone: Zone, day: date) -> datetime:
+    """The instant from which an order no longer makes delivery on `day`."""
+    return datetime.combine(day - timedelta(days=1), zone.cutoff, zone.timezone)
+
+
 def delivery_date(zone: Zone, now: datetime) -> date | None:
     """The earliest zone weekday after today (company-local) whose cutoff is still ahead."""
     if now.tzinfo is None:
@@ -57,8 +62,7 @@ def delivery_date(zone: Zone, now: datetime) -> date | None:
     today = now.astimezone(zone.timezone).date()
     for offset in range(1, 9):  # a missed first slot comes back within 7 more days
         day = today + timedelta(days=offset)
-        cutoff = datetime.combine(day - timedelta(days=1), zone.cutoff, zone.timezone)
-        if day.isoweekday() in zone.weekdays and now < cutoff:
+        if day.isoweekday() in zone.weekdays and now < cutoff_for(zone, day):
             return day
     return None
 

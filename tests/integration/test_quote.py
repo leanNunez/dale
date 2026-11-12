@@ -115,11 +115,16 @@ def test_every_rule_query_filters_by_the_company(app: Engine) -> None:
     seen: list[dict[str, Any]] = []
     record = lambda *args: seen.append(args[3])  # noqa: E731 (conn, cursor, sql, params, ...)
     sa.event.listen(app, "before_cursor_execute", record)
+    facade = SqlErpFacade(app, FrozenClock(NOW))
+    c001, cola = el_hornero.row_id("customer", "C-001"), el_hornero.row_id("product", "COLA-225")
     try:
         assert isinstance(ask(app, NOW, "C-001", ("COLA-225", 20)), Ok)
+        assert isinstance(facade.search_products(COMPANY, "cola"), Ok)
+        assert isinstance(facade.get_prices(COMPANY, [ProductId(cola)]), Ok)
+        assert isinstance(facade.check_delivery(COMPANY, CustomerId(c001)), Ok)
     finally:
         sa.event.remove(app, "before_cursor_execute", record)
-    assert len(seen) == 2  # the customer with its zone, then the current prices
+    assert len(seen) == 5  # quote reads twice (customer and zone, prices); each read once
     for params in seen:
         assert {v for k, v in params.items() if k.startswith("company_id")} == {COMPANY}
     with pytest.raises(TypeError, match="company_id"):
