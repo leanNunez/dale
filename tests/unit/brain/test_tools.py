@@ -18,16 +18,19 @@ from sqlalchemy.exc import (
     ProgrammingError,
 )
 
-from dale.brain.application.tools import INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
+from dale.brain.application.shown import order_confirmed
+from dale.brain.application.tools import EARLIER_ORDERED, INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
+from dale.erp_sim.public import OrderConfirmation, QuoteLine
 from dale.shared.errors import ErrorCode
-from dale.shared.ids import ProposalId, SequentialIdGenerator
+from dale.shared.ids import OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
 from dale.shared.shown_events import ProposalSummary, ShownLine
 from tests.unit.brain.fakes import (
     COLA,
     COLA15,
     COMPANY,
+    CUSTOMER,
     DAY,
     MATCHES,
     NOW,
@@ -223,3 +226,33 @@ def test_a_bug_in_the_proposal_write_raises(error: type[IntegrityError]) -> None
         t.run("search_products", {"query": "cola"})
         with pytest.raises(type(bug)):  # a wiring or data bug is not an outage
             t.run("prepare_order", prepare((COLA, 20)))
+
+
+ONE, EARLIER_ID = ProposalLine(COLA, 1, PRICES[COLA], PRICES[COLA]), ProposalId(UUID(int=41))
+EARLIER = OrderProposal.prepared(EARLIER_ID, SESSION, (ONE,), ONE.line_total, DAY, NOW)
+QUOTED = QuoteLine(COLA, 1, ONE.unit_price, ONE.line_total)
+ORDERED = OrderConfirmation(
+    OrderId(UUID(int=51)), EARLIER_ID, CUSTOMER, (QUOTED,), ONE.line_total, DAY, NOW, "Listo."
+)
+
+
+@pytest.mark.parametrize(("orders", "failure"), [((ORDERED,), None), ((), "rules_unavailable")])
+def test_an_earlier_proposal_with_an_order_or_an_unknown_one_is_not_superseded(
+    orders: tuple[OrderConfirmation, ...], failure: Any
+) -> None:
+    """B67, B68: its Dale press may have gone through though the brain never heard the answer.
+    An order exists: it is shown and marked, and nothing is prepared; unknown: nothing moves."""
+    erp, proposals = FakeErp(*orders), FakeProposals()
+    erp.failing, erp.failure = "find_order", failure and ErrorCode(failure)
+    proposals.earlier = EARLIER
+    t = tools(erp, proposals)
+    t.run("search_products", {"query": "cola"})
+    outcome = t.run("prepare_order", prepare((COLA, 30)))
+    assert ("find_order", COMPANY) in erp.calls and proposals.saved == []
+    if failure:
+        assert error_code(outcome.content) == failure and outcome.shown == ()
+        assert proposals.marks == []
+    else:
+        body, marks = json.loads(outcome.content), [(EARLIER.id, ORDERED.order_id)]
+        assert (body["confirmed"], body["prepared"], body["note"]) == (True, False, EARLIER_ORDERED)
+        assert outcome.shown == (order_confirmed(ORDERED),) and proposals.marks == marks

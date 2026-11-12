@@ -16,10 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.exc import InterfaceError, OperationalError
 
 from dale.brain.application.ports import ErpPort, ProposalRepository
+from dale.brain.application.shown import order_confirmed
 from dale.brain.domain.proposal import OrderProposal, ProposalLine
 from dale.brain.domain.session import GroundingLedger, SessionContext
-from dale.erp_sim.public import QuoteLineRequest, QuoteRequest
-from dale.shared.errors import ErrorCode, Failure, message_for
+from dale.erp_sim.public import OrderConfirmation, QuoteLineRequest, QuoteRequest
+from dale.shared.errors import ErrorCode, Failure, Ok, message_for
 from dale.shared.ids import IdGenerator, ProductId, new_proposal_id
 from dale.shared.money import pesos
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
@@ -28,6 +29,7 @@ from dale.shared.shown_events import ProposalSummary, ShownEvent, ShownLine
 logger = logging.getLogger(__name__)
 MAX_QUERY, MAX_PRICE_IDS, MAX_LINES = 100, 20, 30
 NOT_CONFIRMED = "NOT confirmed: only the customer's Dale key confirms it. Never say it is."
+EARLIER_ORDERED = "The earlier proposal WAS confirmed: its order exists. Nothing new was prepared."
 
 
 def _object(properties: dict[str, Any]) -> dict[str, Any]:
@@ -113,6 +115,13 @@ def _error(code: ErrorCode) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), True)
 
 
+def _earlier_ordered(done: OrderConfirmation) -> ToolOutcome:
+    """The earlier proposal's order exists: the customer sees it and the model is told."""
+    view = {"confirmed": True, "prepared": False, "note": EARLIER_ORDERED}
+    view |= {"total": pesos(done.total), "delivery_date": str(done.delivery_date)}
+    return _ok(view, order_confirmed(done))
+
+
 def _line(product_id: ProductId, **fields: object) -> dict[str, object]:
     return {"product_id": str(product_id), **fields}
 
@@ -193,7 +202,15 @@ class Tools:
             new_id, self._session, lines, q.total, q.delivery_date, q.quoted_at
         )
         try:
-            stored = self._proposals.save_prepared(company, proposal)
+            with self._proposals.locked(company, self._session.conversation_id) as locked:  # B68
+                earlier = locked.prepared()
+                known = self._erp.find_order(company, earlier.id) if earlier else Ok(None)
+                if isinstance(known, Failure):  # B67: an unknown outcome supersedes nothing
+                    return _error(known.code)
+                if earlier and (done := known.value):  # its Dale press went through
+                    locked.mark_confirmed(earlier.id, done.order_id)
+                    return _earlier_ordered(done)
+                stored = locked.save_prepared(proposal)
         except (OperationalError, InterfaceError) as error:  # database down; other errors raise
             logger.error("prepare_order failed for company %s: %s", company, type(error).__name__)
             return _error(ErrorCode.RULES_UNAVAILABLE)

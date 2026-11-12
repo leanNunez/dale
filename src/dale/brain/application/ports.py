@@ -1,16 +1,32 @@
 """Ports of the brain's application layer (design §3, §7). Adapters live in infrastructure."""
 
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from typing import Protocol
 
-from dale.brain.domain.proposal import OrderProposal
+from dale.brain.domain.proposal import OrderProposal, ProposalStatus
 from dale.brain.domain.session import SessionContext
-from dale.erp_sim.public import Delivery, ProductMatch, ProductPrice, Quote, QuoteRequest
+from dale.erp_sim.public import (
+    Delivery,
+    OrderConfirmation,
+    ProductMatch,
+    ProductPrice,
+    Quote,
+    QuoteRequest,
+)
 from dale.shared.errors import Result
-from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
+from dale.shared.ids import CompanyId, ConversationId, CustomerId, OrderId, ProductId, ProposalId
 
 
-class ErpPort(Protocol):
+class OrderLookup(Protocol):
+    """Management is the source of truth for orders (B68); this read writes nothing."""
+
+    def find_order(
+        self, company_id: CompanyId, proposal_id: ProposalId
+    ) -> Result[OrderConfirmation | None]: ...
+
+
+class ErpPort(OrderLookup, Protocol):
     """The reads and the quote of `erp_sim.public.ErpFacade`, and no `confirm`: no tool can
     reach the only order write."""
 
@@ -29,10 +45,25 @@ class ErpPort(Protocol):
     def quote(self, company_id: CompanyId, request: QuoteRequest) -> Result[Quote]: ...
 
 
+class LockedProposals(Protocol):
+    """One conversation's proposals, in a transaction that holds its row lock (B68)."""
+
+    def prepared(self) -> OrderProposal | None: ...
+
+    def save_prepared(self, proposal: OrderProposal) -> OrderProposal: ...  # supersedes
+
+    def mark_confirmed(
+        self, proposal_id: ProposalId, order_id: OrderId, was: ProposalStatus = ...
+    ) -> None:
+        """Moves exactly one proposal in status `was` (prepared by default), or raises."""
+        ...
+
+
 class ProposalRepository(Protocol):
-    def save_prepared(self, company_id: CompanyId, proposal: OrderProposal) -> OrderProposal:
-        """Stores `proposal` and supersedes its conversation's earlier prepared proposal in one
-        transaction, then returns the stored row as read back."""
+    def locked(
+        self, company_id: CompanyId, conversation_id: ConversationId
+    ) -> AbstractContextManager[LockedProposals]:
+        """Locks the conversation row, so its prepares and presses never interleave."""
         ...
 
     def get(self, company_id: CompanyId, proposal_id: ProposalId) -> OrderProposal | None: ...
