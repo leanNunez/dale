@@ -10,6 +10,7 @@ import sqlalchemy as sa
 
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
 from dale.brain.infrastructure import tables as t
+from dale.shared.errors import ErrorCode
 from dale.shared.ids import CompanyId, ConversationId, CustomerId, OrderId, ProductId, ProposalId
 from dale.shared.money import Money
 
@@ -31,6 +32,9 @@ class SqlLockedProposals:
         p, self._conn, self._company_id, self._chat = t.order_proposal, conn, company_id, chat
         self._mine = (of_company(p, company_id), p.c.conversation_id == chat)
         self._prepared = (*self._mine, p.c.status == PREPARED.value)  # one at most (0004)
+
+    def get(self, proposal_id: ProposalId) -> OrderProposal | None:
+        return _read(self._conn, self._company_id, proposal_id)
 
     def prepared(self) -> OrderProposal | None:
         pid = self._conn.execute(sa.select(t.order_proposal.c.id).where(*self._prepared)).scalar()
@@ -64,6 +68,10 @@ class SqlLockedProposals:
     ) -> None:
         confirmed = ProposalStatus.CONFIRMED.value
         self._mark(proposal_id, was, status=confirmed, order_id=order_id, rejection_code=None)
+
+    def mark_rejected(self, proposal_id: ProposalId, code: ErrorCode) -> None:
+        rejected = ProposalStatus.REJECTED.value
+        self._mark(proposal_id, PREPARED, status=rejected, rejection_code=code.value)
 
     def _mark(self, proposal_id: ProposalId, was: ProposalStatus, **values: object) -> None:
         """Exactly one proposal in status `was` moves, or the brain lost an outcome (B68)."""
