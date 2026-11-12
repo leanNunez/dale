@@ -81,12 +81,12 @@ class ConfirmRequest:
 
 @dataclass(frozen=True, slots=True)
 class OrderConfirmation:
-    """Built from the stored order only."""
+    """Built from the stored order only; a replay of the same proposal returns an equal one."""
 
     order_id: OrderId
     proposal_id: ProposalId
     customer_id: CustomerId
-    lines: tuple[QuoteLine, ...]
+    lines: tuple[QuoteLine, ...]  # ordered by product id, then quantity
     total: Money
     delivery_date: date
     received_at: datetime
@@ -117,5 +117,11 @@ class ErpFacade(Protocol):
         ...
 
     def confirm(self, company_id: CompanyId, request: ConfirmRequest) -> Result[OrderConfirmation]:
-        """The second check (R5) and the only write: one order per proposal id."""
+        """The second check (R5) and the only write: one order per proposal id, idempotent."""
+        ...
+
+    def find_order(
+        self, company_id: CompanyId, proposal_id: ProposalId
+    ) -> Result[OrderConfirmation | None]:
+        """The order stored under the proposal id, as `confirm` returns it, or None. Read-only."""
         ...

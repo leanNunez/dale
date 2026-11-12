@@ -8,12 +8,13 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert
 
 from dale.erp_sim.application.confirm import Order
 from dale.erp_sim.domain.catalog import CatalogProduct
-from dale.erp_sim.domain.rules import Customer, Zone
+from dale.erp_sim.domain.rules import Customer, QuotedLine, Zone
 from dale.erp_sim.infrastructure import tables as t
-from dale.shared.ids import CompanyId, CustomerId, ProductId
+from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
 from dale.shared.money import Money
 
 
@@ -86,12 +87,28 @@ class SqlOrderData(SqlRuleData):
         super().__init__(conn)
         self._conn = conn
 
+    def find_order(self, company_id: CompanyId, proposal_id: ProposalId) -> Order | None:
+        o, li = t.sales_order, t.sales_order_line
+        cols = (o.c.id, o.c.customer_id, o.c.total_cents, o.c.delivery_date, o.c.received_at)
+        stmt = sa.select(*cols).where(of_company(o, company_id), o.c.proposal_id == proposal_id)
+        if not (heads := self._rows(stmt)):
+            return None
+        order_id, customer_id, total, day, received_at = heads[0]
+        parts = (li.c.product_id, li.c.qty, li.c.unit_price_cents, li.c.line_total_cents)
+        stmt = sa.select(*parts).where(of_company(li, company_id), li.c.order_id == order_id)
+        rows = self._rows(stmt.order_by(li.c.product_id, li.c.qty))
+        lines = tuple(QuotedLine(p, q, Money(u), Money(x)) for p, q, u, x in rows)
+        return Order(order_id, proposal_id, customer_id, lines, Money(total), day, received_at)
+
     def insert_order(self, company_id: CompanyId, order: Order) -> None:
         o, own = t.sales_order, {"company_id": company_id}
         head: dict[str, object] = own | {"id": order.id, "proposal_id": order.proposal_id}
         head |= {"customer_id": order.customer_id, "delivery_date": order.delivery_date}
         head |= {"total_cents": order.total.cents, "received_at": order.received_at}
-        self._conn.execute(sa.insert(o).values(head))
+        stmt = insert(o).values(head)
+        stmt = stmt.on_conflict_do_nothing(index_elements=[o.c.company_id, o.c.proposal_id])
+        if self._conn.execute(stmt.returning(o.c.id)).first() is None:
+            return  # a concurrent confirm stored this proposal first; its row decides
         lines = [
             own
             | {"id": uuid4(), "order_id": order.id, "product_id": x.product_id, "qty": x.quantity}
@@ -107,5 +124,8 @@ class SqlOrderStore:
 
     @contextmanager
     def transaction(self) -> Iterator[SqlOrderData]:
-        with self._engine.begin() as conn:
+        # READ COMMITTED, pinned: ON CONFLICT DO NOTHING waits for a concurrent insert of the
+        # same proposal to commit, and only a fresh per-statement snapshot then sees its row.
+        level = {"isolation_level": "READ COMMITTED"}  # set before the transaction begins
+        with self._engine.connect().execution_options(**level) as conn, conn.begin():
             yield SqlOrderData(conn)

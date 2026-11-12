@@ -1,7 +1,7 @@
 """Two companies with the same ids, SKUs, codes and zone names never see each other (R15)."""
 
 from datetime import date, datetime, time
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -11,10 +11,17 @@ from sqlalchemy import Engine
 from dale.erp_sim.infrastructure import tables as t
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.infrastructure.seed import el_hornero
-from dale.erp_sim.public import Delivery, ProductPrice, QuoteLineRequest, QuoteRequest
+from dale.erp_sim.public import (
+    ConfirmLine,
+    ConfirmRequest,
+    Delivery,
+    ProductPrice,
+    QuoteLineRequest,
+    QuoteRequest,
+)
 from dale.shared.clock import FrozenClock
 from dale.shared.errors import ErrorCode, Failure, Ok
-from dale.shared.ids import CompanyId, CustomerId, ProductId
+from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
 from dale.shared.money import Money
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("twin")]
@@ -75,3 +82,28 @@ def test_catalog_reads_return_only_the_requested_company(app: Engine) -> None:
     for company, expected in ((HORNERO, colas), (TWIN, ["GASE-VIE", *colas])):
         result = erp.search_products(company, "cola vieja")
         assert isinstance(result, Ok) and [m.sku for m in result.value] == expected
+
+
+def test_one_proposal_id_confirms_once_in_each_company(app: Engine) -> None:
+    """proposal_id is unique per company: the twin's confirm neither collides nor replays ours."""
+    erp, proposal_id = SqlErpFacade(app, FrozenClock(NOW)), ProposalId(uuid4())
+    c001, cola = el_hornero.row_id("customer", "C-001"), el_hornero.row_id("product", "COLA-225")
+
+    def confirm(company: CompanyId, cents: int, day: date) -> object:
+        line = ConfirmLine(ProductId(cola), 20, Money(cents))
+        request = ConfirmRequest(proposal_id, CustomerId(c001), (line,), day, Money(20 * cents))
+        result = erp.confirm(company, request)
+        return (
+            (result.value.total, result.value.delivery_date) if isinstance(result, Ok) else result
+        )
+
+    hornero, twin = (Money(4_900_000), date(2026, 11, 19)), (Money(2_222_000), date(2026, 11, 25))
+    assert confirm(HORNERO, 245_000, date(2026, 11, 19)) == hornero
+    assert erp.find_order(TWIN, proposal_id) == Ok(None)  # our order is not the twin's
+    assert confirm(TWIN, 111_100, date(2026, 11, 25)) == twin
+    assert confirm(TWIN, 111_100, date(2026, 11, 25)) == twin  # replays the twin's own order
+    assert confirm(HORNERO, 245_000, date(2026, 11, 19)) == hornero
+    for company, expected in ((HORNERO, hornero), (TWIN, twin)):
+        found = erp.find_order(company, proposal_id)
+        assert isinstance(found, Ok) and found.value
+        assert (found.value.total, found.value.delivery_date) == expected
