@@ -7,6 +7,7 @@ from typing import Protocol
 from dale.brain.domain.proposal import OrderProposal, ProposalStatus
 from dale.brain.domain.session import SessionContext
 from dale.erp_sim.public import (
+    ConfirmRequest,
     Delivery,
     OrderConfirmation,
     ProductMatch,
@@ -14,7 +15,7 @@ from dale.erp_sim.public import (
     Quote,
     QuoteRequest,
 )
-from dale.shared.errors import Result
+from dale.shared.errors import ErrorCode, Result
 from dale.shared.ids import CompanyId, ConversationId, CustomerId, OrderId, ProductId, ProposalId
 
 
@@ -45,6 +46,14 @@ class ErpPort(OrderLookup, Protocol):
     def quote(self, company_id: CompanyId, request: QuoteRequest) -> Result[Quote]: ...
 
 
+class ConfirmPort(OrderLookup, Protocol):
+    """Management's `confirm`, the only order write (B65). Only `ConfirmProposal` gets it."""
+
+    def confirm(
+        self, company_id: CompanyId, request: ConfirmRequest
+    ) -> Result[OrderConfirmation]: ...
+
+
 class LockedProposals(Protocol):
     """One conversation's proposals, in a transaction that holds its row lock (B68)."""
 
@@ -67,6 +76,24 @@ class ProposalRepository(Protocol):
         ...
 
     def get(self, company_id: CompanyId, proposal_id: ProposalId) -> OrderProposal | None: ...
+
+
+class LockedConfirmable(Protocol):
+    """What a Dale press reads and marks while it holds the conversation row lock (B68)."""
+
+    def get(self, proposal_id: ProposalId) -> OrderProposal | None: ...
+
+    def mark_confirmed(
+        self, proposal_id: ProposalId, order_id: OrderId, was: ProposalStatus = ...
+    ) -> None: ...
+
+    def mark_rejected(self, proposal_id: ProposalId, code: ErrorCode) -> None: ...  # prepared
+
+
+class ConfirmableProposals(Protocol):
+    def locked(
+        self, company_id: CompanyId, conversation_id: ConversationId
+    ) -> AbstractContextManager[LockedConfirmable]: ...
 
 
 class HandoffPort(Protocol):
