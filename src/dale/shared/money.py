@@ -37,3 +37,9 @@ def money_sum(amounts: Iterable[Money]) -> Money:
     for amount in amounts:
         total = total + amount
     return total
+
+
+def pesos(amount: Money) -> str:
+    """Argentine notation: `$ 49.000,00`."""
+    whole, cents = divmod(amount.cents, 100)
+    return f"$ {whole:,}".replace(",", ".") + f",{cents:02d}"

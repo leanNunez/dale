@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Protocol
 
 from dale.shared.errors import Result
-from dale.shared.ids import CompanyId, CustomerId, ProductId
+from dale.shared.ids import CompanyId, CustomerId, OrderId, ProductId, ProposalId
 from dale.shared.money import Money
 
 
@@ -61,6 +61,38 @@ class Delivery:
     minimum: Money  # the zone's minimum order amount
 
 
+@dataclass(frozen=True, slots=True)
+class ConfirmLine:
+    product_id: ProductId
+    quantity: int
+    unit_price: Money  # the price the customer was shown
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmRequest:
+    """What the customer was shown. `proposal_id` is the idempotency key."""
+
+    proposal_id: ProposalId
+    customer_id: CustomerId
+    lines: tuple[ConfirmLine, ...]
+    delivery_date: date
+    total: Money
+
+
+@dataclass(frozen=True, slots=True)
+class OrderConfirmation:
+    """Built from the stored order only."""
+
+    order_id: OrderId
+    proposal_id: ProposalId
+    customer_id: CustomerId
+    lines: tuple[QuoteLine, ...]
+    total: Money
+    delivery_date: date
+    received_at: datetime
+    message: str  # customer-facing, from the stored order; never from model text
+
+
 class ErpFacade(Protocol):
     """Reads and quotes write nothing. Unreadable data gives rules_unavailable, never a pass."""
 
@@ -82,4 +114,8 @@ class ErpFacade(Protocol):
 
     def quote(self, company_id: CompanyId, request: QuoteRequest) -> Result[Quote]:
         """Checks the rules (first check, R3) and writes nothing."""
+        ...
+
+    def confirm(self, company_id: CompanyId, request: ConfirmRequest) -> Result[OrderConfirmation]:
+        """The second check (R5) and the only write: one order per proposal id."""
         ...
