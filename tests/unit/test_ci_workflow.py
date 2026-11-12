@@ -35,3 +35,10 @@ def test_tracked_files_check(tmp_path: Path, tracked: list[str], ok: bool) -> No
     subprocess.run(["git", "add", "-f", "."], cwd=tmp_path, check=True)
     result = subprocess.run(["bash", "-c", code], cwd=tmp_path, capture_output=True)
     assert (result.returncode == 0) is ok
+
+
+def test_test_job_migrates_and_checks_the_schema_before_pytest() -> None:
+    runs = [s["run"] for s in JOBS["test"]["steps"] if "run" in s]
+    keys = ("db/roles.sql", "alembic upgrade head", "alembic check", "pytest")
+    order = [next(i for i, run in enumerate(runs) if key in run) for key in keys]
+    assert order == sorted(order)
