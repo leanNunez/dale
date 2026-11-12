@@ -6,10 +6,11 @@ from datetime import date, datetime
 from uuid import UUID
 
 from dale.brain.application.tools import Tools
+from dale.brain.domain.proposal import OrderProposal
 from dale.brain.domain.session import SessionContext
 from dale.erp_sim.public import Delivery, ProductMatch, ProductPrice, Quote, QuoteLine, QuoteRequest
 from dale.shared.errors import ErrorCode, Failure, Ok, Result, message_for
-from dale.shared.ids import CompanyId, ConversationId, CustomerId, ProductId
+from dale.shared.ids import CompanyId, ConversationId, CustomerId, ProductId, SequentialIdGenerator
 from dale.shared.money import Money, money_sum
 
 COMPANY, CUSTOMER = CompanyId(UUID(int=1)), CustomerId(UUID(int=2))
@@ -55,8 +56,29 @@ class FakeErp:
         return Ok(Quote(CUSTOMER, lines, money_sum(x.line_total for x in lines), DAY, NOW))
 
 
-def tools(erp: FakeErp | None = None) -> Tools:
-    return Tools(SESSION, erp or FakeErp())
+class FakeProposals:
+    """Returns `stored` (or what it was given) as the stored row, or raises `error`."""
+
+    def __init__(self, stored: OrderProposal | None = None, error: Exception | None = None) -> None:
+        self.saved: list[tuple[CompanyId, OrderProposal]] = []
+        self.stored, self.error = stored, error
+
+    def save_prepared(self, company_id: CompanyId, proposal: OrderProposal) -> OrderProposal:
+        if self.error:
+            raise self.error
+        self.saved.append((company_id, proposal))
+        return self.stored or proposal
+
+    def get(self, company_id: CompanyId, proposal_id: object) -> OrderProposal | None:
+        raise AssertionError("no tool reads a proposal by id")
+
+
+def tools(erp: FakeErp | None = None, proposals: FakeProposals | None = None) -> Tools:
+    return Tools(SESSION, erp or FakeErp(), proposals or FakeProposals(), SequentialIdGenerator())
+
+
+def prepare(*lines: tuple[object, object], **extra: object) -> dict[str, object]:
+    return {"lines": [{"product_id": str(p), "quantity": q} | extra for p, q in lines]}
 
 
 def error_code(content: str) -> str:
