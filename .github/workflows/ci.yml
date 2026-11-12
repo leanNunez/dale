@@ -84,3 +84,38 @@ jobs:
             echo "$bad"
             exit 1
           fi
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: bash scripts/check_no_api_key.sh
+
+  size:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: >-
+          python3 scripts/check_pr_size.py
+          --base "origin/$BASE_REF"
+          --head "$HEAD_SHA"
+          --head-branch "$HEAD_REF"
+          --base-branch "$BASE_REF"
+          --head-repo "$HEAD_REPO"
+          --base-repo "$BASE_REPO"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
