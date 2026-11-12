@@ -17,6 +17,11 @@ INSERT INTO erp.customer VALUES ('{C}', '{C}', 'C-001', 'Almacen Don Tito', '{C}
 INSERT INTO erp.product VALUES ('{C}', '{C}', 'COLA-225', 'Cola', 'Burbuja', '2,25 L', '', true);
 INSERT INTO erp.sales_order VALUES ('{C}', '{C}', '{C}', '{C}', '2026-11-17', 300000, now());
 INSERT INTO erp.sales_order_line VALUES ('{C}', '{C}', '{C}', '{C}', 2, 150000, 300000);
+INSERT INTO brain.conversation VALUES ('{C}', '{C}', '{C}', 'terminal', now());
+INSERT INTO brain.order_proposal
+  VALUES ('{C}', '{C}', '{C}', '{C}', 'prepared', NULL, NULL, '2026-11-17', 300000, now());
+INSERT INTO brain.order_proposal_line VALUES ('{C}', '{C}', '{C}', '{C}', 2, 150000, 300000);
+INSERT INTO brain.handoff_request VALUES ('{C}', '{C}', '{C}', '{C}', 'complaint', '', now());
 """
 # (constraint that must reject it, statement run after BASELINE)
 BAD_ROWS = [
@@ -52,6 +57,30 @@ BAD_ROWS = [
         "fk_customer_company_id_zone_id",
         f"INSERT INTO erp.customer VALUES ('{D}', '{C}', 'C-001', 'X', '{C}', true)",
     ),
+    ("ck_order_proposal_status", "UPDATE brain.order_proposal SET status = 'pending'"),
+    ("ck_order_proposal_status", "UPDATE brain.order_proposal SET status = 'Prepared'"),
+    ("ck_order_proposal_order_id", "UPDATE brain.order_proposal SET status = 'confirmed'"),
+    ("ck_order_proposal_order_id", f"UPDATE brain.order_proposal SET order_id = '{C}'"),
+    ("ck_order_proposal_rejection_code", "UPDATE brain.order_proposal SET status = 'rejected'"),
+    ("ck_order_proposal_total_cents", "UPDATE brain.order_proposal SET total_cents = 0"),
+    (
+        "ck_order_proposal_line_qty",
+        "UPDATE brain.order_proposal_line SET qty = 0, line_total_cents = 0",
+    ),
+    (
+        "ck_order_proposal_line_qty",
+        "UPDATE brain.order_proposal_line SET qty = 1000, line_total_cents = 150000000",
+    ),
+    (
+        "ck_order_proposal_line_unit_price_cents",
+        "UPDATE brain.order_proposal_line SET unit_price_cents = 0, line_total_cents = 0",
+    ),
+    (
+        "ck_order_proposal_line_line_total_cents",
+        "UPDATE brain.order_proposal_line SET line_total_cents = 1",
+    ),
+    ("ck_handoff_request_reason", "UPDATE brain.handoff_request SET reason = 'vip'"),
+    ("ck_handoff_request_note", "UPDATE brain.handoff_request SET note = repeat('x', 501)"),
 ]
 
 

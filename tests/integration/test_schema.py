@@ -6,12 +6,13 @@ import pytest
 from alembic import command
 from sqlalchemy import Engine, Row, text
 
+from dale.brain.infrastructure.tables import METADATA as BRAIN
 from dale.erp_sim.infrastructure.tables import METADATA as ERP
 from tests.conftest import alembic_config
 
 pytestmark = pytest.mark.integration
 
-METADATAS = (ERP,)
+METADATAS = (ERP, BRAIN)
 TENANT_ROOT = ("erp", "company")  # its own id is the company_id of every other row
 
 CONSTRAINTS = """
@@ -26,6 +27,19 @@ JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
 LEFT JOIN pg_attribute f ON f.attrelid = c.confrelid AND f.attnum = k.refnum
 WHERE n.nspname IN ('erp', 'brain')
 GROUP BY 1, 2, 3, 4, 5
+UNION ALL  -- type 'i': unique indexes that back no constraint, key columns only
+SELECT n.nspname, t.relname, i.relname, 'i', NULL,
+       array_agg(coalesce(a.attname::text, '(expression)') ORDER BY k.ord), NULL
+FROM pg_index x
+JOIN pg_class i ON i.oid = x.indexrelid
+JOIN pg_class t ON t.oid = x.indrelid
+JOIN pg_namespace n ON n.oid = t.relnamespace
+CROSS JOIN unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+LEFT JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum
+WHERE n.nspname IN ('erp', 'brain') AND x.indisunique AND k.ord <= x.indnkeyatts
+  AND NOT EXISTS (SELECT FROM pg_constraint c WHERE c.conindid = x.indexrelid
+                  AND c.conrelid = x.indrelid)
+GROUP BY 1, 2, 3
 """
 
 # Every constraint and index with its definition as the catalog prints it.
@@ -61,7 +75,7 @@ def test_every_table_has_a_non_null_company_id(engines: dict[str, Engine]) -> No
 
 
 def test_keys_and_unique_constraints_include_company_id(constraints: list[Row[Any]]) -> None:
-    keys = [r for r in constraints if r.type in ("p", "u", "f")]
+    keys = [r for r in constraints if r.type in ("p", "u", "f", "i")]
     root = [r for r in keys if (r.schema, r.tbl) == TENANT_ROOT]
     assert sorted(r.name for r in root) == ["pk_company", "uq_company_slug"]
     assert [r.name for r in keys if r not in root and "company_id" not in r.cols] == []
@@ -98,7 +112,12 @@ def test_money_columns_are_bigint_not_null(engines: dict[str, Engine]) -> None:
 def test_every_constraint_name_follows_the_convention(constraints: list[Row[Any]]) -> None:
     def ok(r: Row[Any]) -> bool:
         cols = "_".join(r.cols)
-        exact = {"p": f"pk_{r.tbl}", "u": f"uq_{r.tbl}_{cols}", "f": f"fk_{r.tbl}_{cols}"}
+        exact = {
+            "p": f"pk_{r.tbl}",
+            "u": f"uq_{r.tbl}_{cols}",
+            "f": f"fk_{r.tbl}_{cols}",
+            "i": f"ix_{r.tbl}_{cols}",  # a unique index outside any constraint
+        }
         if r.type == "c":
             return bool(r.name.startswith(f"ck_{r.tbl}_"))
         return bool(r.name == exact.get(r.type))
