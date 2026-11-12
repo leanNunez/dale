@@ -63,6 +63,11 @@ BAD_ROWS = [
     ("ck_order_proposal_order_id", f"UPDATE brain.order_proposal SET order_id = '{C}'"),
     ("ck_order_proposal_rejection_code", "UPDATE brain.order_proposal SET status = 'rejected'"),
     ("ck_order_proposal_total_cents", "UPDATE brain.order_proposal SET total_cents = 0"),
+    (  # a second prepared proposal in the same conversation (0004)
+        "ix_order_proposal_company_id_conversation_id",
+        "INSERT INTO brain.order_proposal VALUES"
+        f" ('{C}', '{D}', '{C}', '{C}', 'prepared', NULL, NULL, '2026-11-17', 1, now())",
+    ),
     (
         "ck_order_proposal_line_qty",
         "UPDATE brain.order_proposal_line SET qty = 0, line_total_cents = 0",

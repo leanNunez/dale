@@ -49,6 +49,14 @@ order_proposal = _tenant_table(
         "(status = 'rejected') = (rejection_code IS NOT NULL)", name="rejection_code"
     ),
     sa.CheckConstraint("total_cents > 0", name="total_cents"),
+    # One prepared proposal per conversation (migration 0004); the others are history.
+    sa.Index(
+        None,
+        "company_id",
+        "conversation_id",
+        unique=True,
+        postgresql_where=sa.text("status = 'prepared'"),
+    ),
 )
 
 order_proposal_line = _tenant_table(

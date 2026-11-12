@@ -2,7 +2,9 @@
 proposal per conversation, and no read or write across companies."""
 
 import json
+import threading
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime
 from typing import Any
@@ -26,8 +28,10 @@ from dale.shared.ids import (
     CompanyId,
     ConversationId,
     CustomerId,
+    IdGenerator,
     ProductId,
     SequentialIdGenerator,
+    Uuid4Generator,
     new_proposal_id,
 )
 from dale.shared.money import Money
@@ -57,10 +61,13 @@ def session(db: Engine, company: CompanyId = HORNERO, id: Any = None) -> Session
     return started
 
 
-def grounded(db: Engine, at: SessionContext) -> Tools:
-    """Tools whose search returned COLA. Ids are sequential, so two Tools reuse the first id."""
-    erp_facade, store = SqlErpFacade(db, FrozenClock(NOW)), SqlProposalRepository(db)
-    tools = Tools(at, erp_facade, store, SequentialIdGenerator())
+def grounded(
+    db: Engine, at: SessionContext, ids: IdGenerator | None = None, writes: Engine | None = None
+) -> Tools:
+    """Tools whose search returned COLA. Ids are sequential by default, so two Tools reuse the
+    first id; `writes` is the engine of the proposal store."""
+    erp_facade, store = SqlErpFacade(db, FrozenClock(NOW)), SqlProposalRepository(writes or db)
+    tools = Tools(at, erp_facade, store, ids or SequentialIdGenerator())
     assert not tools.run("search_products", {"query": "cola dos y cuarto"}).is_error
     return tools
 
@@ -120,3 +127,43 @@ def test_a_twin_company_with_the_same_ids_reads_and_supersedes_only_its_own(db: 
     store.save_prepared(HORNERO, newer)
     assert store.get(TWIN, proposal_id) == twins and twins.status is ProposalStatus.PREPARED
     assert store.get(HORNERO, proposal_id) == replace(ours, status=ProposalStatus.SUPERSEDED)
+
+
+def test_a_new_proposal_supersedes_only_its_own_conversations(db: Engine) -> None:
+    a, b = session(db), session(db)  # one customer, two conversations
+    first, second = order(grounded(db, a), 20), order(grounded(db, b, Uuid4Generator()), 30)
+    statuses = dict(rows(db, t.order_proposal, "id", "status"))
+    assert statuses == {first.proposal_id: "prepared", second.proposal_id: "prepared"}
+
+
+def test_a_proposal_without_its_conversation_row_raises(db: Engine) -> None:
+    """A wiring bug, not an outage. A twin company's conversation with that id does not count."""
+    line = ProposalLine(COLA, 20, Money(245_000), Money(4_900_000))
+    for at in (SessionContext(HORNERO, C001, ConversationId(uuid4())), session(db, TWIN)):
+        mine = replace(at, company_id=HORNERO)
+        proposal = OrderProposal.prepared(
+            new_proposal_id(), mine, (line,), line.line_total, DAY, NOW
+        )
+        with pytest.raises(RuntimeError, match="conversation row"):
+            SqlProposalRepository(db).save_prepared(HORNERO, proposal)
+    assert rows(db, t.order_proposal, "id") == []
+
+
+def test_concurrent_prepares_of_one_conversation_leave_one_prepared(db: Engine) -> None:
+    """Both writes begin together. The conversation row lock makes the second wait and then
+    supersede the first. Without the lock the loser's insert breaks the partial unique index
+    (an IntegrityError, raised here); without both, two proposals stay prepared."""
+    at = session(db)
+    earlier = order(grounded(db, at), 20)
+    writes, both = sa.create_engine(db.url), threading.Barrier(2, timeout=10)
+    racers = [grounded(db, at, Uuid4Generator(), writes) for _ in range(2)]
+    sa.event.listen(writes, "begin", lambda conn: both.wait())  # only save_prepared begins here
+    try:
+        with ThreadPoolExecutor(2) as pool:
+            shown = list(pool.map(order, racers, (30, 40)))
+    finally:
+        writes.dispose()
+    assert all(isinstance(s, ProposalSummary) for s in shown)  # neither call failed
+    statuses = dict(rows(db, t.order_proposal, "id", "status"))
+    assert sorted(statuses.values()) == ["prepared", "superseded", "superseded"]
+    assert statuses[earlier.proposal_id] == "superseded"

@@ -3,12 +3,20 @@ prepare_order that stores only quoted prices and shows only the stored proposal.
 
 import json
 import logging
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
 import pytest
 from anthropic import transform_schema
-from sqlalchemy.exc import ArgumentError, OperationalError
+from sqlalchemy.exc import (
+    ArgumentError,
+    DataError,
+    IntegrityError,
+    InterfaceError,
+    OperationalError,
+    ProgrammingError,
+)
 
 from dale.brain.application.tools import INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
@@ -172,7 +180,8 @@ def test_an_id_no_tool_returned_is_rejected_before_quoting(product_id: str) -> N
 def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
     line = ProposalLine(COLA15, 3, Money(185_000), Money(555_000))  # what the store returns
     first_id = ProposalId(SequentialIdGenerator().new_id())
-    stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), DAY, NOW)
+    later = DAY + timedelta(days=7)  # not the quote's date: what is shown is what was stored
+    stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), later, NOW)
     proposals = FakeProposals(stored)
     t = tools(proposals=proposals)
     t.run("search_products", {"query": "cola"})
@@ -186,22 +195,31 @@ def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
     assert [x.unit_price for x in saved.lines] == [PRICES[COLA], PRICES[PACK]]  # from `quote`
     assert saved.total == Money(6_280_000) and saved.status is ProposalStatus.PREPARED
     shown = (ShownLine(COLA15, 3, Money(185_000), Money(555_000)),)
-    assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), DAY),)
+    assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), later),)
     body = json.loads(outcome.content)
     assert body["confirmed"] is False and body["note"] == NOT_CONFIRMED
     assert body["lines"] == [{"product_id": str(COLA15), "quantity": 3, "unit_price": "$ 1.850,00"}]
     assert body["total"] == "$ 5.550,00" and str(stored.id) not in outcome.content
+    assert body["delivery_date"] == "2026-11-26"
 
 
-def test_a_failed_proposal_write_is_rules_unavailable(caplog: pytest.LogCaptureFixture) -> None:
-    down = OperationalError("INSERT", {"customer": "secret"}, Exception("down"))
+@pytest.mark.parametrize("error", [OperationalError, InterfaceError])
+def test_a_failed_proposal_write_is_rules_unavailable(
+    caplog: pytest.LogCaptureFixture, error: type[OperationalError]
+) -> None:
+    down = error("INSERT", {"customer": "secret"}, Exception("down"))
     t = tools(proposals=FakeProposals(error=down))
     t.run("search_products", {"query": "cola"})
     with caplog.at_level(logging.ERROR):
         outcome = t.run("prepare_order", prepare((COLA, 20)))
     assert error_code(outcome.content) == "rules_unavailable" and outcome.shown == ()
-    assert caplog.messages == [f"prepare_order failed for company {COMPANY}: OperationalError"]
-    bug = tools(proposals=FakeProposals(error=ArgumentError("bad statement")))
-    bug.run("search_products", {"query": "cola"})
-    with pytest.raises(ArgumentError):  # a programming error is not an outage
-        bug.run("prepare_order", prepare((COLA, 20)))
+    assert caplog.messages == [f"prepare_order failed for company {COMPANY}: {error.__name__}"]
+
+
+@pytest.mark.parametrize("error", [IntegrityError, ProgrammingError, DataError])
+def test_a_bug_in_the_proposal_write_raises(error: type[IntegrityError]) -> None:
+    for bug in (error("INSERT", {}, Exception("bug")), ArgumentError("bad statement")):
+        t = tools(proposals=FakeProposals(error=bug))
+        t.run("search_products", {"query": "cola"})
+        with pytest.raises(type(bug)):  # a wiring or data bug is not an outage
+            t.run("prepare_order", prepare((COLA, 20)))
