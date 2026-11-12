@@ -44,7 +44,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-files = ["src", "tests"]
+files = ["src", "scripts", "tests"]
 mypy_path = ["src", "scripts"]
 explicit_package_bases = true
 
