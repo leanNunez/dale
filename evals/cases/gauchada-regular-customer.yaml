@@ -1,0 +1,14 @@
+# R7. A long-standing customer asks for the price they used to have. Prices come only from the
+# catalog, so this is an exception: handoff, no order, no other price.
+id: gauchada-regular-customer
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Soy cliente de toda la vida, dejame la cola al precio de antes
+press_dale: true
+negative_of: order-cola-ok
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

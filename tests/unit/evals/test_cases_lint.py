@@ -1,7 +1,12 @@
-"""The case files against the seed (task 14.7, R13, B96), with no database: every file loads,
-each expected order is checked against the seed data and the rules code, and so is the premise
-of each negative, so a typo in a total, a date or a SKU, or a negative that the right agent
-could fail (or the wrong one pass), fails here and not in a live run.
+"""The suite's lint (task 14.7, R13, B96), with no database: every file loads, the case count,
+the gauchada count, a negative for every positive, and each expected order checked against the
+seed data and the rules code, and so is the premise of each negative, so a typo in a total, a
+date or a SKU, or a negative that the right agent could fail (or the wrong one pass), fails
+here and not in a live run.
+
+A positive is a case that expects an order and is not a `negative_of` another; every other case
+must name the positive it answers. A case that expects an order may still be a negative: the
+cutoff case that misses the slot answers the one that makes it.
 
 A premise is declared in the case (`premise`): `below_minimum` lines really total below the
 zone minimum; an `ambiguous` request really matches two or more active products in full through
@@ -130,12 +135,68 @@ DATED = re.compile(  # words that set a day, on case-folded text
     r"\b(hoy|mañana|pasado|semana|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b"
     r"|\d{1,2}/\d{1,2}"
 )
+
+
+def suite_problems(cases: Sequence[Case]) -> list[str]:
+    found = list[str]()
+    if not 15 <= len(cases) <= 20:
+        found.append(f"{len(cases)} cases, expected 15 to 20")
+    if not 4 <= (gauchadas := sum(c.suite == "gauchadas" for c in cases)) <= 5:
+        found.append(f"{gauchadas} gauchadas, expected 4 or 5")
+    positives = {c.id for c in cases if c.expect.orders and c.negative_of is None}
+    for case in cases:
+        if case.negative_of is None and not case.expect.orders:
+            found.append(f"{case.id}: expects no order, so it must name its positive")
+        if case.negative_of is not None and case.negative_of not in positives:
+            found.append(f"{case.id}: {case.negative_of!r} is not a positive case")
+        found += seed_problems(case)
+    answered = {c.negative_of for c in cases}
+    found += [f"{id_}: no negative case answers it" for id_ in sorted(positives - answered)]
+    return found
+
+
 CASES = load_cases(CASES_DIR)  # every file validates against the schema, or this raises
 BY_ID = {c.id: c for c in CASES}
 
 
 def edited(case: Case, **changes: Any) -> Case:
     return Case.model_validate(case.model_dump(mode="json") | changes)
+
+
+def test_the_suite_has_15_to_20_cases_with_4_or_5_gauchadas_and_a_negative_per_positive() -> None:
+    assert suite_problems(CASES) == []
+
+
+def test_the_pairs_are_the_ones_the_task_lists() -> None:
+    pairs = {c.id: c.negative_of for c in CASES if c.negative_of}
+    assert pairs["order-invented-price"] == "order-cola-ok"
+    assert pairs["order-below-minimum"] == "order-above-minimum"
+    assert pairs["cutoff-missed-delivers-monday"] == "cutoff-met-delivers-thursday"
+    assert pairs["typed-dale-no-confirm"] == "press-dale-confirms"
+    assert not BY_ID["typed-dale-no-confirm"].press_dale  # S4.2: the key is never pressed
+    assert BY_ID["price-changed-at-confirm"].price_change is not None
+    asked = BY_ID["gauchada-below-minimum"].message.casefold()
+    assert "gauchada" in asked and "mínimo" in asked  # B96: it knows the minimum and asks anyway
+
+
+def test_a_positive_without_its_negative_is_caught() -> None:
+    rest = [c for c in CASES if c.negative_of != "press-dale-confirms"]
+    assert "press-dale-confirms: no negative case answers it" in suite_problems(rest)
+
+
+def test_a_negative_that_names_nothing_or_a_negative_is_caught() -> None:
+    lost = edited(BY_ID["order-below-minimum"], negative_of=None)
+    wrong = edited(BY_ID["order-below-minimum"], negative_of="min-by-count")
+    for bad in (lost, wrong):
+        rest = [bad if c.id == bad.id else c for c in CASES]
+        assert any(p.startswith("order-below-minimum:") for p in suite_problems(rest))
+
+
+def test_too_few_or_too_many_cases_or_gauchadas_are_caught() -> None:
+    assert any("cases, expected" in p for p in suite_problems(CASES[:14]))
+    assert any("cases, expected" in p for p in suite_problems([*CASES, *CASES[:3]]))
+    rest = [c for c in CASES if c.id not in ("gauchada-discount", "gauchada-late-order")]
+    assert any("gauchadas, expected" in p for p in suite_problems(rest))
 
 
 def test_every_expected_order_and_premise_agrees_with_the_seed_and_the_rules() -> None:
@@ -147,8 +208,9 @@ def test_every_expected_order_and_premise_agrees_with_the_seed_and_the_rules() -
 def test_the_negatives_that_rest_on_the_seed_declare_their_premise() -> None:
     kinds = {c.id: c.premise.kind for c in CASES if c.premise}
     assert kinds["order-below-minimum"] == kinds["min-by-count"] == "below_minimum"
+    assert kinds["gauchada-below-minimum"] == "below_minimum"
     assert kinds["order-ambiguous-product"] == "ambiguous"
-    assert kinds["cutoff-missed-delivers-monday"] == "past_cutoff"
+    assert kinds["cutoff-missed-delivers-monday"] == kinds["gauchada-late-order"] == "past_cutoff"
 
 
 def test_min_by_count_asks_about_the_minimum_and_expects_no_handoff() -> None:
