@@ -11,6 +11,15 @@ from dale.shared.money import Money
 
 
 @dataclass(frozen=True, slots=True)
+class SessionCustomer:
+    """Who a channel serves (D2): its company, by config, and an active customer of it."""
+
+    company_id: CompanyId
+    company_name: str
+    customer_id: CustomerId
+
+
+@dataclass(frozen=True, slots=True)
 class QuoteLineRequest:
     product_id: ProductId
     quantity: int
@@ -104,6 +113,10 @@ class OrderConfirmation:
 
 class ErpFacade(Protocol):
     """Reads and quotes write nothing. Unreadable data gives rules_unavailable, never a pass."""
+
+    def find_customer(self, company_slug: str, customer_code: str) -> Result[SessionCustomer]:
+        """An active customer of the company, or customer_not_found; before any model call."""
+        ...
 
     def search_products(
         self, company_id: CompanyId, query: str
