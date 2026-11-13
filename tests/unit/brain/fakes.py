@@ -126,3 +126,16 @@ def error_code(content: str) -> str:
     body = json.loads(content)
     assert body == {"code": body["code"], "message": message_for(ErrorCode(body["code"]))}
     return str(body["code"])
+
+
+class FakeConversations:
+    """Logs each open in `log`, or raises `error` and opens nothing."""
+
+    def __init__(self, log: list[str], error: Exception | None = None) -> None:
+        self.log, self.error = log, error
+
+    def open(self, session: SessionContext) -> None:
+        assert session == SESSION
+        if self.error:
+            raise self.error
+        self.log.append("open")
