@@ -1,4 +1,4 @@
-"""The replayed model behind an eval run (design §10, D9, R13).
+"""The model behind an eval run: replay, live or record (design §10, D9, R13).
 
 Replay is the default and the only mode CI runs. It reads `<root>/<case>/run-<N>.jsonl`, one
 JSON object per model call: `case`, `run`, `step` (the call's index within the run, across
@@ -15,15 +15,23 @@ The digest covers every message, nothing left out: the messages carry no convers
 proposal, order or row id (`prepare_order` returns no proposal id) and no timestamp. Tool
 results hold seed ids (uuid5 of the company), catalog text, prices, and dates from the case's
 frozen clock, so the same case and recording give the same messages on every run.
+
+Live builds the adapter with no arguments (nothing here reads credentials) and never writes.
+Record is live plus the files replay reads, from the adapter's raw message (`evals/conftest.py`).
+A recording replaces the old file only once its run is complete, in one atomic rename.
 """
 
 import hashlib
 import json
+from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
+from typing import Any, Protocol
 
 from dale.brain.application.model_port import (
     MODEL_SETTINGS,
     Json,
+    ModelPort,
     ModelRequest,
     ModelResponse,
     ModelSettings,
@@ -37,6 +45,19 @@ FIELDS = {"case", "run", "step", "fingerprint", "messages", "message"}
 
 class ReplayError(Exception):
     """The recording cannot answer this call. The run fails; nothing else answers instead."""
+
+
+class Mode(StrEnum):
+    REPLAY = "replay"
+    LIVE = "live"
+    RECORD = "record"
+
+
+def mode_from_flags(live: bool, record: bool) -> Mode:
+    """`--record` spends money like `--live`, so it is refused on its own."""
+    if record and not live:
+        raise ValueError("--record needs --live: recording calls the live model")
+    return Mode.RECORD if record else Mode.LIVE if live else Mode.REPLAY
 
 
 def recording_path(root: Path, case: str, run: int) -> Path:
@@ -111,3 +132,55 @@ class ReplayModel:
         if not all(isinstance(t, str) for t in texts) or not isinstance(entry["message"], dict):
             raise ReplayError(f"{where}: malformed fingerprint, digest or message")
         return entry
+
+
+class RawModel(ModelPort, Protocol):
+    """The live adapter: it keeps the raw message of its last call."""
+
+    settings: ModelSettings
+    last_raw: Json | None
+
+
+class RecordError(Exception):
+    """A live call of the run failed, so its recording is not written."""
+
+
+class RecordingModel:
+    """Passes each call to the live adapter and keeps what it answered. `finish`, once the
+    whole run is over, writes the lines to a temporary file next to the recording and renames
+    it into place: until then, and after any failed run, the old recording is untouched."""
+
+    def __init__(self, inner: RawModel, root: Path, case: str, run: int) -> None:
+        self._inner, self._case, self._run = inner, case, run
+        self._path, self._lines, self._failed = recording_path(root, case, run), list[str](), False
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        try:
+            response = self._inner.complete(request)
+        except ModelUnavailableError:  # the turn fails; the recording would miss this step
+            self._failed = True
+            raise
+        entry: dict[str, Any] = {"case": self._case, "run": self._run, "step": len(self._lines)}
+        entry["fingerprint"] = request_fingerprint(request, self._inner.settings)
+        entry |= {"messages": messages_digest(request), "message": self._inner.last_raw}
+        self._lines.append(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+        return response
+
+    def finish(self) -> None:
+        if self._failed:
+            raise RecordError(f"{self._path}: a live call failed, so nothing was recorded")
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_name(f".{self._path.name}.tmp")
+        temporary.write_text("".join(self._lines), encoding="utf-8")
+        temporary.replace(self._path)  # atomic: the old file or the new one, never half of it
+
+
+def model_factory(mode: Mode, root: Path, case: str, run: int) -> Callable[[], ModelPort]:
+    """What `compose` calls once the customer is resolved. Replay never builds the adapter."""
+    if mode is Mode.REPLAY:
+        return lambda: ReplayModel(root, case, run)
+    from dale.brain.infrastructure.anthropic_model import AnthropicModel  # live modes only
+
+    if mode is Mode.LIVE:
+        return AnthropicModel  # no arguments: the environment holds the credentials
+    return lambda: RecordingModel(AnthropicModel(), root, case, run)

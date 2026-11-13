@@ -97,3 +97,11 @@ TIMED_OUT = anthropic.APITimeoutError(httpx2.Request("POST", "https://api.invali
 def test_an_sdk_error_is_model_unavailable(error: Exception) -> None:
     with pytest.raises(ModelUnavailableError):
         live.AnthropicModel(client(error=error)).complete(REQUEST)
+
+
+def test_the_raw_message_of_the_last_call_is_kept_for_the_eval_recorder() -> None:
+    raw = message(SEARCH)
+    model = live.AnthropicModel(client(Message.model_validate(raw)))
+    assert model.last_raw is None
+    model.complete(REQUEST)
+    assert model.last_raw == Message.model_validate(raw).model_dump(mode="json")

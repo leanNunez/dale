@@ -8,6 +8,7 @@ import anthropic
 
 from dale.brain.application.model_port import (
     MODEL_SETTINGS,
+    Json,
     ModelRequest,
     ModelResponse,
     ModelSettings,
@@ -37,6 +38,7 @@ class AnthropicModel:
     ) -> None:
         self._client = client if client is not None else anthropic.Anthropic()
         self.settings = settings  # what a recorded run's fingerprint must be taken from
+        self.last_raw: Json | None = None  # the last reply as JSON: what an eval records
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         client = self._client.with_options(timeout=TIMEOUT_SECONDS, max_retries=MAX_RETRIES)
@@ -44,4 +46,5 @@ class AnthropicModel:
             message = client.messages.create(**request_params(self.settings, request))
         except anthropic.AnthropicError as error:  # connection, timeout, status, anything
             raise ModelUnavailableError(type(error).__name__) from error
-        return parse_response(message.model_dump(mode="json"))
+        self.last_raw = message.model_dump(mode="json")
+        return parse_response(self.last_raw)

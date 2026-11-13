@@ -1,20 +1,37 @@
-"""The replayed eval model (tasks 12.1, 12.3; D9, R13): replay answers from (case, run, step)
-and the fingerprint and from nothing else."""
+"""The eval model (tasks 12.1, 12.3; D9, R13): replay answers from (case, run, step) and the
+fingerprint and from nothing else; record writes what replay reads; live never writes."""
 
 import json
+import os
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
-from dale.brain.application.model_port import MODEL_SETTINGS, ModelRequest, parse_response
+from dale.brain.application.model_port import (
+    MODEL_SETTINGS,
+    Json,
+    ModelRequest,
+    ModelResponse,
+    ModelSettings,
+    ModelUnavailableError,
+    parse_response,
+)
 from dale.brain.application.prompt import fingerprint, system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
+from evals.conftest import lifts_host_restriction
 from evals.harness.model import (
+    Mode,
+    RecordError,
+    RecordingModel,
     ReplayError,
     ReplayModel,
     messages_digest,
+    mode_from_flags,
+    model_factory,
     recording_path,
     request_fingerprint,
 )
@@ -130,3 +147,155 @@ def test_a_malformed_or_foreign_line_fails_the_run(tmp_path: Path, line: str) ->
     path.write_text(line + "\n", encoding="utf-8")
     with pytest.raises(ReplayError):
         ReplayModel(tmp_path, "a", 1).complete(REQUEST)
+
+
+class FakeLive:
+    """Stands for AnthropicModel: answers from a list and keeps the raw message."""
+
+    def __init__(self, *raw: Json) -> None:
+        self.settings, self.raw = MODEL_SETTINGS, list(raw)
+        self.last_raw: Json | None = None
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.last_raw = self.raw.pop(0)
+        return parse_response(self.last_raw)
+
+
+def test_what_record_writes_replay_reads_back_the_same(tmp_path: Path) -> None:
+    recorder = RecordingModel(FakeLive(FIRST, SECOND), tmp_path, "a", 1)
+    live = [recorder.complete(REQUEST), recorder.complete(REQUEST)]
+    recorder.finish()
+    path = recording_path(tmp_path, "a", 1)
+    assert [json.loads(line)["step"] for line in path.read_text().splitlines()] == [0, 1]
+    replay = ReplayModel(tmp_path, "a", 1)
+    assert [replay.complete(REQUEST), replay.complete(REQUEST)] == live
+
+
+def record(tmp_path: Path, *raw: Json) -> RecordingModel:
+    recorder = RecordingModel(FakeLive(*raw), tmp_path, "a", 1)
+    for _ in raw:
+        recorder.complete(REQUEST)
+    return recorder
+
+
+def test_a_new_record_run_replaces_the_old_file(tmp_path: Path) -> None:
+    record(tmp_path, FIRST, SECOND).finish()
+    record(tmp_path, SECOND).finish()
+    assert len(recording_path(tmp_path, "a", 1).read_text().splitlines()) == 1
+
+
+def test_a_run_that_fails_keeps_the_previous_recording_byte_for_byte(tmp_path: Path) -> None:
+    record(tmp_path, FIRST, SECOND).finish()
+    path = recording_path(tmp_path, "a", 1)
+    before = path.read_bytes()
+    record(tmp_path, SECOND)  # a run that raised before its end: never finished
+    broken = RecordingModel(FakeLive(SECOND, {"content": "bad"}), tmp_path, "a", 1)
+    broken.complete(REQUEST)
+    with pytest.raises(ModelUnavailableError):  # the turn fails, the run goes on
+        broken.complete(REQUEST)
+    with pytest.raises(RecordError, match="a live call failed"):
+        broken.finish()
+    assert path.read_bytes() == before
+    assert [p.name for p in path.parent.iterdir()] == ["run-1.jsonl"]  # no temporary left
+
+
+class Built:
+    """Stands for the AnthropicModel class: remembers how it was built."""
+
+    calls: ClassVar[list[tuple[Any, ...]]] = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        Built.calls.append((args, kwargs))
+        self.settings: ModelSettings = MODEL_SETTINGS
+        self.last_raw: Json | None = SECOND
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        return parse_response(SECOND)
+
+
+@pytest.fixture
+def built(monkeypatch: pytest.MonkeyPatch) -> type[Built]:
+    Built.calls = []
+    monkeypatch.setattr("dale.brain.infrastructure.anthropic_model.AnthropicModel", Built)
+    return Built
+
+
+def test_replay_never_builds_the_live_model(tmp_path: Path, built: type[Built]) -> None:
+    write(tmp_path, [FIRST])
+    model_factory(Mode.REPLAY, tmp_path, "a", 1)().complete(REQUEST)
+    assert built.calls == []
+
+
+def test_live_builds_the_adapter_with_no_arguments_and_writes_nothing(
+    tmp_path: Path, built: type[Built]
+) -> None:
+    model_factory(Mode.LIVE, tmp_path, "a", 1)().complete(REQUEST)
+    assert built.calls == [((), {})] and list(tmp_path.iterdir()) == []
+
+
+def test_record_builds_the_adapter_with_no_arguments_and_writes_the_file(
+    tmp_path: Path, built: type[Built]
+) -> None:
+    model = model_factory(Mode.RECORD, tmp_path, "a", 1)()
+    model.complete(REQUEST)
+    assert built.calls == [((), {})] and isinstance(model, RecordingModel)
+    model.finish()
+    assert json.loads(recording_path(tmp_path, "a", 1).read_text())["message"] == SECOND
+
+
+def test_the_flags_pick_the_mode_and_record_alone_is_refused() -> None:
+    assert mode_from_flags(False, False) is Mode.REPLAY
+    assert mode_from_flags(True, False) is Mode.LIVE
+    assert mode_from_flags(True, True) is Mode.RECORD
+    with pytest.raises(ValueError, match="--record needs --live"):
+        mode_from_flags(False, True)
+
+
+def test_record_without_live_stops_the_session_before_any_test() -> None:
+    """A fresh pytest: no database, no model; the usage error comes first."""
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "evals", "--record"],
+        capture_output=True,
+        check=False,
+        cwd=Path(__file__).parents[3],
+    )
+    assert done.returncode == 4 and b"--record needs --live" in done.stderr
+
+
+def test_only_the_live_modes_lift_the_socket_host_restriction() -> None:
+    assert [lifts_host_restriction(mode) for mode in Mode] == [False, True, True]
+
+
+PROBE = """
+import pytest, pytest_socket
+
+def pytest_sessionstart(session):
+    print("force_enabled", session.config.stash[pytest_socket._STASH_KEY].socket_force_enabled)
+    pytest.exit("probe", returncode=0)
+"""
+
+
+@pytest.mark.parametrize(("flags", "lifted"), [([], False), (["--live"], True)])
+def test_pytest_socket_reads_the_lifted_option_and_replay_keeps_it_off(
+    tmp_path: Path, flags: list[str], lifted: bool
+) -> None:
+    """A fresh pytest that stops at session start, before any collection: no model call."""
+    (tmp_path / "socket_probe.py").write_text(PROBE, encoding="utf-8")
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "evals",
+            *flags,
+            "-p",
+            "socket_probe",
+            "-p",
+            "no:cacheprovider",
+        ],
+        capture_output=True,
+        check=False,
+        cwd=Path(__file__).parents[3],
+        env=os.environ | {"PYTHONPATH": str(tmp_path)},
+    )
+    assert f"force_enabled {lifted}".encode() in done.stdout, done.stdout
