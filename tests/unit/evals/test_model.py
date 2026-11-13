@@ -24,6 +24,7 @@ from dale.brain.application.prompt import fingerprint, system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
 from evals.conftest import lifts_host_restriction
 from evals.harness.model import (
+    REPO_ROOT,
     Mode,
     RecordError,
     RecordingModel,
@@ -34,6 +35,7 @@ from evals.harness.model import (
     model_factory,
     recording_path,
     request_fingerprint,
+    shown_path,
 )
 from tests.unit.brain.test_model_port import SEARCH, message
 
@@ -299,3 +301,24 @@ def test_pytest_socket_reads_the_lifted_option_and_replay_keeps_it_off(
         env=os.environ | {"PYTHONPATH": str(tmp_path)},
     )
     assert f"force_enabled {lifted}".encode() in done.stdout, done.stdout
+
+
+def test_a_path_is_shown_relative_to_the_repository_and_never_absolute(tmp_path: Path) -> None:
+    inside = REPO_ROOT / "evals" / "recordings" / "a" / "run-1.jsonl"
+    assert shown_path(inside) == "evals/recordings/a/run-1.jsonl"
+    assert shown_path(tmp_path / "a" / "run-1.jsonl") == f"{tmp_path.name}/a/run-1.jsonl"
+    assert shown_path(Path("/run-1.jsonl")) == "run-1.jsonl"
+
+
+def test_a_record_error_and_a_replay_error_name_their_file_without_an_absolute_path(
+    tmp_path: Path,
+) -> None:
+    broken = RecordingModel(FakeLive({"content": "bad"}), tmp_path, "a", 1)
+    with pytest.raises(ModelUnavailableError):
+        broken.complete(REQUEST)
+    with pytest.raises(RecordError) as record_error:
+        broken.finish()
+    with pytest.raises(ReplayError) as replay_error:
+        ReplayModel(tmp_path, "a", 1).complete(REQUEST)
+    for error in (record_error.value, replay_error.value):
+        assert str(tmp_path) not in str(error) and f"{tmp_path.name}/a/run-1.jsonl" in str(error)

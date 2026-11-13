@@ -149,5 +149,5 @@ class Finishing(ScriptedModel):
 def test_a_model_with_finish_is_told_once_the_whole_run_is_over(db: Engine) -> None:
     """Replay fails the run there on an unused step; record writes its file only then."""
     model = Finishing(says("hola"))
-    run_case(case(), Env(db, role_url("dale_verifier")), lambda: model)
-    assert model.finished == 1
+    state = run_case(case(), Env(db, role_url("dale_verifier")), lambda: model)
+    assert model.finished == 1 and state.harness_error is None

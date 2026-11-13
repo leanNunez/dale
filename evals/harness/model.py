@@ -19,6 +19,9 @@ frozen clock, so the same case and recording give the same messages on every run
 Live builds the adapter with no arguments (nothing here reads credentials) and never writes.
 Record is live plus the files replay reads, from the adapter's raw message (`evals/conftest.py`).
 A recording replaces the old file only once its run is complete, in one atomic rename.
+
+An error message names a file by its path relative to the repository (`shown_path`), never an
+absolute one, because the report prints it.
 """
 
 import hashlib
@@ -44,6 +47,16 @@ from dale.erp_sim.infrastructure.seed import el_hornero
 
 FIELDS = {"case", "run", "step", "fingerprint", "messages", "message"}
 RECORDINGS = Path(__file__).parents[1] / "recordings"
+REPO_ROOT = Path(__file__).parents[2]
+
+
+def shown_path(path: Path) -> str:
+    """How an error message names a file: relative to the repository, and for a path outside it
+    (a test's temporary directory) its last three parts. Never an absolute path."""
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return "/".join(part for part in path.parts[-3:] if part != path.anchor)
 
 
 class ReplayError(Exception):
@@ -85,26 +98,26 @@ def messages_digest(request: ModelRequest) -> str:
 class ReplayModel:
     def __init__(self, root: Path, case: str, run: int, settings: ModelSettings = MODEL_SETTINGS):
         self._path, self._case, self._run = recording_path(root, case, run), case, run
-        self._settings = settings
+        self._shown, self._settings = shown_path(self._path), settings
         self._steps: dict[int, tuple[Json, ModelResponse]] | None = None
         self._next = 0
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         step, self._next = self._next, self._next + 1
         if (recorded := self._load().get(step)) is None:
-            raise ReplayError(f"{self._path}: no recorded step {step} (record it with --record)")
+            raise ReplayError(f"{self._shown}: no recorded step {step} (record it with --record)")
         entry, response = recorded
         if entry["fingerprint"] != request_fingerprint(request, self._settings):
-            raise ReplayError(f"re-record required: {self._path} step {step} is stale (D9)")
+            raise ReplayError(f"re-record required: {self._shown} step {step} is stale (D9)")
         if entry["messages"] != messages_digest(request):
-            where = f"{self._path} step {step}"
+            where = f"{self._shown} step {step}"
             raise ReplayError(f"{where}: recording does not match this request; re-record required")
         return response
 
     def finish(self) -> None:
         """The run is over: a recorded step it never asked for means its path changed."""
         if unused := sorted(step for step in self._load() if step >= self._next):
-            raise ReplayError(f"{self._path}: steps {unused} were never asked for; re-record")
+            raise ReplayError(f"{self._shown}: steps {unused} were never asked for; re-record")
 
     def _load(self) -> dict[int, tuple[Json, ModelResponse]]:
         if self._steps is None:
@@ -112,7 +125,7 @@ class ReplayModel:
                 lines = self._path.read_text(encoding="utf-8").splitlines()
             except OSError as error:
                 raise ReplayError(
-                    f"{self._path}: no recording (record it with --record)"
+                    f"{self._shown}: no recording (record it with --record)"
                 ) from error
             self._steps = {}
             for number, line in enumerate(lines, 1):
@@ -120,12 +133,12 @@ class ReplayModel:
                 try:
                     response = parse_response(entry["message"])
                 except ModelUnavailableError as error:  # never a failed turn: a broken file
-                    raise ReplayError(f"{self._path}:{number}: malformed message") from error
+                    raise ReplayError(f"{self._shown}:{number}: malformed message") from error
                 self._steps[entry["step"]] = (entry, response)
         return self._steps
 
     def _entry(self, line: str, number: int) -> Json:
-        where = f"{self._path}:{number}"
+        where = f"{self._shown}:{number}"
         try:
             entry = json.loads(line)
         except ValueError as error:
@@ -161,6 +174,7 @@ class RecordingModel:
     def __init__(self, inner: RawModel, root: Path, case: str, run: int) -> None:
         self._inner, self._case, self._run = inner, case, run
         self._path, self._lines, self._failed = recording_path(root, case, run), list[str](), False
+        self._shown = shown_path(self._path)
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         try:
@@ -176,7 +190,7 @@ class RecordingModel:
 
     def finish(self) -> None:
         if self._failed:
-            raise RecordError(f"{self._path}: a live call failed, so nothing was recorded")
+            raise RecordError(f"{self._shown}: a live call failed, so nothing was recorded")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self._path.with_name(f".{self._path.name}.tmp")
         temporary.write_text("".join(self._lines), encoding="utf-8")
