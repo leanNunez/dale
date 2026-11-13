@@ -2,7 +2,7 @@
 cannot be parsed, read or judged becomes `unverifiable`, which is never `verified` (§13)."""
 
 import json
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -44,11 +44,19 @@ def parse_request(text: str) -> Request:
     return Request(ids, tuple(from_json(json.dumps(event)) for event in shown))
 
 
-def verify(request: Request, reader: EvidenceReader) -> Report:
+def _ignore(error: Exception) -> None:
+    del error
+
+
+def verify(
+    request: Request, reader: EvidenceReader, on_error: Callable[[Exception], None] = _ignore
+) -> Report:
+    """`on_error` sees the exception behind an unverifiable run, so the process can trace it."""
     wanted = {e.proposal_id for e in request.shown if isinstance(e, OrderConfirmed)}
     try:
         return judge(request.session, request.shown, reader.read(request.session, wanted))
     except Exception as error:  # fail closed: a run that was not read and judged is unverified
+        on_error(error)
         return Report.unverifiable(type(error).__name__)
 
 
