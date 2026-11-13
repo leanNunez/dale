@@ -1,0 +1,18 @@
+# S2.2, S13.5. The seed has no Monday 18:00 zone: Centro delivers Monday and Thursday with a cutoff
+# of 18:00 the day before. Wednesday 17:59 is before Thursday's cutoff, so the date is Thursday
+# 2026-11-19. 20 x 2450 = 49000 >= 30000. The message sets no date: only `now` differs from the
+# negative.
+id: cutoff-met-delivers-thursday
+suite: core
+now: 2026-11-18T17:59:00-03:00
+customer: C-001
+message: Necesito 20 colas de dos y cuarto
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}]
+      total_pesos: 49000
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}
