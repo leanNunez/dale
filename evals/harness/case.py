@@ -10,6 +10,10 @@ same state both pass.
 model before `message`, so a recording holds the steps of every turn (the step counter runs
 across the whole run). `seed_overrides` goes to the seed as it is, except that a
 `cutoff_time` given as "HH:MM" text becomes a time.
+
+`price_change` moves one list price after the last turn and before the press (D4). `negative_of`
+names the positive case (one that expects an order) a negative case answers (R13); the suite's
+lint checks that every positive has one, since that needs every file at once.
 """
 
 from collections.abc import Mapping
@@ -32,6 +36,7 @@ ShownKind = Literal[
     "HandoffNotice",
     "SystemNotice",
 ]
+ID = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 type Overrides = dict[str, dict[str, dict[str, Any]]]
 
 
@@ -72,8 +77,16 @@ class Expect(_Model):
     shown: ShownExpect = ShownExpect()
 
 
+class PriceChange(_Model):
+    """A list price that moves after the last turn and before the Dale key is pressed (D4): the
+    new price takes effect at the case's `now`, so management's second check sees it."""
+
+    sku: str = Field(min_length=1)
+    pesos: int = Field(gt=0)
+
+
 class Case(_Model):
-    id: str = Field(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    id: str = Field(pattern=ID)
     suite: Literal["core", "gauchadas"]
     now: AwareDatetime  # feeds FrozenClock: the cutoff rules never see the system time (S13.5)
     customer: str = Field(min_length=1)  # a customer code of El Hornero
@@ -82,6 +95,16 @@ class Case(_Model):
     message: str = Field(min_length=1)
     press_dale: bool
     expect: Expect
+    price_change: PriceChange | None = None
+    negative_of: str | None = Field(default=None, pattern=ID)  # the positive case it answers
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.price_change and not self.press_dale:
+            raise ValueError("a price change matters only to a press (press_dale: true)")
+        if self.negative_of == self.id:
+            raise ValueError("a case cannot be its own negative")
+        return self
 
     @model_validator(mode="after")
     def _gauchada(self) -> Self:

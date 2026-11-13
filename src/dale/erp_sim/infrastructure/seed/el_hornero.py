@@ -14,7 +14,9 @@ COMPANY_ID = uuid5(NAMESPACE_URL, f"dale:{SLUG}")
 TIMEZONE = "America/Argentina/Buenos_Aires"
 _LOCAL = ZoneInfo(TIMEZONE)  # dates below are midnight in the company's own time, not UTC
 PRICES_FROM = datetime(2026, 1, 1, tzinfo=_LOCAL)
-# A price change that takes effect later (the D4 price-change eval case): sku -> (from, pesos).
+# A list price already set to take effect later, (sku, from, pesos): a price read must take the
+# one in effect at its instant, not the newest row. The D4 eval case moves a price at run time
+# with `change_price` instead (the seed package), so it does not use this row.
 FUTURE_PRICE = ("COLA-225", datetime(2026, 12, 1, tzinfo=_LOCAL), 2900)
 OVERRIDABLE = {"zones": "name", "customers": "code", "products": "sku"}  # table -> natural key
 
