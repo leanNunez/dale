@@ -36,7 +36,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["src", "tests", "scripts"]
+src = ["src", "tests", "scripts", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
@@ -44,13 +44,13 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-files = ["src", "scripts", "tests", "migrations"]
+files = ["src", "scripts", "tests", "migrations", "evals"]
 mypy_path = ["src", "scripts"]
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["scripts"]
+pythonpath = ["scripts", "."]
 addopts = "-ra --strict-markers --disable-socket --allow-hosts=127.0.0.1,localhost"
 markers = [
     "integration: needs a real PostgreSQL (the only host sockets may reach)",
@@ -61,7 +61,7 @@ markers = [
 script_location = "%(here)s/migrations"
 
 [tool.importlinter]
-root_packages = ["dale", "sqlalchemy", "pydantic", "anthropic"]
+root_packages = ["dale", "evals", "sqlalchemy", "pydantic", "anthropic"]
 include_external_packages = true
 
 # 1. Layers inside each module: infrastructure -> application -> domain.
@@ -145,3 +145,12 @@ source_modules = ["dale"]
 forbidden_modules = ["anthropic"]
 ignore_imports = ["dale.brain.infrastructure.** -> anthropic"]
 unmatched_ignore_imports_alerting = "none"
+
+# 8. The eval harness reaches the live model only through the brain's adapter.
+[[tool.importlinter.contracts]]
+id = "8"
+name = "evals import anthropic only through dale.brain.infrastructure"
+type = "forbidden"
+source_modules = ["evals"]
+forbidden_modules = ["anthropic"]
+allow_indirect_imports = true
