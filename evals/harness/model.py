@@ -41,6 +41,7 @@ from dale.brain.application.model_port import (
 from dale.brain.application.prompt import fingerprint
 
 FIELDS = {"case", "run", "step", "fingerprint", "messages", "message"}
+RECORDINGS = Path(__file__).parents[1] / "recordings"
 
 
 class ReplayError(Exception):

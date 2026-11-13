@@ -7,6 +7,7 @@ its own, so admin_url() itself refuses any server that is not on this machine.
 
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
@@ -45,8 +46,9 @@ def alembic_config(role: str = "dale_owner") -> Config:
     return Config(toml_file=ROOT / "pyproject.toml", attributes={"url": role_url(role)})
 
 
-@pytest.fixture(scope="session")
-def migrated_db() -> Iterator[None]:
+@contextmanager
+def fresh_database() -> Iterator[None]:
+    """The roles, a new migrated test database, and its drop on the way out."""
     admin = admin_url().set(drivername="postgresql").render_as_string(hide_password=False)
     with psycopg.connect(admin, autocommit=True) as conn:
         conn.execute((ROOT / "db" / "roles.sql").read_text())  # no params: sent as-is
@@ -56,6 +58,26 @@ def migrated_db() -> Iterator[None]:
     yield
     with psycopg.connect(admin, autocommit=True) as conn:
         conn.execute(f"DROP DATABASE {TEST_DB} WITH (FORCE)")
+
+
+_built = False  # evals/conftest.py re-exports the fixtures: one database per pytest session
+
+
+def shared_database() -> Iterator[None]:
+    """A second copy of the fixture in the same session shares the first's database. `_built`
+    is set only once the build succeeded, so a failed build is never taken for a database."""
+    global _built
+    if _built:
+        yield
+        return
+    with fresh_database():
+        _built = True
+        yield
+
+
+@pytest.fixture(scope="session")
+def migrated_db() -> Iterator[None]:
+    yield from shared_database()
 
 
 @pytest.fixture(scope="session")
