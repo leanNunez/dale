@@ -2,6 +2,7 @@
 two files are written together or not at all, and what marks a commit dirty."""
 
 import json
+import subprocess
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ from dale.brain.application.model_port import Usage
 from evals.harness import report_files
 from evals.harness.metrics import RunRecord
 from evals.harness.report import build_report
-from evals.harness.report_files import render_markdown, report_paths, write_report
+from evals.harness.report_files import commit_label, render_markdown, report_paths, write_report
 
 SUITE = {"order": "core", "discount": "gauchadas"}
 NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
@@ -142,3 +143,33 @@ def test_a_failure_while_renaming_removes_both_files_so_no_half_pair_is_left(
     with pytest.raises(OSError, match="cannot rename"):
         write_report(report(), tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def git(root: Path, *args: str) -> None:
+    config = ("-c", "user.name=t", "-c", "user.email=t@t")
+    subprocess.run(["git", *config, *args], cwd=root, check=True, capture_output=True)
+
+
+def test_the_commit_is_marked_dirty_only_for_changes_outside_the_reports(tmp_path: Path) -> None:
+    git(tmp_path, "init", "-q")
+    (tmp_path / "a.txt").write_text("a")
+    git(tmp_path, "add", "a.txt")
+    git(tmp_path, "commit", "-q", "-m", "x")
+    sha = commit_label(tmp_path)
+    assert len(sha) == 40 and not sha.endswith("-dirty")
+    (tmp_path / "evals" / "reports").mkdir(parents=True)
+    (tmp_path / "evals" / "reports" / "v.json").write_text("{}")
+    assert commit_label(tmp_path) == sha  # the report's own files do not make it dirty
+    (tmp_path / "a.txt").write_text("changed")
+    assert commit_label(tmp_path) == f"{sha}-dirty"
+
+
+def test_an_untracked_file_is_listed_whatever_the_git_config_says(tmp_path: Path) -> None:
+    git(tmp_path, "init", "-q")
+    (tmp_path / "a.txt").write_text("a")
+    git(tmp_path, "add", "a.txt")
+    git(tmp_path, "commit", "-q", "-m", "x")
+    git(tmp_path, "config", "status.showUntrackedFiles", "no")
+    (tmp_path / "evals" / "recordings").mkdir(parents=True)
+    (tmp_path / "evals" / "recordings" / "new.jsonl").write_text("{}")
+    assert commit_label(tmp_path).endswith("-dirty")

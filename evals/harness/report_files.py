@@ -6,14 +6,42 @@ pricing source with its stale-source note. A false-confirmation count of zero is
 
 `write_report` writes both files to temporary files in the report's own directory and renames
 them only when both were written, so a failed write leaves neither temporary nor a half pair.
+
+`commit_label` names the commit a report is made from; the session reads it before its first
+test, so what a run writes itself (a recording) cannot make it dirty.
 """
 
 import json
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 REPORTS_DIR = Path(__file__).parents[1] / "reports"
+
+
+def commit_label(root: Path) -> str:
+    """`git rev-parse HEAD`, plus "-dirty" when the tree has changes outside the reports, the
+    untracked files in every directory included whatever the user's git config says."""
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    changes = subprocess.run(
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            ".",
+            ":(exclude)evals/reports",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return f"{sha}-dirty" if changes.strip() else sha
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
