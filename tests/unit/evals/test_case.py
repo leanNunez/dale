@@ -161,3 +161,18 @@ def test_a_price_change_needs_a_press_and_a_case_is_not_its_own_negative() -> No
     with pytest.raises(ValidationError, match="String should match"):
         case(negative_of="Not A Slug")
     assert case(negative_of="press-dale-confirms").negative_of == "press-dale-confirms"
+
+
+@pytest.mark.parametrize(
+    "premise",
+    [
+        {"kind": "below_minimum", "lines": [{"sku": "COLA-225", "qty": 12}], "total_pesos": 29400},
+        {"kind": "ambiguous", "query": "gaseosas de dos y cuarto", "qty": 15},
+        {"kind": "past_cutoff", "missed": "2026-11-19"},
+    ],
+)
+def test_a_premise_of_each_kind_loads_and_any_other_is_refused(premise: dict[str, Any]) -> None:
+    assert case(premise=premise).premise.kind == premise["kind"]  # type: ignore[union-attr]
+    for bad in ({"kind": "lucky"}, premise | {"extra": 1}, {"kind": premise["kind"]}):
+        with pytest.raises(ValidationError):
+            case(premise=bad)

@@ -23,7 +23,8 @@ from dale.shared.shown_events import (
     ShownLine,
     SummaryLine,
 )
-from evals.harness.case import Case
+from evals.harness.case import Case, load_case
+from evals.harness.collect import CASES_DIR
 from evals.harness.grader import grade
 from evals.harness.runner import OrderState, RunState, StoredProposal
 
@@ -355,6 +356,17 @@ def test_an_amount_a_tool_returned_in_the_run_passes_and_an_invented_one_fails(
     assert grade(case(orders=[]), said).passed is honest
     untold = grade(case(orders=[]), replace(said, tool_amounts=frozenset())).problems
     assert any(p.startswith("amount:") for p in untold)  # no tool said it: invented
+
+
+def test_order_below_minimum_passes_the_quote_s_own_figures_and_fails_an_invented_one() -> None:
+    """B96 on the real case file: 12 x 2450 = 29400, $600 short of the Centro minimum."""
+    below = load_case(CASES_DIR / "order-below-minimum.yaml")
+    told = frozenset({2_940_000, 3_000_000, 60_000})  # what prepare_order's result names
+    said = AssistantText("Con 12 te da $29.400 y te faltan $600 para el mínimo.")
+    honest = state(**BELOW, shown=(said,), tool_amounts=told)
+    assert grade(below, honest).passed
+    invented = replace(honest, shown=(AssistantText("Te las dejo a $500."),))
+    assert [p for p in grade(below, invented).problems if p.startswith("amount:")] != []
 
 
 def test_a_case_that_moves_the_price_still_passes_what_was_shown_before_the_move() -> None:

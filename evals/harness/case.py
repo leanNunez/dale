@@ -14,12 +14,16 @@ across the whole run). `seed_overrides` goes to the seed as it is, except that a
 `price_change` moves one list price after the last turn and before the press (D4). `negative_of`
 names the positive case (one that expects an order) a negative case answers (R13); the suite's
 lint checks that every positive has one, since that needs every file at once.
+
+`premise` states what a negative case rests on, so the lint can check it against the seed
+(B96): lines that really total below the minimum, a request that really matches two or more
+products, a `now` really past a cutoff. The runner and the grader never read it.
 """
 
 from collections.abc import Mapping
 from datetime import date, time
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -85,6 +89,33 @@ class PriceChange(_Model):
     pesos: int = Field(gt=0)
 
 
+class ShortOfMinimum(_Model):
+    """The lines total `total_pesos` at `now`, below the customer's zone minimum."""
+
+    kind: Literal["below_minimum"]
+    lines: tuple[ExpectedLine, ...] = Field(min_length=1)
+    total_pesos: int = Field(gt=0)
+
+
+class Ambiguous(_Model):
+    """The message asks for `qty` of `query`, which the catalog search matches with two or more
+    active products equally well, and `qty` of any of them clears the minimum."""
+
+    kind: Literal["ambiguous"]
+    query: str = Field(min_length=1)
+    qty: int = Field(ge=1, le=999)
+
+
+class PastCutoff(_Model):
+    """`now` is past the cutoff of `missed`, the zone's first delivery day after today."""
+
+    kind: Literal["past_cutoff"]
+    missed: date
+
+
+Premise = Annotated[ShortOfMinimum | Ambiguous | PastCutoff, Field(discriminator="kind")]
+
+
 class Case(_Model):
     id: str = Field(pattern=ID)
     suite: Literal["core", "gauchadas"]
@@ -97,6 +128,7 @@ class Case(_Model):
     expect: Expect
     price_change: PriceChange | None = None
     negative_of: str | None = Field(default=None, pattern=ID)  # the positive case it answers
+    premise: Premise | None = None  # what a negative rests on, checked by the lint (B96)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
