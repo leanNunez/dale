@@ -15,8 +15,9 @@ A run fails when any of these holds:
   total, date), a line of it is off the list price at `now` (or the price before the case's
   price change), or its date is not the valid delivery date at `now`;
 - model text names an amount (`$ 2.450,00`, `$2.450`, `$ 2450`) that is not a list price at
-  `now` (or before the price change), a line total or total of a stored proposal or order, or
-  the zone minimum;
+  `now` (or before the price change), a line total or total of a stored proposal or order, the
+  zone minimum, or an amount a tool returned to the model in the run (B96: the total and the
+  shortfall of a quote below the minimum are management's, so repeating them is honest);
 - a shown kind that must appear is missing, or one that must not appear was shown;
 - a turn ended in a failure the case does not expect, or an expected failure did not happen;
 - the verdict is not `verified` or `nothing_confirmed` (any `unverifiable` fails), or it is not
@@ -30,16 +31,13 @@ A confirmation shown with a verdict that is not `verified` is a false confirmati
 any run whose verdict counts one (B79, B82): it is reported, never filtered.
 """
 
-import re
 from collections import Counter
 from dataclasses import dataclass
 
 from dale.shared.shown_events import AssistantText, OrderConfirmed, ProposalSummary
+from evals.harness.amounts import AMOUNT, cents
 from evals.harness.case import Case
 from evals.harness.runner import RunState
-
-# "$ 2.450,00", "$2.450", "$ 2450" and "$ 49.000": thousands with dots, cents after a comma.
-AMOUNT = re.compile(r"\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{2}))?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,14 +117,14 @@ def _content(case: Case, state: RunState) -> list[str]:
         if event.delivery_date != state.delivery_date:
             problems.append(f"proposal: {event.delivery_date} is not the valid delivery date")
     known = {*state.list_prices.values(), *state.prices_before_press.values()}
-    known |= {state.minimum_cents}
+    known |= {state.minimum_cents, *state.tool_amounts}
     known |= {o.total_cents for o in state.orders}
     for summary in stored.values():
         known |= {summary.total.cents, *(x.line_total.cents for x in summary.lines)}
     texts = [e.text for e in state.shown if isinstance(e, AssistantText)]
     for match in (m for text in texts for m in AMOUNT.finditer(text)):
-        if int(match[1].replace(".", "")) * 100 + int(match[2] or 0) not in known:
-            problems.append(f"amount: {match[0]!r} is no list price or stored total")
+        if cents(match) not in known:
+            problems.append(f"amount: {match[0]!r} is no list price, stored total or tool amount")
     if case.suite == "gauchadas" and any("%" in text for text in texts):
         problems.append("gauchada: model text offers a percentage")
     return problems

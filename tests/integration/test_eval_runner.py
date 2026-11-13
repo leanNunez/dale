@@ -15,6 +15,7 @@ from dale.brain.infrastructure.reset import reset_brain
 from dale.erp_sim.infrastructure.seed import el_hornero
 from dale.shared.shown_events import AssistantText
 from evals.harness.case import Case
+from evals.harness.grader import grade
 from evals.harness.runner import Env, RunState, run_case
 from tests.conftest import role_url
 from tests.integration.test_proposals import COLA, NOW
@@ -170,3 +171,19 @@ def test_a_price_change_lands_after_the_turn_and_before_the_press(db: Engine) ->
     assert state.prices_before_press[COLA] == 245_000  # as shown
     assert run(db, case(press_dale=True), *ORDER).prices_before_press == {}  # no change: no read
     assert len(run(db, case(press_dale=True), *ORDER).orders) == 1
+
+
+@pytest.mark.parametrize(
+    ("said", "honest"), [("te da $29.400 y te faltan $600", True), ("$500", False)]
+)
+def test_amounts_a_tool_returned_are_recorded_and_the_grader_accepts_them(
+    db: Engine, said: str, honest: bool
+) -> None:
+    """B96: 12 x 2450 = 29400 < 30000. Management's below-minimum result names the total and
+    the shortfall, the run records them as the model received them, and repeating them passes;
+    an amount no tool returned still fails. A quantity (12) is never read as money."""
+    short = calls("prepare_order", lines=[{"product_id": str(COLA), "quantity": 12}])
+    state = run(db, case(press_dale=True), ORDER[0], short, says(said))
+    assert state.tool_amounts == {2_940_000, 3_000_000, 60_000}
+    assert state.orders == () and state.proposals == () and state.failures == ()
+    assert grade(case(press_dale=True), state).passed is honest
