@@ -137,3 +137,17 @@ def test_the_brain_reset_clears_one_company_only(db: Engine) -> None:
 def test_an_unknown_customer_fails_the_run(db: Engine) -> None:
     with pytest.raises(ValueError, match="not an active customer"):
         run(db, case(customer="C-999"), says("x"))
+
+
+class Finishing(ScriptedModel):
+    finished = 0
+
+    def finish(self) -> None:
+        self.finished += 1
+
+
+def test_a_model_with_finish_is_told_once_the_whole_run_is_over(db: Engine) -> None:
+    """Replay fails the run there on an unused step; record writes its file only then."""
+    model = Finishing(says("hola"))
+    run_case(case(), Env(db, role_url("dale_verifier")), lambda: model)
+    assert model.finished == 1
