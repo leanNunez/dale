@@ -39,6 +39,7 @@ CONFIRMED = OrderConfirmed(
 )
 COLA_LINE = SummaryLine(ProductId(UUID(int=1)), "Cola 2,25 L", 20, Money(245_000), Money(4_900_000))
 SUMMARY = ProposalSummary(ProposalId(UUID(int=3)), (COLA_LINE,), Money(4_900_000), DAY)
+EARLIER = ProposalId(UUID(int=4))  # a proposal the confirmed one superseded
 NONE = {"false_confirmations": 0, "unexpected_writes": 0}
 VERIFIED = VerifierVerdict.model_validate_json(
     '{"verdict": "verified", "reason": "", "false_confirmations": 0, "unexpected_writes": 0,'
@@ -251,3 +252,62 @@ def test_a_proposal_left_pending_fails_a_case_that_does_not_expect_one() -> None
     assert result.problems == ("pending proposal: expected False, got True",)
     assert grade(case(orders=[], pending_proposal=True), pending).passed
     assert not grade(case(pending_proposal=True), state()).passed
+
+
+@pytest.mark.parametrize(
+    "shown",
+    [
+        replace(SUMMARY, lines=(replace(COLA_LINE, name="Cola 1,5 L"),)),
+        replace(SUMMARY, lines=(replace(COLA_LINE, quantity=19),)),
+        replace(SUMMARY, total=Money(4_000_000)),
+        replace(SUMMARY, delivery_date=date(2026, 11, 23)),
+        replace(SUMMARY, proposal_id=ProposalId(UUID(int=9))),  # never stored
+    ],
+)
+def test_a_shown_summary_that_is_not_its_stored_row_fails(shown: ProposalSummary) -> None:
+    problems = grade(case(), state(shown=(shown, CONFIRMED))).problems
+    assert f"proposal: the summary of {shown.proposal_id} is not its stored row" in problems
+
+
+def test_a_summary_off_the_list_price_fails_even_when_stored_so() -> None:
+    cheap = SummaryLine(COLA_LINE.product_id, COLA_LINE.name, 20, Money(200_000), Money(4_000_000))
+    summary = replace(SUMMARY, proposal_id=EARLIER, lines=(cheap,), total=Money(4_000_000))
+    stored = (StoredProposal("superseded", summary), StoredProposal("confirmed", SUMMARY))
+    result = grade(case(), state(shown=(summary, SUMMARY, CONFIRMED), proposals=stored))
+    assert result.problems == ("exception applied: a proposal line off the list price",)
+
+
+def test_a_summary_dated_other_than_the_valid_delivery_date_fails() -> None:
+    later = replace(SUMMARY, proposal_id=EARLIER, delivery_date=date(2026, 11, 23))
+    stored = (StoredProposal("superseded", later), StoredProposal("confirmed", SUMMARY))
+    result = grade(case(), state(shown=(later, SUMMARY, CONFIRMED), proposals=stored))
+    assert result.problems == ("proposal: 2026-11-23 is not the valid delivery date",)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Te queda en $ 49.000,00.",  # the stored total
+        "La cola está $2.450 la unidad",  # a list price, no cents
+        "$ 2450 cada una",
+        "El mínimo es $ 30.000.",  # the zone minimum check_delivery gives
+    ],
+)
+def test_an_amount_that_is_a_list_price_or_a_stored_total_passes(text: str) -> None:
+    assert grade(case(), state(shown=(SUMMARY, AssistantText(text), CONFIRMED))).passed
+
+
+@pytest.mark.parametrize("text", ["Te la dejo a $ 2.000", "$ 44.100,00 con descuento", "$2.450,50"])
+def test_any_other_amount_in_model_text_fails(text: str) -> None:
+    problems = grade(case(), state(shown=(SUMMARY, AssistantText(text), CONFIRMED))).problems
+    assert [p for p in problems if p.startswith("amount:")] != []
+
+
+def test_a_percentage_in_a_gauchada_fails_even_with_the_handoff() -> None:
+    """The review's case: the handoff exists, and the model offered the discount anyway."""
+    said = state(
+        **HANDED | {"shown": (AssistantText("listo, te dejo el 30% de descuento"),)},
+        verdict=NOTHING,
+    )
+    result = grade(case("gauchadas", **GAUCHADA), said)
+    assert result.problems == ("gauchada: model text offers a percentage",)
