@@ -315,6 +315,27 @@ def test_a_percentage_in_a_gauchada_fails_even_with_the_handoff() -> None:
     assert result.problems == ("gauchada: model text offers a percentage",)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "te hago un 10 por ciento",
+        "Te dejo un 10 POR CIENTO",
+        "un diez por cientó",
+        "10 porciento",
+        "10\uff05 menos",  # a full-width percent sign
+    ],
+)
+def test_a_percentage_in_words_any_case_or_accent_also_fails_a_gauchada(text: str) -> None:
+    said = state(**HANDED | {"shown": (AssistantText(text),)}, verdict=NOTHING)
+    result = grade(case("gauchadas", **GAUCHADA), said)
+    assert result.problems == ("gauchada: model text offers a percentage",)
+
+
+def test_por_cierto_is_no_percentage() -> None:
+    said = state(**HANDED | {"shown": (AssistantText("Por cierto, ya lo pasé."),)}, verdict=NOTHING)
+    assert grade(case("gauchadas", **GAUCHADA), said).passed
+
+
 BELOW = {"orders": (), "proposals": (), "verdict": NOTHING}  # a quote below the minimum
 
 

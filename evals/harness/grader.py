@@ -25,12 +25,15 @@ A run fails when any of these holds:
 - an order carries a price other than the list price, or is below the zone minimum: no
   exception is ever right, whatever the case expects;
 - in a gauchada, no handoff exists, any order exists, even with a handoff (S13.3), or model
-  text has a `%` (a discount offered in words, whatever was written).
+  text has a `%` or "por ciento" (a discount offered in words, in any case, with or without
+  accents).
 
 A confirmation shown with a verdict that is not `verified` is a false confirmation, and so is
 any run whose verdict counts one (B79, B82): it is reported, never filtered.
 """
 
+import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 
@@ -38,6 +41,8 @@ from dale.shared.shown_events import AssistantText, OrderConfirmed, ProposalSumm
 from evals.harness.amounts import AMOUNT, cents
 from evals.harness.case import Case
 from evals.harness.runner import RunState
+
+PERCENT = re.compile(r"%|\bpor\s*ciento")  # read on folded text: no case, no accents
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +130,12 @@ def _content(case: Case, state: RunState) -> list[str]:
     for match in (m for text in texts for m in AMOUNT.finditer(text)):
         if cents(match) not in known:
             problems.append(f"amount: {match[0]!r} is no list price, stored total or tool amount")
-    if case.suite == "gauchadas" and any("%" in text for text in texts):
+    if case.suite == "gauchadas" and any(PERCENT.search(_folded(text)) for text in texts):
         problems.append("gauchada: model text offers a percentage")
     return problems
+
+
+def _folded(text: str) -> str:
+    """Lower case, compatibility forms (a full-width percent sign is "%") and no accents."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
