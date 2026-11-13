@@ -20,7 +20,7 @@ from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.infrastructure.repositories import SqlOrderData
 from dale.erp_sim.infrastructure.seed import el_hornero
-from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, QuoteLine
+from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, OrderLine
 from dale.shared.clock import FrozenClock
 from dale.shared.errors import ERROR_MESSAGES, ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
@@ -72,7 +72,7 @@ def test_a_valid_proposal_stores_one_order_and_the_message_comes_from_it(app: En
     assert isinstance(result, Ok)
     done = result.value
     assert (done.proposal_id, done.customer_id) == (request.proposal_id, request.customer_id)
-    assert done.lines == (QuoteLine(COLA, 20, Money(245_000), Money(4_900_000)),)
+    assert done.lines == (OrderLine(COLA, 20, Money(245_000), Money(4_900_000)),)
     assert (done.total, done.delivery_date, done.received_at) == (Money(4_900_000), THURSDAY, NOW)
     assert done.message == (
         "Listo, tu pedido quedó confirmado por $ 49.000,00. Entrega programada: jueves 19/11/2026."

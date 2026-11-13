@@ -20,7 +20,8 @@ INSERT INTO erp.sales_order_line VALUES ('{C}', '{C}', '{C}', '{C}', 2, 150000, 
 INSERT INTO brain.conversation VALUES ('{C}', '{C}', '{C}', 'terminal', now());
 INSERT INTO brain.order_proposal
   VALUES ('{C}', '{C}', '{C}', '{C}', 'prepared', NULL, NULL, '2026-11-17', 300000, now());
-INSERT INTO brain.order_proposal_line VALUES ('{C}', '{C}', '{C}', '{C}', 2, 150000, 300000);
+INSERT INTO brain.order_proposal_line
+  VALUES ('{C}', '{C}', '{C}', '{C}', 2, 150000, 300000, 'Cola');
 INSERT INTO brain.handoff_request VALUES ('{C}', '{C}', '{C}', '{C}', 'complaint', '', now());
 """
 # (constraint that must reject it, statement run after BASELINE)
@@ -83,6 +84,14 @@ BAD_ROWS = [
     (
         "ck_order_proposal_line_line_total_cents",
         "UPDATE brain.order_proposal_line SET line_total_cents = 1",
+    ),
+    (
+        "ck_order_proposal_line_product_name",
+        "UPDATE brain.order_proposal_line SET product_name = ''",
+    ),
+    (
+        "ck_order_proposal_line_product_name",
+        "UPDATE brain.order_proposal_line SET product_name = ' '",
     ),
     ("ck_handoff_request_reason", "UPDATE brain.handoff_request SET reason = 'vip'"),
     ("ck_handoff_request_note", "UPDATE brain.handoff_request SET note = repeat('x', 501)"),

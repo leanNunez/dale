@@ -29,11 +29,20 @@ class ShownLine:
 
 
 @dataclass(frozen=True, slots=True)
+class SummaryLine:
+    product_id: ProductId
+    name: str  # stored from management's quote (B61): catalog data, shown as plain text
+    quantity: int
+    unit_price: Money
+    line_total: Money
+
+
+@dataclass(frozen=True, slots=True)
 class ProposalSummary:
     """Built from the stored proposal, re-read after the write (S3.3)."""
 
     proposal_id: ProposalId
-    lines: tuple[ShownLine, ...]
+    lines: tuple[SummaryLine, ...]
     total: Money
     delivery_date: date
 

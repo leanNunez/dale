@@ -25,6 +25,7 @@ class QuoteRequest:
 @dataclass(frozen=True, slots=True)
 class QuoteLine:
     product_id: ProductId
+    name: str  # management's catalog name, brand and size: data to show, never from a caller
     quantity: int
     unit_price: Money  # the current server price; never one supplied by a caller
     line_total: Money
@@ -37,6 +38,14 @@ class Quote:
     total: Money
     delivery_date: date
     quoted_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OrderLine:
+    product_id: ProductId
+    quantity: int
+    unit_price: Money
+    line_total: Money
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +95,7 @@ class OrderConfirmation:
     order_id: OrderId
     proposal_id: ProposalId
     customer_id: CustomerId
-    lines: tuple[QuoteLine, ...]  # ordered by product id, then quantity
+    lines: tuple[OrderLine, ...]  # ordered by product id, then quantity
     total: Money
     delivery_date: date
     received_at: datetime

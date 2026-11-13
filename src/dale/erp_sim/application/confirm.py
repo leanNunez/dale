@@ -18,7 +18,7 @@ from sqlalchemy.exc import DBAPIError
 
 from dale.erp_sim.application.quote import RuleData, rules_unavailable
 from dale.erp_sim.domain.rules import Evaluation, PricedLine, QuotedLine, evaluate_order
-from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, QuoteLine
+from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, OrderLine
 from dale.shared.clock import Clock
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId, IdGenerator, OrderId, ProposalId
@@ -143,7 +143,7 @@ def _confirmation(order: Order) -> OrderConfirmation:
         f" Entrega programada: {WEEKDAYS[day.weekday()]} {day:%d/%m/%Y}."
     )
     lines = tuple(
-        QuoteLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in order.lines
+        OrderLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in order.lines
     )
     head = (order.id, order.proposal_id, order.customer_id)
     return OrderConfirmation(*head, lines, total, day, order.received_at, message)

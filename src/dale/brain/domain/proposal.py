@@ -20,6 +20,7 @@ class ProposalStatus(StrEnum):
 @dataclass(frozen=True, slots=True)
 class ProposalLine:
     product_id: ProductId
+    name: str  # management's catalog name from the quote, never from the model (B61)
     quantity: int
     unit_price: Money  # frozen from erp_sim.quote; no tool input carries a price
     line_total: Money

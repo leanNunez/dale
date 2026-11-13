@@ -14,7 +14,7 @@ from dale.shared.money import Money
 SESSION = SessionContext(
     CompanyId(UUID(int=1)), CustomerId(UUID(int=2)), ConversationId(UUID(int=3))
 )
-LINE = ProposalLine(ProductId(UUID(int=4)), 2, Money(245_000), Money(490_000))
+LINE = ProposalLine(ProductId(UUID(int=4)), "Gaseosa cola", 2, Money(245_000), Money(490_000))
 AT = datetime.fromisoformat("2026-11-18T12:00:00+00:00")
 
 

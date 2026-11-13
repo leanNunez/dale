@@ -29,11 +29,11 @@ from dale.brain.application.tools import (
 )
 from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
-from dale.erp_sim.public import OrderConfirmation, QuoteLine
+from dale.erp_sim.public import OrderConfirmation, OrderLine
 from dale.shared.errors import ErrorCode
 from dale.shared.ids import OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
-from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownLine
+from dale.shared.shown_events import HandoffNotice, ProposalSummary, SummaryLine
 from tests.unit.brain.fakes import (
     COLA,
     COLA15,
@@ -41,6 +41,7 @@ from tests.unit.brain.fakes import (
     CUSTOMER,
     DAY,
     MATCHES,
+    NAME,
     NOW,
     PACK,
     PRICES,
@@ -222,8 +223,23 @@ def test_an_id_no_tool_returned_is_rejected_before_quoting(product_id: str) -> N
     assert [name for name, _ in erp.calls] == ["search_products"] and proposals.saved == []
 
 
+def test_product_names_come_from_the_quote_and_the_model_cannot_supply_one() -> None:
+    """B61: the stored lines carry management's names; a name in the tool input is refused."""
+    proposals = FakeProposals()
+    t = tools(proposals=proposals)
+    t.run("search_products", {"query": "cola"})
+    named = {"lines": [{"product_id": str(COLA), "quantity": 20, "name": "Cola gratis"}]}
+    assert error_code(t.run("prepare_order", named).content) == "invalid_tool_input"
+    outcome = t.run("prepare_order", prepare((COLA, 20)))
+    [(_, saved)] = proposals.saved
+    [summary] = outcome.shown
+    assert isinstance(summary, ProposalSummary)
+    assert [x.name for x in saved.lines] == [x.name for x in summary.lines] == [NAME]
+    assert NAME not in outcome.content  # the model sees ids, never the stored names
+
+
 def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
-    line = ProposalLine(COLA15, 3, Money(185_000), Money(555_000))  # what the store returns
+    line = ProposalLine(COLA15, "Cola 1,5", 3, Money(185_000), Money(555_000))  # as stored
     first_id = ProposalId(SequentialIdGenerator().new_id())
     later = DAY + timedelta(days=7)  # not the quote's date: what is shown is what was stored
     stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), later, NOW)
@@ -239,7 +255,7 @@ def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
     )
     assert [x.unit_price for x in saved.lines] == [PRICES[COLA], PRICES[PACK]]  # from `quote`
     assert saved.total == Money(6_280_000) and saved.status is ProposalStatus.PREPARED
-    shown = (ShownLine(COLA15, 3, Money(185_000), Money(555_000)),)
+    shown = (SummaryLine(COLA15, "Cola 1,5", 3, Money(185_000), Money(555_000)),)
     assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), later),)
     body = json.loads(outcome.content)
     assert body["confirmed"] is False and body["note"] == NOT_CONFIRMED
@@ -298,9 +314,9 @@ def test_a_failed_handoff_write_tells_the_model_and_promises_nothing(
         tools(handoffs=bug).run("request_human_handoff", handoff())
 
 
-ONE, EARLIER_ID = ProposalLine(COLA, 1, PRICES[COLA], PRICES[COLA]), ProposalId(UUID(int=41))
+ONE, EARLIER_ID = ProposalLine(COLA, NAME, 1, PRICES[COLA], PRICES[COLA]), ProposalId(UUID(int=41))
 EARLIER = OrderProposal.prepared(EARLIER_ID, SESSION, (ONE,), ONE.line_total, DAY, NOW)
-QUOTED = QuoteLine(COLA, 1, ONE.unit_price, ONE.line_total)
+QUOTED = OrderLine(COLA, 1, ONE.unit_price, ONE.line_total)
 ORDERED = OrderConfirmation(
     OrderId(UUID(int=51)), EARLIER_ID, CUSTOMER, (QUOTED,), ONE.line_total, DAY, NOW, "Listo."
 )

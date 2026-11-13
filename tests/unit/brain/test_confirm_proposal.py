@@ -18,16 +18,16 @@ from dale.brain.application import tools
 from dale.brain.application.confirm_proposal import ConfirmProposal
 from dale.brain.application.ports import ErpPort
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
-from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, QuoteLine
+from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, OrderLine
 from dale.shared.customer_input import CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode, Failure, Ok, Result, message_for
 from dale.shared.ids import CompanyId, ConversationId, CustomerId, OrderId, ProposalId
 from dale.shared.money import Money
 from dale.shared.shown_events import OrderConfirmed, OrderRejected, ShownLine, SystemNotice
-from tests.unit.brain.fakes import COLA, COMPANY, CUSTOMER, DAY, NOW, SESSION
+from tests.unit.brain.fakes import COLA, COMPANY, CUSTOMER, DAY, NAME, NOW, SESSION
 
 PID, ORDER, LATER = ProposalId(UUID(int=21)), OrderId(UUID(int=31)), DAY + timedelta(days=7)
-LINE = ProposalLine(COLA, 20, Money(245_000), Money(4_900_000))
+LINE = ProposalLine(COLA, NAME, 20, Money(245_000), Money(4_900_000))
 STORED = OrderProposal.prepared(PID, SESSION, (LINE,), LINE.line_total, DAY, NOW)
 SHOWN = ConfirmRequest(
     PID, CUSTOMER, (ConfirmLine(COLA, 20, Money(245_000)),), DAY, LINE.line_total
@@ -36,7 +36,7 @@ DONE = OrderConfirmation(  # its date differs on purpose: what is shown is manag
     order_id=ORDER,
     proposal_id=PID,
     customer_id=CUSTOMER,
-    lines=(QuoteLine(COLA, 20, Money(245_000), Money(4_900_000)),),
+    lines=(OrderLine(COLA, 20, Money(245_000), Money(4_900_000)),),
     total=Money(4_900_000),
     delivery_date=LATER,
     received_at=NOW,

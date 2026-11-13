@@ -19,16 +19,18 @@ from dale.shared.shown_events import (
     ProposalSummary,
     ShownEvent,
     ShownLine,
+    SummaryLine,
     SystemNotice,
     from_json,
     to_json,
 )
 
 LINE = ShownLine(ProductId(UUID(int=7)), 20, Money(245_000), Money(4_900_000))
+NAMED = SummaryLine(LINE.product_id, "Gaseosa cola", 20, LINE.unit_price, LINE.line_total)
 PROPOSAL, DAY = ProposalId(UUID(int=1)), date(2026, 11, 19)
 EVENTS: list[ShownEvent] = [
     AssistantText("te armé una propuesta, confirmá con Dale"),
-    ProposalSummary(PROPOSAL, (LINE, LINE), Money(9_800_000), DAY),
+    ProposalSummary(PROPOSAL, (NAMED, NAMED), Money(9_800_000), DAY),
     OrderConfirmed(OrderId(UUID(int=2)), PROPOSAL, (LINE,), Money(4_900_000), DAY, "Listo."),
     OrderRejected(PROPOSAL, ErrorCode.PRICE_CHANGED, message_for(ErrorCode.PRICE_CHANGED)),
     HandoffNotice("Una persona del equipo va a revisar tu pedido."),
@@ -52,6 +54,7 @@ def test_wire_form_is_plain_json() -> None:
     assert wire["type"] == "ProposalSummary" and wire["delivery_date"] == "2026-11-19"
     assert wire["lines"][0] == {
         "product_id": str(UUID(int=7)),
+        "name": "Gaseosa cola",
         "quantity": 20,
         "unit_price": {"cents": 245_000},
         "line_total": {"cents": 4_900_000},
