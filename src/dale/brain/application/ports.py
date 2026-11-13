@@ -68,6 +68,10 @@ class LockedProposals(Protocol):
         """Moves exactly one proposal in status `was` (prepared by default), or raises."""
         ...
 
+    def withdraw(self, proposal_id: ProposalId) -> None:
+        """Supersedes exactly one prepared proposal that was never shown (B75), or raises."""
+        ...
+
 
 class ProposalRepository(Protocol):
     def locked(
