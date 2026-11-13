@@ -174,8 +174,9 @@ def test_ambiguous_search_shows_every_match_and_reads_use_the_session() -> None:
     t = tools(erp)
     found = json.loads(t.run("search_products", {"query": "cola"}).content)["products"]
     assert [p["product_id"] for p in found] == [str(m.product_id) for m in MATCHES]  # S1.3
-    assert found[0] == {"product_id": str(COLA), "name": "Gaseosa cola", "brand": "Burbuja"} | {
-        "size": "1 L"
+    assert found[0] == {"product_id": str(COLA)} | {  # catalog free text is fenced (B62)
+        k: f"<catalog_text>{v}</catalog_text>"
+        for k, v in {"name": "Gaseosa cola", "brand": "Burbuja", "size": "1 L"}.items()
     }
     prices = json.loads(t.run("get_prices", {"product_ids": [str(COLA)]}).content)
     assert prices == {"prices": [{"product_id": str(COLA), "unit_price": "$ 2.450,00"}]}

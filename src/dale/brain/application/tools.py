@@ -15,6 +15,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from dale.brain.application.fencing import catalog_text as fenced
 from dale.brain.application.ports import ErpPort, HandoffPort, ProposalRepository
 from dale.brain.application.shown import order_confirmed
 from dale.brain.domain.handoff import MAX_NOTE, MODEL_REASONS, HandoffReason
@@ -195,8 +196,13 @@ class Tools:
         if isinstance(found, Failure):
             return _error(found.code)
         self._ledger.record(m.product_id for m in found.value)
-        rows = [
-            _line(m.product_id, name=m.name, brand=m.brand, size=m.presentation)
+        rows = [  # catalog free text is data, fenced like customer text (B62)
+            _line(
+                m.product_id,
+                name=fenced(m.name),
+                brand=fenced(m.brand),
+                size=fenced(m.presentation),
+            )
             for m in found.value
         ]
         return _ok({"products": rows})
