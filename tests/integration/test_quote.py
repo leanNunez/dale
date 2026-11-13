@@ -18,7 +18,7 @@ from dale.erp_sim.infrastructure.repositories import SqlRuleData, of_company
 from dale.erp_sim.infrastructure.seed import el_hornero
 from dale.erp_sim.public import ErpFacade, Quote, QuoteLineRequest, QuoteRequest
 from dale.shared.clock import FrozenClock
-from dale.shared.errors import ErrorCode, Failure, Ok, Result
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId, ProductId
 from dale.shared.money import Money
 
@@ -68,7 +68,6 @@ def test_seeded_cutoffs_and_current_prices(
         (NOW, "C-999", [("COLA-225", 20)], ErrorCode.CUSTOMER_NOT_FOUND),  # unknown
         (NOW, "C-001", [("COLA-225", 20), ("GASE-VIE", 1)], ErrorCode.PRODUCT_NOT_FOUND),
         (NOW, "C-001", [("COLA-225", 20), ("NOPE-1", 1)], ErrorCode.PRODUCT_NOT_FOUND),
-        (NOW, "C-001", [("COLA-225", 12)], ErrorCode.BELOW_MINIMUM_AMOUNT),  # $29,400 < $30,000
         (EARLY, "C-001", [("COLA-225", 20)], ErrorCode.PRICE_NOT_AVAILABLE),
     ],
 )
@@ -76,6 +75,12 @@ def test_rule_failures_on_seeded_data(
     app: Engine, now: datetime, customer: str, lines: list[tuple[str, int]], code: ErrorCode
 ) -> None:
     assert ask(app, now, customer, *lines) == Failure(code)
+
+
+def test_a_quote_below_the_minimum_carries_the_seeded_total_and_minimum(app: Engine) -> None:
+    """S2.1: $29.400 < $30.000. B96: the figures the model may repeat come from management."""
+    found = ask(app, NOW, "C-001", ("COLA-225", 12))
+    assert found == BelowMinimum(ErrorCode.BELOW_MINIMUM_AMOUNT, Money(2_940_000), Money(3_000_000))
 
 
 def test_quote_writes_nothing_and_fails_closed_only_on_database_errors(

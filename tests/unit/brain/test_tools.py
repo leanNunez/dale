@@ -29,9 +29,9 @@ from dale.brain.application.tools import (
 )
 from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
-from dale.erp_sim.public import OrderConfirmation, OrderLine
-from dale.shared.errors import ErrorCode
-from dale.shared.ids import OrderId, ProposalId, SequentialIdGenerator
+from dale.erp_sim.public import OrderConfirmation, OrderLine, Quote, QuoteRequest
+from dale.shared.errors import BelowMinimum, ErrorCode, Result
+from dale.shared.ids import CompanyId, OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
 from dale.shared.shown_events import HandoffNotice, ProposalSummary, SummaryLine
 from tests.unit.brain.fakes import (
@@ -295,6 +295,28 @@ def test_a_written_handoff_alone_shows_the_promise_of_a_person(note: str, stored
     assert not outcome.is_error and outcome.shown == (HandoffNotice(HANDOFF_NOTICE),)
     assert json.loads(outcome.content) == {"recorded": True, "note": HANDOFF_RECORDED}
     assert "una persona" in HANDOFF_NOTICE.lower() and erp.calls == [] == proposals.saved
+
+
+class ShortErp(FakeErp):
+    def quote(self, company_id: CompanyId, request: QuoteRequest) -> Result[Quote]:
+        code = ErrorCode.BELOW_MINIMUM_AMOUNT
+        return BelowMinimum(code, Money(2_940_000), Money(3_000_000))
+
+
+def test_a_total_below_the_minimum_comes_back_with_management_s_own_figures() -> None:
+    """B96: the model may repeat the total and the shortfall; it never computes them."""
+    proposals = FakeProposals()
+    t = tools(ShortErp(), proposals)
+    t.run("search_products", {"query": "cola"})
+    outcome = t.run("prepare_order", prepare((COLA, 12)))
+    assert outcome.is_error and outcome.shown == () and proposals.saved == []
+    assert json.loads(outcome.content) == {
+        "code": "below_minimum_amount",
+        "message": "El pedido no llega al mínimo de tu zona. Sumá algo más.",
+        "total": "$ 29.400,00",
+        "minimum": "$ 30.000,00",
+        "missing": "$ 600,00",
+    }
 
 
 @pytest.mark.parametrize("error", [OperationalError, InterfaceError])

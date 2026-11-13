@@ -2,7 +2,8 @@
 
 Strict mode takes no length or range keywords, so the schemas state the bounds in prose and
 the handlers check them again. Company and customer come only from the SessionContext (D2);
-prices, totals and dates only from `quote`.
+prices, totals and dates only from `quote`. A total below the minimum comes back with
+management's own total, minimum and shortfall, so the model never computes an amount (B96).
 """
 
 import json
@@ -22,9 +23,9 @@ from dale.brain.domain.handoff import MAX_NOTE, MODEL_REASONS, HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine
 from dale.brain.domain.session import GroundingLedger, SessionContext
 from dale.erp_sim.public import OrderConfirmation, QuoteLineRequest, QuoteRequest
-from dale.shared.errors import ErrorCode, Failure, Ok, message_for
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok, message_for
 from dale.shared.ids import CompanyId, IdGenerator, ProductId, new_proposal_id
-from dale.shared.money import pesos
+from dale.shared.money import Money, pesos
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
 from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownEvent, SummaryLine
 
@@ -136,8 +137,9 @@ def _ok(payload: dict[str, Any], *shown: ShownEvent) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), False, shown)
 
 
-def _error(code: ErrorCode) -> ToolOutcome:
+def _error(code: ErrorCode, **amounts: Money) -> ToolOutcome:
     payload = {"code": code.value, "message": message_for(code)}
+    payload |= {name: pesos(amount) for name, amount in amounts.items()}
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), True)
 
 
@@ -235,8 +237,11 @@ class Tools:
             return _error(ErrorCode.UNGROUNDED_PRODUCT)  # checked before anything is quoted
         asked = tuple(QuoteLineRequest(i, x.quantity) for i, x in zip(ids, data.lines, strict=True))
         quoted = self._erp.quote(company, QuoteRequest(self._session.customer_id, asked))
+        if isinstance(quoted, BelowMinimum):  # S3.2: nothing is stored
+            short = {"total": quoted.total, "minimum": quoted.minimum, "missing": quoted.shortfall}
+            return _error(quoted.code, **short)
         if isinstance(quoted, Failure):
-            return _error(quoted.code)  # S3.2: nothing is stored
+            return _error(quoted.code)
         q, new_id = quoted.value, new_proposal_id(self._ids)
         lines = tuple(
             ProposalLine(x.product_id, x.name, x.quantity, x.unit_price, x.line_total)

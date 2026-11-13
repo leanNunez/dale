@@ -9,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from dale.erp_sim.domain.rules import Customer, PricedLine, Zone, delivery_date, evaluate_order
-from dale.shared.errors import ErrorCode, Failure, Ok
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok
 from dale.shared.ids import CustomerId, ProductId
 from dale.shared.money import Money
 
@@ -55,8 +55,6 @@ def test_today_is_the_company_date_and_a_naive_now_is_refused() -> None:
 @pytest.mark.parametrize(
     ("lines", "code"),
     [
-        ([line(cents=2_999_999)], ErrorCode.BELOW_MINIMUM_AMOUNT),  # S2.1/S2.4: one cent short
-        ([line(cents=1_000_000), line(cents=1_999_999)], ErrorCode.BELOW_MINIMUM_AMOUNT),
         ([line(0)], ErrorCode.INVALID_QUANTITY),
         ([line(1000)], ErrorCode.INVALID_QUANTITY),
         ([line(True)], ErrorCode.INVALID_QUANTITY),
@@ -67,6 +65,31 @@ def test_today_is_the_company_date_and_a_naive_now_is_refused() -> None:
 )
 def test_rule_failures_return_their_catalog_code(lines: list[PricedLine], code: ErrorCode) -> None:
     assert evaluate_order(CUSTOMER, TUESDAYS, lines, ba(12, 9)) == Failure(code)
+
+
+@pytest.mark.parametrize(
+    "lines", [[line(cents=2_999_999)], [line(cents=10**6), line(cents=1_999_999)]]
+)
+def test_a_total_below_the_minimum_comes_back_with_the_total_and_the_minimum(
+    lines: list[PricedLine],
+) -> None:
+    """S2.1/S2.4: one cent short. B96: management's own figures, so no caller computes one."""
+    result = evaluate_order(CUSTOMER, TUESDAYS, lines, ba(12, 9))
+    assert result == BelowMinimum(
+        ErrorCode.BELOW_MINIMUM_AMOUNT, Money(2_999_999), Money(3 * 10**6)
+    )
+    assert isinstance(result, BelowMinimum) and result.shortfall == Money(1)
+    assert result.message == Failure(ErrorCode.BELOW_MINIMUM_AMOUNT).message
+
+
+@pytest.mark.parametrize(
+    ("code", "total"), [(ErrorCode.PRICE_CHANGED, 1), (ErrorCode.BELOW_MINIMUM_AMOUNT, 3 * 10**6)]
+)
+def test_below_minimum_carries_its_own_code_and_a_total_below_the_minimum(
+    code: ErrorCode, total: int
+) -> None:
+    with pytest.raises(ValueError, match="below its minimum"):
+        BelowMinimum(code, Money(total), Money(3 * 10**6))
 
 
 def test_exactly_the_minimum_passes_and_totals_come_from_server_prices() -> None:
