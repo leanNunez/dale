@@ -22,7 +22,7 @@ from dale.brain.application.shown import order_confirmed
 from dale.brain.application.tools import (
     EARLIER_ORDERED,
     HANDOFF_NOTICE,
-    HANDOFF_RECORDED,
+    HANDOFF_SAVED,
     INPUT_MODELS,
     NOT_CONFIRMED,
     TOOL_SCHEMAS,
@@ -34,6 +34,7 @@ from dale.shared.errors import BelowMinimum, ErrorCode, Result
 from dale.shared.ids import CompanyId, OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
 from dale.shared.shown_events import HandoffNotice, ProposalSummary, SummaryLine
+from dale.verifier.domain.claims import is_claim
 from tests.unit.brain.fakes import (
     COLA,
     COLA15,
@@ -293,8 +294,18 @@ def test_a_written_handoff_alone_shows_the_promise_of_a_person(note: str, stored
     outcome = tools(erp, proposals, written).run("request_human_handoff", handoff(note=note))
     assert written.written == [(SESSION, HandoffReason.EXCEPTION_REQUEST, stored)]
     assert not outcome.is_error and outcome.shown == (HandoffNotice(HANDOFF_NOTICE),)
-    assert json.loads(outcome.content) == {"recorded": True, "note": HANDOFF_RECORDED}
+    assert json.loads(outcome.content) == {"saved": True, "note": HANDOFF_SAVED}
     assert "una persona" in HANDOFF_NOTICE.lower() and erp.calls == [] == proposals.saved
+
+
+def test_the_handoff_result_says_saved_and_not_an_order_in_no_words_that_claim_one() -> None:
+    """B96: "Recorded" read as an order that "quedó registrado"; the verifier's own detector
+    (D8a) flags nothing the model is told after a handoff."""
+    outcome = tools().run("request_human_handoff", handoff())
+    assert "recorded" not in outcome.content.casefold()
+    assert "was saved" in HANDOFF_SAVED and "a person will contact" in HANDOFF_SAVED
+    assert "It is not an order" in HANDOFF_SAVED
+    assert not is_claim(outcome.content) and not is_claim(HANDOFF_SAVED)
 
 
 class ShortErp(FakeErp):

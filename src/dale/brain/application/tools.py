@@ -33,7 +33,11 @@ logger = logging.getLogger(__name__)
 MAX_QUERY, MAX_PRICE_IDS, MAX_LINES = 100, 20, 30
 NOT_CONFIRMED = "NOT confirmed: only the customer's Dale key confirms it. Never say it is."
 EARLIER_ORDERED = "The earlier proposal WAS confirmed: its order exists. Nothing new was prepared."
-HANDOFF_RECORDED = "Recorded. A person will contact the customer. Promise no exception or time."
+# Not "Recorded": the model would echo it as an order that "quedó registrado" (B96).
+HANDOFF_SAVED = (
+    "The request was saved and a person will contact the customer. It is not an order and"
+    " confirms nothing. Promise no exception or time."
+)
 # The only text that promises a person: shown only after the handoff row is written (R7, B31).
 HANDOFF_NOTICE = (
     "Listo, dejé registrada tu consulta. Una persona del equipo se va a comunicar con vos."
@@ -283,4 +287,4 @@ class Tools:
             self._handoffs.request_handoff(self._session, data.reason, data.note or None)
         except (OperationalError, InterfaceError) as error:  # other errors raise
             return _unavailable("request_human_handoff", self._session.company_id, error)
-        return _ok({"recorded": True, "note": HANDOFF_RECORDED}, HandoffNotice(HANDOFF_NOTICE))
+        return _ok({"saved": True, "note": HANDOFF_SAVED}, HandoffNotice(HANDOFF_NOTICE))
