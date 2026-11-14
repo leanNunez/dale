@@ -234,6 +234,8 @@ Entries marked **user** were chosen by the user. Entries marked **auto** were ta
 
 | B103 | 2026-11-13 | Commit author email in the public history | Rewrite to the GitHub noreply address; keep it | Keep `lean.p.dev@gmail.com` as the author of every commit | The user's choice | user |
 
+| B104 | 2026-11-13 | Gate 1.8 done | — | With the user's yes: public repo `leanNunez/dale` created; `main`, `dev` and the 55 `slice-*` branches pushed, no tags (the `bak-slice-*` tags stay local). Merge commits only (squash and rebase off). `main` and `dev` are protected: pull request required (0 approvals, single maintainer), the 8 CI checks required (lint, types, arch, test, tracked-files, secrets, size, pr-base), admins included, no force push, no deletion. CI runs only on pull requests and on pushes to `main` and `dev`. Pushed branches are never rewritten again; later changes go in new commits | Outward-facing step approved by the user | user |
+
 ## Waiting for the user (hard gates)
 
 - **1.8**: create the public GitHub repo, push `main`, `dev` and the slice branches, set branch protection on `main` and `dev`, and set the merge method to merge commits (B3). Before this, show the file list. The internal plan and kickoff are never published (B7). PR bodies (with "Known pending") are written at push time.
