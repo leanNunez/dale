@@ -233,7 +233,6 @@ Entries marked **user** were chosen by the user. Entries marked **auto** were ta
 | B102 | 2026-11-13 | How B101 landed | — | `slice-15a-readme` was amended (253 lines). Every B101 item is fixed in both READMEs, and `test_readmes.py` also checks the `DALE_TEST_ADMIN_URL` and decision-log mentions. `slice-15b-openspec-record` was rebased onto it with `--onto`. The README line "`--report` replaces any existing report of that version" was checked against `evals/conftest.py:113-117`. Task 15.7 (the docs blind review) is done; its PR body waits for gate 1.8 | Every chain branch stays green; nothing pushed | auto |
 
 | B103 | 2026-11-13 | Commit author email in the public history | Rewrite to the GitHub noreply address; keep it | Keep `lean.p.dev@gmail.com` as the author of every commit | The user's choice | user |
-
 | B104 | 2026-11-13 | Gate 1.8 done | — | With the user's yes: public repo `leanNunez/dale` created; `main`, `dev` and the 55 `slice-*` branches pushed, no tags (the `bak-slice-*` tags stay local). Merge commits only (squash and rebase off). `main` and `dev` are protected: pull request required (0 approvals, single maintainer), the 8 CI checks required (lint, types, arch, test, tracked-files, secrets, size, pr-base), admins included, no force push, no deletion. CI runs only on pull requests and on pushes to `main` and `dev`. Pushed branches are never rewritten again; later changes go in new commits | Outward-facing step approved by the user | user |
 
 ## Waiting for the user (hard gates)
