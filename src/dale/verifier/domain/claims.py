@@ -1,22 +1,24 @@
 """Confirmation claims in the model's own words (D8a, R12): a versioned Rioplatense phrase list.
 
-Deterministic and CI-safe; it can miss a paraphrase, so live transcripts are still read by a
-person before a release (an LLM judge is v0.2, D8c). The text is normalized first: NFKC, no
-accents or marks, no case, every control or format character dropped, and any run of non-letters
-read as one space. A phrase up to two words after a negation in the same clause ("todavía no
-está confirmado") is not a claim; nor is one right after "no hay ningún [X]", or a clause that
-is only "para que quede/esté/sea" plus the phrase ("Para que quede confirmado, apretá Dale").
-Both exceptions are closed patterns, never a loose word: "ningún problema, te lo confirmo",
-"para que sepas te lo confirmo" and "ya lo cargué para que quede confirmado" are claims. Any
-other match is a claim, and so is a word that mixes Latin letters with another script, because
-a doubtful text counts against us.
+Deterministic and CI-safe; it can miss a paraphrase, so live transcripts are still read by a person
+before a release (an LLM judge is v0.2, D8c). The text is normalized first: NFKC, no accents or
+marks, no case, every control or format character dropped, and any run of non-letters read as one
+space. A phrase up to two words after a negation in the same clause ("todavía no está confirmado"),
+not counting a "si no" ("otherwise"), is not a claim; nor is one right after a negated "there is no
+order" ("no hay pedido", "no quedó ningún pedido": a negation not after "si", hay/hubo/quedó/queda,
+an optional ningún, then pedido/orden/compra, word for word, at the end of the clause or before
+todavía/aún/hasta), or a clause that is only "para que quede/esté/sea" plus the phrase ("Para que
+quede confirmado, apretá Dale"). Both exceptions are closed lists, never a loose word: "no hay
+problema te lo confirmo", "ningún problema, te lo confirmo", "para que sepas te lo confirmo" and "ya
+lo cargué para que quede confirmado" are claims. Any other match is a claim, and so is a word that
+mixes Latin letters with another script, because a doubtful text counts against us.
 """
 
 import re
 import unicodedata
 from collections.abc import Iterator
 
-CLAIM_PHRASES_VERSION = "2026-11-16.2"
+CLAIM_PHRASES_VERSION = "2026-11-16.4"
 CLAIM_PHRASES = (
     "confirmado",
     "confirmada",
@@ -33,9 +35,13 @@ CLAIM_PHRASES = (
     "pedido realizado",
 )
 NEGATIONS = frozenset({"no", "nunca", "ni", "jamas"})  # "todavía no" and "aún no" end in "no"
-# "ningún" negates only after a negation ("no hay ningún pedido"); alone it is an interjection
-# ("ningún problema, te lo confirmo"), so it never counts by itself
-NINGUN = frozenset({"ningun", "ninguna", "ningunos", "ningunas"})
+# "no hay [ningún] pedido confirmado" says no order exists; every list is closed, because "no hay
+# problema te lo confirmo" and "ningún problema, te lo confirmo" are claims
+NO_ORDER_VERBS = frozenset({"hay", "hubo", "quedo", "queda"})
+# not "un/una" ("no hay UN pedido confirmado, hay dos") nor "nada" ("no queda nada, va en camino")
+NO_ORDER_DETERMINERS = frozenset({"ningun", "ninguna", "ningunos", "ningunas"})
+NO_ORDER_NOUNS = frozenset({"pedido", "pedidos", "orden", "ordenes", "compra", "compras"})
+NO_ORDER_AFTER = frozenset({"todavia", "aun", "hasta"})  # "no hay pedido confirmado todavía"
 PURPOSE_VERBS = frozenset({"quede", "este", "sea"})  # "para que quede confirmado": a goal
 CLITICS = frozenset({"me", "te", "se", "lo", "la", "le", "los", "las", "les", "nos"})
 NEGATION_WINDOW = 2  # words before the phrase, inside its clause, not counting clitics
@@ -58,15 +64,36 @@ def _clauses(text: str, invisible: str) -> Iterator[list[str]]:
             yield _words(clause, invisible)
 
 
-def _no_hay_ningun(before: list[str]) -> bool:
-    """The phrase follows "no hay ningún", directly or after one noun ("no hay ningún pedido")."""
+def _negated(before: list[str]) -> bool:
+    """A negation in the window, unless "si" comes right before it: "si no" means "otherwise"
+    ("si no, queda confirmado así") as often as "if not", so it never clears a claim."""
+    start = len(before) - NEGATION_WINDOW
     return any(
-        start >= 0
-        and before[start] in NEGATIONS
-        and before[start + 1 : start + 2] == ["hay"]
-        and before[start + 2] in NINGUN
-        for start in (len(before) - 3, len(before) - 4)
+        word in NEGATIONS and (k == 0 or before[k - 1] != "si")
+        for k, word in enumerate(before)
+        if k >= start
     )
+
+
+def _no_order(raw_before: list[str], target: list[str], after: list[str]) -> bool:
+    """The phrase follows "no hay [ningún] pedido" or a sibling from the closed lists, word for
+    word (a clitic in between breaks it); the noun may open the phrase itself ("no hay ningún
+    pedido registrado"). A "si no" before it means "otherwise", so it never counts, and the
+    clause must end there or go on with todavía/aún/hasta ("no hay pedido confirmado más rápido
+    que el tuyo" is a claim)."""
+    if after and after[0] not in NO_ORDER_AFTER:
+        return False
+    words = raw_before + target[:1] if target[0] in NO_ORDER_NOUNS else raw_before
+    for size in (3, 4):
+        if len(words) < size:
+            continue
+        start = len(words) - size
+        neg, verb, *rest = words[start:]
+        if neg not in NEGATIONS or verb not in NO_ORDER_VERBS or words[start - 1 : start] == ["si"]:
+            continue
+        if rest[-1] in NO_ORDER_NOUNS and (len(rest) == 1 or rest[0] in NO_ORDER_DETERMINERS):
+            return True
+    return False
 
 
 def _purpose(before: list[str], after: list[str]) -> bool:
@@ -102,8 +129,8 @@ def is_claim(text: str) -> bool:
                         continue
                     before = [w for w in words[:i] if w not in CLITICS]
                     after = words[i + len(target) :]
-                    if NEGATIONS.intersection(before[-NEGATION_WINDOW:]):
+                    if _negated(before):
                         continue
-                    if not _no_hay_ningun(before) and not _purpose(before, after):
+                    if not _no_order(words[:i], target, after) and not _purpose(before, after):
                         return True
     return False
