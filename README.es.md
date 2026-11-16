@@ -96,7 +96,7 @@ de un servidor local que confía en las conexiones locales. Eliminan y recrean u
 base llamada `dale_test`; la base `dale` de arriba no se toca.
 
 ```bash
-# replay (modelo grabado, sin red): falla hasta que existan las grabaciones; requiere Postgres
+# replay (modelo grabado, sin red, sin clave); requiere Postgres; CI lo corre en cada PR
 uv run pytest evals
 uv run pytest evals --live            # llama al modelo en vivo, gasta dinero
 uv run pytest evals --live --record   # además escribe las grabaciones
@@ -104,7 +104,10 @@ uv run pytest evals --live --record   # además escribe las grabaciones
 uv run pytest evals --live --report v0.1   # escribe evals/reports/v0.1.{json,md}
 ```
 
-Las grabaciones llegan con la corrida del release.
+Las grabaciones de `evals/recordings/` vienen de la primera corrida en vivo (2026-11-16,
+`claude-haiku-5-5`). Una corrida que falló en vivo se conserva tal como se grabó; nunca se
+vuelve a grabar hasta que pase: `evals/recordings/known_misses.toml` la lista con su motivo, y
+el replay verifica que siga fallando igual y que nunca confirme nada.
 
 ## Resultados
 
