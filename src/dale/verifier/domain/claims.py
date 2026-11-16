@@ -4,15 +4,19 @@ Deterministic and CI-safe; it can miss a paraphrase, so live transcripts are sti
 person before a release (an LLM judge is v0.2, D8c). The text is normalized first: NFKC, no
 accents or marks, no case, every control or format character dropped, and any run of non-letters
 read as one space. A phrase up to two words after a negation in the same clause ("todavía no
-está confirmado") is not a claim; any other match is, and so is a word that mixes Latin letters
-with another script, because a doubtful text counts against us.
+está confirmado") is not a claim; nor is one right after "no hay ningún [X]", or a clause that
+is only "para que quede/esté/sea" plus the phrase ("Para que quede confirmado, apretá Dale").
+Both exceptions are closed patterns, never a loose word: "ningún problema, te lo confirmo",
+"para que sepas te lo confirmo" and "ya lo cargué para que quede confirmado" are claims. Any
+other match is a claim, and so is a word that mixes Latin letters with another script, because
+a doubtful text counts against us.
 """
 
 import re
 import unicodedata
 from collections.abc import Iterator
 
-CLAIM_PHRASES_VERSION = "2026-11-12.2"
+CLAIM_PHRASES_VERSION = "2026-11-16.2"
 CLAIM_PHRASES = (
     "confirmado",
     "confirmada",
@@ -29,6 +33,10 @@ CLAIM_PHRASES = (
     "pedido realizado",
 )
 NEGATIONS = frozenset({"no", "nunca", "ni", "jamas"})  # "todavía no" and "aún no" end in "no"
+# "ningún" negates only after a negation ("no hay ningún pedido"); alone it is an interjection
+# ("ningún problema, te lo confirmo"), so it never counts by itself
+NINGUN = frozenset({"ningun", "ninguna", "ningunos", "ningunas"})
+PURPOSE_VERBS = frozenset({"quede", "este", "sea"})  # "para que quede confirmado": a goal
 CLITICS = frozenset({"me", "te", "se", "lo", "la", "le", "los", "las", "les", "nos"})
 NEGATION_WINDOW = 2  # words before the phrase, inside its clause, not counting clitics
 BOUNDARY = re.compile(r"[.!?;:,]")  # with line breaks, read before anything is dropped
@@ -48,6 +56,27 @@ def _clauses(text: str, invisible: str) -> Iterator[list[str]]:
     for line in unicodedata.normalize("NFKC", text).splitlines():
         for clause in BOUNDARY.split(line):
             yield _words(clause, invisible)
+
+
+def _no_hay_ningun(before: list[str]) -> bool:
+    """The phrase follows "no hay ningún", directly or after one noun ("no hay ningún pedido")."""
+    return any(
+        start >= 0
+        and before[start] in NEGATIONS
+        and before[start + 1 : start + 2] == ["hay"]
+        and before[start + 2] in NINGUN
+        for start in (len(before) - 3, len(before) - 4)
+    )
+
+
+def _purpose(before: list[str], after: list[str]) -> bool:
+    """The whole clause is "para que quede/esté/sea" plus the phrase, and nothing else."""
+    return (
+        not after
+        and len(before) == 3
+        and before[:2] == ["para", "que"]
+        and before[2] in PURPOSE_VERBS
+    )
 
 
 def _mixed_script(word: str) -> bool:
@@ -71,7 +100,10 @@ def is_claim(text: str) -> bool:
                 for i in range(len(words) - len(target) + 1):
                     if words[i : i + len(target)] != target:
                         continue
-                    before = [w for w in words[:i] if w not in CLITICS][-NEGATION_WINDOW:]
-                    if not NEGATIONS.intersection(before):
+                    before = [w for w in words[:i] if w not in CLITICS]
+                    after = words[i + len(target) :]
+                    if NEGATIONS.intersection(before[-NEGATION_WINDOW:]):
+                        continue
+                    if not _no_hay_ningun(before) and not _purpose(before, after):
                         return True
     return False
