@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --locked ruff check
+      - run: uv run --locked ruff format --check
+
+  types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --locked mypy
+
+  arch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --locked lint-imports
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      DALE_OWNER_DATABASE_URL: postgresql+psycopg://dale_owner@127.0.0.1:5432/dale
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: psql -v ON_ERROR_STOP=1 -f db/roles.sql
+      - run: createdb --owner=dale_owner dale
+      - run: uv run --locked alembic upgrade head
+      - run: uv run --locked alembic check
+      - run: uv run --locked pytest
+
+  # Only dev merges into main, and only from this repository (never a fork's "dev").
+  pr-base:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$BASE_REF" = main ] && { [ "$HEAD_REF" != dev ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; }; then
+            echo "::error::PRs into main must come from dev of $BASE_REPO (got $HEAD_REPO:$HEAD_REF)"
+            exit 1
+          fi
+
+  tracked-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on tracked agent state or env files
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)\.atl/|(^|/)\.env[^/]*$' | grep -vE '(^|/)\.env\.example$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::These files must not be tracked:"
+            echo "$bad"
+            exit 1
+          fi
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: bash scripts/check_no_api_key.sh
+
+  size:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: >-
+          python3 scripts/check_pr_size.py
+          --base "origin/$BASE_REF"
+          --head "$HEAD_SHA"
+          --head-branch "$HEAD_REF"
+          --base-branch "$BASE_REF"
+          --head-repo "$HEAD_REPO"
+          --base-repo "$BASE_REPO"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
