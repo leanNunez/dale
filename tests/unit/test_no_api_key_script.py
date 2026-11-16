@@ -36,6 +36,7 @@ def test_clean_tree_passes(tmp_path: Path) -> None:
         ("src/a.py", "key = os.environ['anthropic_api_key']\n"),
         ("tests/test_a.py", "key = os.environ['ANTHROPIC_API_KEY']\n"),
         ("scripts/a.sh", "export ANTHROPIC_API_KEY=x\n"),
+        ("evals/recordings/c/run-1.jsonl", '{"headers": {"api_key": "x"}}\n'),  # recordings
         (".github/workflows/ci.yml", "env:\n  K: ${{ secrets.ANTHROPIC_API_KEY }}\n"),
         ("tests/test_db.py", "from pytest_socket import enable_socket\n"),
     ],

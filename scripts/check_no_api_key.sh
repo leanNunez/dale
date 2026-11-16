@@ -33,7 +33,7 @@ scan() {
 }
 
 status=0
-scan "$keys" '*.py' '*.sh' '*.toml' '*.yml' '*.yaml' '*.cfg' '*.ini' '*.json' || status=$?
+scan "$keys" '*.py' '*.sh' '*.toml' '*.yml' '*.yaml' '*.cfg' '*.ini' '*.json' '*.jsonl' || status=$?
 scan "$sockets" tests || { rc=$?; [ "$rc" -gt "$status" ] && status=$rc; }
 [ "$status" -eq 1 ] && echo "error: key reference or enabled socket found in the files above" >&2
 exit "$status"
