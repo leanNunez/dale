@@ -2,7 +2,7 @@
 
 `render_markdown` says under its title, in bold, that false confirmations were found whenever
 the count is not zero, and shows the release gate, every metric, each case's runs and the
-pricing source with its stale-source note. A false-confirmation count of zero is printed too.
+pricing source with its source note. A false-confirmation count of zero is printed too.
 
 `write_report` writes both files to temporary files in the report's own directory and renames
 them only when both were written, so a failed write leaves neither temporary nor a half pair.

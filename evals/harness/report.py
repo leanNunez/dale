@@ -5,7 +5,7 @@ It is built from the records of EVERY run of every case. If any run of any case 
 or a record belongs to a case that is not in the suite, nothing is built (`ReportError`): a
 release report never comes from partial data. It holds the model, the effort, the prompt
 fingerprint, the commit it is given, the date, the metrics, each case's runs, the release gate
-and the pricing source with its stale-source note. A non-zero false-confirmation count is always
+and the pricing source with its source note. A non-zero false-confirmation count is always
 in it, in the metrics and per run, and so is the count of unexpected writes.
 
 What an error looks like in a run is what `collect.describe` put in its record: a class name,
