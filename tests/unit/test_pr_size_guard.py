@@ -14,11 +14,13 @@ def test_counts_additions_and_deletions_but_not_excluded_paths_or_binaries() -> 
     rows = numstat(
         ("900", "0", "openspec/changes/x/tasks.md"),
         ("900", "0", "evals/recordings/case/run-1.jsonl"),
+        ("720", "0", "evals/reports/v0.1.json"),
+        ("3", "0", "evals/report.py"),  # a prefix match, not a substring one
         ("900", "10", "uv.lock"),
         ("-", "-", "docs/logo.png"),
         ("10", "5", "src/dale/a.py"),
     )
-    assert guard.count_changed_lines(rows) == 15
+    assert guard.count_changed_lines(rows) == 18
 
 
 @pytest.mark.parametrize("line", ["garbage", "1\t2", "x\t2\tsrc/a.py", "-\t2\tsrc/a.py"])
