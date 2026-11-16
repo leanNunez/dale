@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from dale.brain.application.model_port import MODEL_SETTINGS, Usage
+from dale.verifier.domain.claims import CLAIM_PHRASES_VERSION
 from evals.harness.metrics import RunRecord
 from evals.harness.model import prompt_fingerprint
 from evals.harness.report import ReportError, build_report
@@ -51,6 +52,7 @@ def test_the_report_holds_model_effort_fingerprint_commit_date_and_metrics() -> 
     r = report()
     assert (r["model"], r["effort"]) == (MODEL_SETTINGS.model, MODEL_SETTINGS.effort)
     assert r["prompt"]["fingerprint"] == prompt_fingerprint()
+    assert r["claim_phrases"] == CLAIM_PHRASES_VERSION
     assert (r["commit"], r["generated"], r["mode"]) == (
         "a" * 40,
         "2026-11-13T12:00:00+00:00",

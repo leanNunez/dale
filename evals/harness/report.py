@@ -20,6 +20,7 @@ from typing import Any
 
 from dale.brain.application.model_port import MODEL_SETTINGS, ModelSettings
 from dale.brain.application.prompt import PROMPT_VERSION
+from dale.verifier.domain.claims import CLAIM_PHRASES_VERSION
 from evals.harness.metrics import RUNS_PER_CASE, Metrics, RunRecord, compute
 from evals.harness.model import prompt_fingerprint
 from evals.harness.pricing import Pricing, load_pricing
@@ -70,6 +71,7 @@ def build_report(
         "model": settings.model,
         "effort": settings.effort,
         "prompt": {"fingerprint": prompt_fingerprint(settings), "version": PROMPT_VERSION},
+        "claim_phrases": CLAIM_PHRASES_VERSION,  # a new list regrades the same recordings
         "release_gate": {"passed": m.release_ok, "blockers": list(m.release_blockers)},
         "metrics": _metrics(m),
         "cases": [_case(case, suite[case], records) for case in sorted(suite)],

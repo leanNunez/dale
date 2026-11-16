@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from dale.brain.application.model_port import Usage
+from dale.verifier.domain.claims import CLAIM_PHRASES_VERSION
 from evals.harness import report_files
 from evals.harness.metrics import RunRecord
 from evals.harness.report import build_report
@@ -50,6 +51,10 @@ def test_the_markdown_carries_the_pricing_source_and_its_stale_note() -> None:
     text = render_markdown(report())
     assert "https://platform.claude.com/docs/en/about-claude/pricing" in text
     assert "STALE SOURCE" in text and "2026-11-03" in text
+
+
+def test_the_markdown_names_the_claim_phrase_list_that_graded_the_runs() -> None:
+    assert f"- Claim phrase list: {CLAIM_PHRASES_VERSION}" in render_markdown(report())
 
 
 def test_a_false_confirmation_is_said_under_the_title() -> None:
