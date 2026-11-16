@@ -104,23 +104,36 @@ uv run pytest evals --live --record   # además escribe las grabaciones
 uv run pytest evals --live --report v0.1   # escribe evals/reports/v0.1.{json,md}
 ```
 
-Las grabaciones de `evals/recordings/` vienen de la primera corrida en vivo (2026-11-16,
+Las grabaciones de `evals/recordings/` vienen de la corrida del release `v0.1-run4` (2026-11-16,
 `claude-haiku-5-5`). Una corrida que falló en vivo se conserva tal como se grabó; nunca se
 vuelve a grabar hasta que pase: `evals/recordings/known_misses.toml` la lista con su motivo, y
 el replay verifica que siga fallando igual y que nunca confirme nada.
 
 ## Resultados
 
-Se completan desde `evals/reports/v0.1.md` cuando termine la corrida del release.
+De la corrida del release `evals/reports/v0.1-run4.md` (2026-11-16, `claude-haiku-5-5`,
+18 casos x 3 corridas, en vivo):
 
 | Métrica | v0.1 |
 |---|---|
-| Verificados / intentados | pendiente de la corrida del release v0.1 |
-| pass^3 (un caso cuenta solo si sus corridas 1, 2 y 3 pasaron) | pendiente de la corrida del release v0.1 |
-| pass^1 (la proporción de corridas que pasaron) | pendiente de la corrida del release v0.1 |
-| Falsas confirmaciones | pendiente de la corrida del release v0.1 |
-| Negativas del modelo | pendiente de la corrida del release v0.1 |
-| Costo por pedido verificado | pendiente de la corrida del release v0.1 |
+| Verificados / intentados | 14 / 15 |
+| pass^3 (un caso cuenta solo si sus corridas 1, 2 y 3 pasaron) | 17 / 18 |
+| pass^1 (la proporción de corridas que pasaron) | 53 / 54 (98,1 %) |
+| Falsas confirmaciones | 0 |
+| Negativas del modelo | 0 |
+| Costo por pedido verificado | USD 0,0018 (USD 0,025 las 54 corridas) |
+
+La única corrida que falló (`order-cola-ok`, corrida 1) le preguntó al cliente antes de
+armar el pedido, así que no se propuso ni se confirmó nada; se conserva tal como se grabó.
+
+Hicieron falta cuatro corridas en vivo, y todos los reportes están en el repositorio:
+
+| Corrida | Reporte | Puerta | Qué encontró |
+|---|---|---|---|
+| 1 | `evals/reports/v0.1.md` | FALLA, 3 falsas confirmaciones | La corrida en vivo no guardó transcripciones, así que no se pudieron leer |
+| 2 | `evals/reports/v0.1-run2.md` | FALLA, 2 | Las dos eran el modelo diciendo que el pedido NO estaba confirmado ("no quedó ningún pedido confirmado"); el prompt ahora prohíbe esas palabras en cualquier forma |
+| 3 | `evals/reports/v0.1-run3.md` | FALLA, 1 | "No hay pedido confirmado todavía" se leyó como afirmación; el detector ahora lee un "no hay [ningún] pedido" negado al final de la cláusula como ausencia de pedido, con listas cerradas de palabras |
+| 4 | `evals/reports/v0.1-run4.md` | PASA, 0 | La corrida del release de arriba |
 
 Una falsa confirmación es la cuenta del verificador de confirmaciones mostradas
 sin un pedido verificado detrás, más una por cada corrida que mostró una
