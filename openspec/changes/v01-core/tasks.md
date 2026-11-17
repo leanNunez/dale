@@ -82,7 +82,7 @@ Covers: plan §4.6 (pin versions), §4.7, design §2 (minor defaults), §3 (cont
 - [x] 1.6 Create `.github/workflows/ci.yml` with jobs `lint`, `types`, `arch`, `test` (`postgres:17` service, `pytest-socket` allowing only the DB host), `secrets` (gitleaks plus 1.5), `size` (1.4). Roles and Alembic steps are added in slice 2. Test: workflow YAML parses (`uv run python -c "import yaml..."` or `actionlint` if available).
 - [x] 1.7 Add `LICENSE` (MIT), `.gitignore` (includes `.env*`, `__pycache__`, `.venv`, `.atl/`), a short `README.md` stub with the fiction notice and "work in progress" line (full EN/ES README is task 15.1), and `.github/pull_request_template.md` with sections: summary, "Known pending items", blind-review result, chain context.
 - [x] 1.8 GATED, explicit user confirmation required: before creating the GitHub repo or any push, show the user the exact file list to be published (public repo, MIT, from the first commit) and wait for an explicit yes. Only then: create the public repo, push `main`, `dev` and the slice-1 branch, enable branch protection on both `main` and `dev` (PR required, CI green), and open the slice-1 PR against `dev`. Never implicit; never run on the orchestrator's initiative.
-- [ ] 1.9 Closing: run the `what-breaks-review` blind review on the slice diff, paste the result into the PR body, commit with the slice title, check the PR size guard output.
+- [x] 1.9 Closing: run the `what-breaks-review` blind review on the slice diff, paste the result into the PR body, commit with the slice title, check the PR size guard output.
 
 Status: 1.0-1.7 done. Left: 1.8 (gated, needs the user's explicit yes before any push) and 1.9 (PR bodies, at push time after gate 1.8). Blind review recorded (B1-B7).
 
@@ -97,7 +97,7 @@ Covers: R15 (S15.1), R11 (S11.3 role part), design §5, §11 rules "Company in e
 - [x] 2.5 Create `migrations/` (Alembic env, `0001_initial.py` forward-only, runs as `dale_owner`) and `db/roles.sql` (`dale_owner`, `dale_app` DML only, `dale_verifier` SELECT with `default_transaction_read_only=on`; dev/CI only, no real passwords in the repo, passwords come from CI env or local prompt). (R11, §5 roles)
 - [x] 2.6 Tests for roles: `dale_verifier` INSERT/UPDATE is denied (S11.3); `dale_app` cannot DDL; CHECK constraints reject qty 0/1000 and a wrong `line_total` (S15.1 supporting).
 - [x] 2.7 Extend the CI `test` job: apply `db/roles.sql`, run `alembic upgrade head` and `alembic check` before pytest.
-- [ ] 2.8 Closing: blind review (focus: grants, composite keys), PR body with "Known pending items" (RLS deferred to v0.4), commit with the slice title.
+- [x] 2.8 Closing: blind review (focus: grants, composite keys), PR body with "Known pending items" (RLS deferred to v0.4), commit with the slice title.
 
 Status: 2.1-2.7 done and verified by the tests named in the verify report. Left: 2.8 (PR body: at push time, gate 1.8). Blind review recorded (B16-B20).
 
@@ -109,7 +109,7 @@ Covers: proposal "Data" scope, R2 (data for rules), R15, kickoff "all data is fi
 - [x] 3.2 Create `src/dale/erp_sim/infrastructure/seed/el_hornero.py`: one company (`el-hornero`, timezone `America/Argentina/Buenos_Aires`), 3 zones (distinct weekdays, cutoffs, minimums in pesos), about 8 customers (`C-001`...), about 40 products with invented brands (Rioplatense names, e.g. a 2.25 L cola, presentations in packs), price list including one future-dated price row for the D4 price-change case.
 - [x] 3.3 Create `src/dale/erp_sim/infrastructure/seed/__init__.py` with `reseed(engine, overrides)` (truncate + insert, applies `seed_overrides` used later by eval cases) and a `__main__` CLI. Test: override changes a zone minimum.
 - [x] 3.4 Test: no real-company data guard, a unit test asserting every brand/customer name is in a fixed allow-list file (keeps data fictitious by review).
-- [ ] 3.5 Closing: blind review, PR body, commit with the slice title.
+- [x] 3.5 Closing: blind review, PR body, commit with the slice title.
 
 Status: 3.1-3.4 done. Left: 3.5 (PR body: at push time, gate 1.8). Blind review recorded (B24-B28).
 
@@ -121,7 +121,7 @@ Covers: R6 (S6.1, S6.2), R2.2 (injectable clock, S13.5 groundwork), design §2 d
 - [x] 4.2 Create `src/dale/shared/money.py`, `ids.py` (typed `CompanyId`, `CustomerId`, `ProductId`, `ProposalId`; UUIDv4 generator in code), `clock.py` (`Clock` protocol, `SystemClock`, `FrozenClock`).
 - [x] 4.3 Create `src/dale/shared/errors.py`: `ErrorCode` StrEnum with the 16 codes from design §6, status map (kept for v0.2, D7), customer messages, `Failure` and a result type. Expected outcomes return `Failure`, never raise. (R6, S6.1)
 - [x] 4.4 Verify import-linter contract 6 (`shared` imports no module) and mypy strict pass.
-- [ ] 4.5 Closing: blind review, PR body, commit with the slice title.
+- [x] 4.5 Closing: blind review, PR body, commit with the slice title.
 
 Status: 4.1-4.4 done. Left: 4.5 (PR body: at push time, gate 1.8). Blind review recorded (B31-B34).
 
@@ -136,7 +136,7 @@ Covers: R1 (lookup data), R2 (S2.1-S2.4), R3 (first check), R15 (S15.2), design 
 - [x] 5.5 Create `src/dale/erp_sim/application/quote.py` and the first part of `src/dale/erp_sim/public.py` (DTOs: `QuoteRequest`, `Quote`, `QuoteLine`; facade `Protocol`). `quote` writes nothing. Fail closed: a repository that raises yields `rules_unavailable`, no rows written. Tests in `tests/integration/test_quote.py` including the fail-closed fake repo (design §11). (R3, R2)
 - [x] 5.6 Create catalog reads in `erp_sim.public`: `search_products(company, query)`, `get_prices(company, product_ids)`, `check_delivery(company, customer)` with repository code and tests against the seeded DB ("cola de dos y cuarto" finds the seeded cola, S1.1 data side; an ambiguous query returns several products, S1.3 data side).
 - [x] 5.7 Confirm contract 3 and 4 hold (`erp_sim.public` reaches no `erp_sim` internals except through the facade wiring file). Test: `uv run lint-imports`.
-- [ ] 5.8 Closing: blind review (focus: cutoff boundary, timezone), PR body, commit with the slice title.
+- [x] 5.8 Closing: blind review (focus: cutoff boundary, timezone), PR body, commit with the slice title.
 
 Status: 5.1-5.7 done. Left: 5.8 (PR body: at push time, gate 1.8). Blind review recorded (B41-B44).
 
@@ -149,7 +149,7 @@ Covers: R5 (S5.1-S5.4), R6, design §6 (idempotency, D4), §11 "Idempotent write
 - [x] 6.3 Create `src/dale/erp_sim/application/confirm.py`: lookup by `(company_id, proposal_id)` first, then `evaluate_order` plus price and delivery-date comparison, then `INSERT ... ON CONFLICT DO NOTHING` with key and effect in one transaction. (R5, §6)
 - [x] 6.4 Extend `src/dale/erp_sim/public.py` with `confirm(company, proposal)` and `OrderConfirmation` carrying a customer-facing message and the order lines/total/date, so the terminal builds its text from management's response. Test: S5.4 message equals the catalog message for each rejection and the confirmation template for success. (R5, R6)
 - [x] 6.5 Verify every rejection code returned by `confirm` is in the catalog (S6.1) with a parametrized test.
-- [ ] 6.6 Closing: blind review (focus: race, retry after crash, ON CONFLICT path), PR body, commit with the slice title.
+- [x] 6.6 Closing: blind review (focus: race, retry after crash, ON CONFLICT path), PR body, commit with the slice title.
 
 Status: 6.1-6.5 done. Left: 6.6 (PR body: at push time, gate 1.8). Blind review recorded (B52-B54).
 
@@ -163,7 +163,7 @@ Covers: R1 (S1.1-S1.3), R3 (S3.1-S3.3), R8 groundwork, R9 (tool schemas), R15, d
 - [x] 7.4 Create `src/dale/brain/application/tools.py`: the schemas and handlers for `search_products`, `get_prices`, `check_delivery`, `prepare_order` (handoff handler arrives in slice 8). Handlers record results in the ledger and inject company/customer from `SessionContext` only. Tests: S1.3 ambiguous search returns several matches to the model, `prepare_order` without grounding does not call `quote`.
 - [x] 7.5 `prepare_order` flow: ledger check, `quote`, store proposal with a code-generated UUID, supersede the previous `prepared` proposal, emit `ProposalSummary` built from proposal data (S3.3), tell the model the order is NOT confirmed. Create `src/dale/brain/infrastructure/proposal_repository.py` (every query scoped by `company_id`, R15).
 - [x] 7.6 Integration tests `tests/integration/test_proposals.py`: S3.1 proposal exists, no `erp.sales_order` row; S3.2 rule failure returns the catalog code and stores no proposal; second `prepare_order` supersedes the first; summary text comes from stored data, not input text.
-- [ ] 7.7 Closing: blind review (focus: can any path put model-supplied data into a price or ID), PR body, commit with the slice title.
+- [x] 7.7 Closing: blind review (focus: can any path put model-supplied data into a price or ID), PR body, commit with the slice title.
 
 Status: 7.1-7.6 done. Left: 7.7 (PR body: at push time, gate 1.8). Blind review recorded (B62-B64).
 
@@ -178,7 +178,7 @@ Covers: R4 (S4.1, S4.3), R5 (S5.4 from the brain side), R7 (S7.1-S7.4 mechanics)
 - [x] 8.5a A Dale press on a proposal that is already `confirmed` re-shows the same `OrderConfirmed` (idempotent, from the stored order), never `proposal_not_pending`; `proposal_not_pending` is only for `superseded`/`rejected` proposals and its shown text must say nothing was confirmed (B31). Test: double press shows the same confirmation twice and one order exists.
 - [x] 8.5b When `confirm` returns `rules_unavailable` (or the call fails with an unknown outcome), the proposal stays `prepared` with the SAME proposal id, so the next Dale press retries the same idempotency key and can only return the stored order; never prepare a new proposal automatically after an unknown outcome (B53). Test: confirm fails once with rules_unavailable, second press returns the confirmation, one order exists.
 - [x] 8.5 Emit `HandoffNotice` only after a successful write; the model is told the write result so it can tell the customer a person will contact them (R7).
-- [ ] 8.6 Closing: blind review (focus: any route from text to confirm), PR body, commit with the slice title.
+- [x] 8.6 Closing: blind review (focus: any route from text to confirm), PR body, commit with the slice title.
 
 Status: 8.1-8.5b done. Left: 8.6 (PR body: at push time, gate 1.8). Blind review recorded (B68-B70).
 
@@ -195,7 +195,7 @@ Covers: R4 (S4.2), R8 (S8.1, S8.2), R9 (S9.1, S9.2), R10 (S10.1, S10.2), design 
 - [x] 9.5 Create `src/dale/brain/infrastructure/anthropic_model.py`: `anthropic.Anthropic()` with no arguments, per-request `with_options(timeout=..., max_retries=2)`, `model="claude-haiku-5-5"`, `max_tokens=16000`, `tool_choice` auto, effort `medium` as a recorded constant (verify the exact field against the pinned SDK in `docs/decisions/0001`). Unit test: the timeout is passed; `scripts/check_no_api_key.sh` still passes. Never read `ANTHROPIC_API_KEY`.
 - [x] 9.6 Create `src/dale/brain/application/prompt.py` (static system block A, company block B with `cache_control`, no time-varying text; prompt version constant and fingerprint helper for D9) and `take_turn.py` (own loop, at most 6 model calls, closed tool dispatch, fencing). Prompt text in English instructions with Rioplatense customer-facing style; it states the order is not confirmed until the Dale key, and that no exception may be promised (R7, R8).
 - [x] 9.7 Verify import-linter contract 7: only `brain.infrastructure` imports `anthropic`.
-- [ ] 9.8 Closing: blind review (focus: stop_reason coverage, turn limit), PR body noting prompt-cache tuning is a known pending item, commit with the slice title.
+- [x] 9.8 Closing: blind review (focus: stop_reason coverage, turn limit), PR body noting prompt-cache tuning is a known pending item, commit with the slice title.
 
 Status: 9.0-9.7 done. Left: 9.8 (PR body, noting prompt-cache tuning: at push time, gate 1.8). Blind review recorded (B75-B76).
 
@@ -209,7 +209,7 @@ Covers: R11 (S11.1-S11.3), R12 (S12.1, S12.2), design §3 contract 4, §9, §13 
 - [x] 10.4 Create `src/dale/verifier/infrastructure/` with its own SQL (no `erp_sim` or `brain` imports; contract 4) through the `dale_verifier` role. Integration test `tests/integration/test_verifier.py`: verified on a real confirmed order, mismatch after tampering with the DB as owner, `unexpected_write`, any write attempt is denied (S11.3).
 - [x] 10.5 Create `src/dale/verifier/__main__.py` and `src/dale/apps/verifier.py` (reads shown events and session context as JSON on stdin, `DALE_VERIFIER_DATABASE_URL`, verdict JSON on stdout) and `src/dale/apps/verifier_runner.py` (spawn: `sys.executable -m dale.verifier`, argv list, no shell, no user data in argv, 30 s timeout). Used by the terminal and the harness.
 - [x] 10.6 RED test from the threat matrix (design §13): a runner timeout, a non-zero exit and malformed stdout each yield "not verified", never `verified`.
-- [ ] 10.7 Closing: blind review (focus: could a crash or shared mapping yield verified), PR body, commit with the slice title.
+- [x] 10.7 Closing: blind review (focus: could a crash or shared mapping yield verified), PR body, commit with the slice title.
 
 Status: 10.1-10.6 done. Left: 10.7 (PR bodies: at push time, gate 1.8). Blind review recorded (B79-B80).
 
@@ -224,7 +224,7 @@ Covers: R4 (S4.1-S4.3 at the UI), R3 (S3.3 display), R6 (messages), R12 (verdict
 - [x] 11.4 After a confirm, call the verifier through `apps/verifier_runner.py` and print its verdict (design §8). Test with a scripted `ModelPort` and a fake runner: a `missing` verdict is printed as a false confirmation, never hidden (R12).
 - [x] 11.5 Test `apps/terminal.py` end to end with the scripted model on the seeded DB: type a request, receive the proposal summary, press F2, see the order message from management and the verdict.
 - [ ] 11.6 Manual check (D5), record the result in `docs/decisions/0002-confirm-key.md` with date: F2 reaches the app inside tmux and inside Zellij (F-keys pass through; Ctrl chords do not). If F2 is intercepted in either, stop and ask the user before changing the key. **Status 2026-11-13:** tmux 3.4 passed (automated, `send-keys`); Zellij not installed, pending the user's manual check.
-- [ ] 11.7 Closing: blind review, PR body, commit with the slice title.
+- [x] 11.7 Closing: blind review, PR body, commit with the slice title.
 
 Status: 11.1-11.5 done. Left: 11.6 (tmux passed, Zellij manual check by the user) and 11.7 (PR bodies: at push time, gate 1.8). Blind review recorded (B83-B84).
 
@@ -238,7 +238,7 @@ Covers: R13 (S13.1-S13.5), design §10 (case file, run, model modes), D9, §11 `
 - [x] 12.4 Create the final-state grader: compares DB orders and shown events with `expect`; gauchada rule (handoff exists, no order, no price other than list price, no order below minimum). Tests: S13.2 two different tool paths reaching the same correct state both pass; S13.3 a gauchada run that creates an order fails even with a handoff.
 - [x] 12.5 Test S13.4 with `pytest-socket`: a replay run makes no network call to anything except the DB host; a test that tries a model API socket fails.
 - [x] 12.6 Write two tiny fixture cases and their hand-written recordings under `tests/fixtures/evals/` (not the final cases) and `tests/integration/test_harness.py` that runs them end to end, 3 runs each.
-- [ ] 12.7 Closing: blind review (focus: grading final state, not path; no API key use), PR body, commit with the slice title.
+- [x] 12.7 Closing: blind review (focus: grading final state, not path; no API key use), PR body, commit with the slice title.
 
 Status: 12.1-12.6 done. Left: 12.7 (PR bodies: at push time, gate 1.8). Blind review recorded (B87-B88).
 
@@ -249,7 +249,7 @@ Covers: R12 (count reported), R13 (S13.1 pass^k), R14 (S14.1, S14.2), design §1
 - [x] 13.1 RED tests `tests/unit/evals/test_metrics.py`: pass^3 counts a case only when all 3 runs pass, pass^1 is the mean over runs (S13.1); verified/attempted where attempted = runs expecting an order; false confirmations counted from verdicts; refusals counted separately (D10); cost formula `input*p_in + cache_creation*p_cw + cache_read*p_cr + output*p_out` from `usage`; zero verified yields "n/a", not 0 (S14.2); a non-zero false-confirmation count is emitted in the report, never filtered (R12).
 - [x] 13.2 Create `evals/harness/metrics.py` and `evals/harness/report.py` writing `evals/reports/<version>.json` and `.md` with model, effort, prompt fingerprint, commit SHA and date (S14.1).
 - [x] 13.3 Create `evals/pricing.toml` with per-token prices for Haiku 5.5 taken from Anthropic's published pricing page, plus the source URL and retrieval date in the file. Test: file parses and has all four price keys; a stale-source note is part of the report.
-- [ ] 13.4 Closing: blind review, PR body, commit with the slice title.
+- [x] 13.4 Closing: blind review, PR body, commit with the slice title.
 
 Status: 13.1-13.3 done. Left: 13.4 (PR bodies: at push time, gate 1.8). Blind review recorded (B91-B92).
 
@@ -268,7 +268,7 @@ Target: 16 cases (11 core, 5 gauchadas). Each case is one YAML file under `evals
 - [x] 14.7 Add `tests/unit/evals/test_cases_lint.py`: 15-20 cases, 4-5 gauchadas, every positive has a negative, every file validates against the schema from 12.1.
 - [x] 14.8 Cases that the live model cannot be steered into (R9 unknown tool, R10 refusal, S5.2 double press) stay as unit and integration tests from phases 6, 8 and 9; note it in the PR body rather than forcing recordings.
 - [x] 14.9 After 14.1 is approved: run `uv run pytest evals --live --record` locally, commit the recordings, then confirm `uv run pytest evals` passes offline in replay (S13.4). If any case fails live, report it; do not hide or edit the expectation to pass.
-- [ ] 14.10 Closing: blind review (focus: expectations grade final state), PR body, commit with the slice title.
+- [x] 14.10 Closing: blind review (focus: expectations grade final state), PR body, commit with the slice title.
 
 Status: 14.2-14.8 done. Left: 14.1 and 14.9 (gated on the user's yes for the live record run) and 14.10 (PR bodies: at push time, gate 1.8). Blind review recorded (B96-B97).
 

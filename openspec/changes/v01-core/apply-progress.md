@@ -386,3 +386,7 @@ Completed: 15.1 and 15.4. Pending: 15.2, 15.3 and 15.6 (gated), 15.5 (user check
 `README.md` and `README.es.md` carry the results table marked "pending the v0.1 release run", with `tests/unit/test_readmes.py` (B98, B99). Proportion check (15.4): 1,353 openspec lines against 14,806 authored code lines, a ratio of 0.09 (B99). The sdd-verify run found no defect offline (B100).
 
 Known pending: the README results table fills in only after the release run (15.2).
+
+## Chain merge (2026-11-17)
+
+Every slice's closing task (1.9, 2.8, 3.5, 4.5, 5.8, 6.6, 7.7, 8.6, 9.8, 10.7, 11.7, 12.7, 13.4, 14.10) is done: each slice had its blind review before push (the entries named in each PR body), and PRs #1-#58 carry the bodies. The "Pending: PR bodies" lines above are history. All 58 PRs, plus #59 (`main` into `dev`), are merged into `dev` with merge commits (B112). Left: 11.6, 15.5, 15.6 and 15.7.
