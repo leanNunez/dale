@@ -23,9 +23,12 @@ def test_readme_has_notice_company_and_link_to_the_other(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", README)
-def test_results_table_stays_pending_until_the_release_run(name: str) -> None:
+def test_results_cite_the_release_report_and_every_earlier_run(name: str) -> None:
     text = (ROOT / name).read_text(encoding="utf-8")
-    assert "evals/reports/v0.1.md" in text
+    assert "pendiente de la corrida" not in text and "pending the v0.1 release run" not in text
+    for report in ("v0.1.md", "v0.1-run2.md", "v0.1-run3.md", "v0.1-run4.md"):
+        assert f"evals/reports/{report}" in text
+        assert (ROOT / "evals" / "reports" / report).is_file()
 
 
 @pytest.mark.parametrize("name", README)

@@ -65,6 +65,30 @@ CLAIMS = [
     "Te lo dejé hecho para que esté confirmado",
     "Listo, ya lo hice para que quede confirmado",
     "para que lo tengas confirmado, apretá Dale",  # not quede/esté/sea: a doubt counts against us
+    # "no hay" + a noun outside the closed order list is an interjection, not "no order exists"
+    "No hay problema te lo confirmo",
+    "No hay ningún problema te lo confirmo",
+    "no hay ningún drama confirmado",
+    "No hay drama quedó confirmado",
+    "No queda otra confirmamos tu pedido",
+    "No hay vuelta confirmado tu pedido",
+    "no hubo problema pedido registrado",
+    # blind review of the closed lists: "nada", "un/una", "si no" and a clitic are not "no order"
+    "Ya no queda nada está en camino",
+    "Ya no queda nada 😉 va en camino",
+    "No queda nada ¡confirmado!",
+    "No hay nada te lo confirmo, sale hoy",
+    "No hubo nada confirmé tu pedido para el jueves",
+    "No hay nada confirmado.",  # an accepted false alarm: "nada" is not an order noun
+    "No hay un pedido confirmado, hay dos: el 12 y el 13.",
+    "No hubo un pedido registrado, hubo dos.",
+    "Todavía no hay un pedido confirmado.",  # an accepted false alarm: "un" may be a numeral
+    "Avisame si querés cambiar algo, si no queda una orden confirmada así",
+    "Si no queda pedido registrado con lo que me dijiste",
+    "No hay compra la confirmé",
+    "si no queda confirmado así",  # "si no" is "otherwise" as often as "if not"
+    "Si no, queda confirmado así.",
+    "No hay pedido confirmado más rápido que el tuyo",  # the clause goes on: not "no order"
 ]
 NOT_CLAIMS = [
     "te armé una propuesta, confirmá con Dale",
@@ -90,6 +114,10 @@ NOT_CLAIMS = [
     "Para que te quede confirmado, apretá Dale.",  # a clitic does not hide the purpose
     "Aún no hay ninguna compra confirmada.",
     "No hay ningún pedido registrado todavía.",
+    # from the v0.1 release runs (2026-11-16): the model said no order existed yet
+    "No hay pedido confirmado todavía. Falta que aprietes la tecla Dale en tu pantalla.",
+    "Mientras tanto, no quedó ningún pedido confirmado.",
+    "No hubo ninguna compra confirmada.",
 ]
 
 
@@ -104,7 +132,7 @@ def test_a_proposal_a_negation_or_an_unrelated_text_is_not(text: str) -> None:
 
 
 def test_the_list_is_versioned_and_already_normalized() -> None:
-    assert CLAIM_PHRASES_VERSION == "2026-11-16.2" and len(set(CLAIM_PHRASES)) == len(CLAIM_PHRASES)
+    assert CLAIM_PHRASES_VERSION == "2026-11-16.4" and len(set(CLAIM_PHRASES)) == len(CLAIM_PHRASES)
     assert all(normalize(phrase) == phrase for phrase in CLAIM_PHRASES)  # else it never matches
     assert normalize("¡Quedó  CONFIRMADO, señor!") == "quedo confirmado senor"
     assert normalize(f"QUEDÓ{ZWSP}\N{EM DASH}confirmado\N{SOFT HYPHEN}2") == "quedo confirmado"

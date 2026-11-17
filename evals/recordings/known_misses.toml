@@ -3,16 +3,16 @@
 # suite checks that each recording still has this sha256, so a re-recorded run shows up here.
 
 [[miss]]
-case = "cutoff-met-delivers-thursday"
-run = 2
-reason = """Recorded 2026-11-16 on claude-haiku-5-5: the model found the product and its price, \
-then asked "¿Querés que te prepare el pedido de 20 unidades de esa?" instead of preparing it, \
-so no proposal existed when Dale was pressed. A real miss that lowers pass^3; nothing was \
-confirmed. Kept as recorded (B105)."""
+case = "order-cola-ok"
+run = 1
+reason = """Recorded 2026-11-16 in the v0.1 release run (v0.1-run4) on claude-haiku-5-5: the \
+model found the product and its price, then asked "¿Armo el pedido por 20 unidades a ese \
+precio?" instead of preparing it, so no proposal existed when Dale was pressed. A real miss \
+that lowers pass^3; nothing was confirmed. Kept as recorded (B111)."""
 problems = [
   "orders: expected [((('COLA-225', 20),), 4900000, datetime.date(2026, 11, 19))], got []",
   "shown: ProposalSummary is missing",
   "shown: OrderConfirmed is missing",
   "verdict: not verified (nothing_confirmed)",
 ]
-recording_sha256 = "f488f8f125479baa91a6c4bd400050949b145dbf0a71e06aef00c615c8a5f536"
+recording_sha256 = "57efbc7ee6b8ca74e5336e5789254fd9329c078140b78496428933d69c14e55b"

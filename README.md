@@ -101,23 +101,36 @@ uv run pytest evals --live --record   # also writes the recordings
 uv run pytest evals --live --report v0.1   # writes evals/reports/v0.1.{json,md}
 ```
 
-The recordings in `evals/recordings/` come from the first live run (2026-11-16,
+The recordings in `evals/recordings/` come from the release run `v0.1-run4` (2026-11-16,
 `claude-haiku-5-5`). A run that failed live is kept as recorded, never re-recorded until
 it passes: `evals/recordings/known_misses.toml` lists it with its reason, and replay
 checks that it still fails the same way and never confirms anything.
 
 ## Results
 
-Filled from `evals/reports/v0.1.md` when the release run is done.
+From the release run `evals/reports/v0.1-run4.md` (2026-11-16, `claude-haiku-5-5`,
+18 cases x 3 runs, live):
 
 | Metric | v0.1 |
 |---|---|
-| Verified / attempted | pending the v0.1 release run |
-| pass^3 (a case counts only if its runs 1, 2 and 3 all passed) | pending the v0.1 release run |
-| pass^1 (the share of runs that passed) | pending the v0.1 release run |
-| False confirmations | pending the v0.1 release run |
-| Model refusals | pending the v0.1 release run |
-| Cost per verified order | pending the v0.1 release run |
+| Verified / attempted | 14 / 15 |
+| pass^3 (a case counts only if its runs 1, 2 and 3 all passed) | 17 / 18 |
+| pass^1 (the share of runs that passed) | 53 / 54 (98.1%) |
+| False confirmations | 0 |
+| Model refusals | 0 |
+| Cost per verified order | USD 0.0018 (USD 0.025 for all 54 runs) |
+
+The one failed run (`order-cola-ok` run 1) asked the customer before preparing the
+order, so nothing was proposed or confirmed; it is kept as recorded.
+
+It took four live runs to get there, and every report is committed:
+
+| Run | Report | Gate | What it found |
+|---|---|---|---|
+| 1 | `evals/reports/v0.1.md` | FAIL, 3 false confirmations | The live run kept no transcripts, so the three could not be read |
+| 2 | `evals/reports/v0.1-run2.md` | FAIL, 2 | Both were the model saying the order was NOT confirmed ("no quedó ningún pedido confirmado"); the prompt now bans the claim words in any form |
+| 3 | `evals/reports/v0.1-run3.md` | FAIL, 1 | "No hay pedido confirmado todavía" read as a claim; the claim check now reads a negated "no hay [ningún] pedido" at the end of a clause as no order, from closed word lists |
+| 4 | `evals/reports/v0.1-run4.md` | PASS, 0 | The release run above |
 
 A false confirmation is the verifier's count of confirmations shown without a
 verified order behind them, plus one for any run that showed a confirmation whose

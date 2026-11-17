@@ -1,8 +1,9 @@
 """PR size guard: fail when a diff changes more than 400 authored lines.
 
-Counts ``git diff --numstat`` additions + deletions, skipping ``openspec/``,
-``evals/recordings/`` and ``uv.lock``. The release PR (``dev`` of this same repository into
-``main``) is skipped: it carries slices that were already reviewed. A fork's ``dev`` is not.
+Counts ``git diff --numstat`` additions + deletions, skipping ``openspec/``, the generated
+eval files (``evals/recordings/`` and ``evals/reports/``) and ``uv.lock``. The release PR
+(``dev`` of this same repository into ``main``) is skipped: it carries slices that were already
+reviewed. A fork's ``dev`` is not.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import subprocess
 import sys
 
 LIMIT = 400
-EXCLUDED_PREFIXES = ("openspec/", "evals/recordings/")
+EXCLUDED_PREFIXES = ("openspec/", "evals/recordings/", "evals/reports/")
 EXCLUDED_FILES = ("uv.lock",)
 
 
