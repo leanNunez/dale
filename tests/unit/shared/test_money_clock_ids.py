@@ -5,7 +5,7 @@ import pytest
 
 from dale.shared.clock import FrozenClock, SystemClock
 from dale.shared.ids import SequentialIdGenerator, Uuid4Generator, new_proposal_id
-from dale.shared.money import MAX_CENTS, Money, money_sum
+from dale.shared.money import MAX_CENTS, Money, money_sum, pesos
 
 
 def test_money_adds_and_multiplies_in_integer_cents() -> None:
@@ -61,6 +61,11 @@ def test_money_sum_of_nothing_is_money_zero() -> None:
     assert money_sum(iter([Money(1), Money(2)])) == Money(3)
     with pytest.raises(TypeError):
         money_sum([5])  # type: ignore[list-item]
+
+
+def test_pesos_uses_argentine_notation() -> None:
+    cases = {5: "$ 0,05", 4_900_000: "$ 49.000,00", 123_456_789: "$ 1.234.567,89"}
+    assert {cents: pesos(Money(cents)) for cents in cases} == cases
 
 
 def test_frozen_clock_returns_the_fixed_instant() -> None:

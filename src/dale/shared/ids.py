@@ -8,6 +8,7 @@ CompanyId = NewType("CompanyId", UUID)
 CustomerId = NewType("CustomerId", UUID)
 ProductId = NewType("ProductId", UUID)
 ProposalId = NewType("ProposalId", UUID)
+OrderId = NewType("OrderId", UUID)
 
 
 class IdGenerator(Protocol):
