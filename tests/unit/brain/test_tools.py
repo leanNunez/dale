@@ -1,15 +1,38 @@
-"""Tool schemas, input validation and the grounding ledger (R1, R9, D2), with a fake ERP."""
+"""Tools with fakes (R1, R3, R9, D2): strict schemas, input validation, grounding, and a
+prepare_order that stores only quoted prices and shows only the stored proposal."""
 
 import json
+import logging
 from typing import Any
 from uuid import UUID
 
 import pytest
 from anthropic import transform_schema
+from sqlalchemy.exc import ArgumentError, OperationalError
 
-from dale.brain.application.tools import INPUT_MODELS, TOOL_SCHEMAS
+from dale.brain.application.tools import INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
+from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
 from dale.shared.errors import ErrorCode
-from tests.unit.brain.fakes import COLA, COMPANY, MATCHES, NOW, UNPRICED, FakeErp, error_code, tools
+from dale.shared.ids import ProposalId, SequentialIdGenerator
+from dale.shared.money import Money
+from dale.shared.shown_events import ProposalSummary, ShownLine
+from tests.unit.brain.fakes import (
+    COLA,
+    COLA15,
+    COMPANY,
+    DAY,
+    MATCHES,
+    NOW,
+    PACK,
+    PRICES,
+    SESSION,
+    UNPRICED,
+    FakeErp,
+    FakeProposals,
+    error_code,
+    prepare,
+    tools,
+)
 
 FORBIDDEN = ("price", "total", "amount", "cents", "company", "customer", "proposal", "date")
 OTHER = str(UUID(int=9))
@@ -36,7 +59,12 @@ def objects(node: object) -> list[dict[str, Any]]:
 
 def test_tools_are_closed_strict_and_require_every_property() -> None:
     assert [s["name"] for s in TOOL_SCHEMAS] == list(INPUT_MODELS)
-    assert list(INPUT_MODELS) == ["search_products", "get_prices", "check_delivery"]
+    assert list(INPUT_MODELS) == [
+        "search_products",
+        "get_prices",
+        "check_delivery",
+        "prepare_order",
+    ]
     for schema in TOOL_SCHEMAS:
         assert schema["strict"] is True
         for obj in objects(schema["input_schema"]):
@@ -49,13 +77,25 @@ def test_schema_is_in_the_strict_subset_and_matches_its_validator(schema: dict[s
     # The SDK moves any keyword strict mode lacks into the description: nothing moves here.
     assert transform_schema(schema["input_schema"]) == schema["input_schema"]
     validator = INPUT_MODELS[schema["name"]].model_json_schema()
-    assert names(schema["input_schema"]) == names(validator)
+    assert names(schema["input_schema"]) == names(validator) - {"_Line"}
     assert [n for n in names(validator) if any(f in n.lower() for f in FORBIDDEN)] == []
 
 
 @pytest.mark.parametrize(
     ("name", "tool_input", "code"),
     [
+        ("prepare_order", prepare((COLA, 20), unit_price=500), "invalid_tool_input"),  # S1.2
+        ("prepare_order", prepare((COLA, 20), unit_price_cents=1), "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, 20)) | {"company_id": OTHER}, "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, 20)) | {"customer_id": OTHER}, "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, 20)) | {"total": 1}, "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, "20")), "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, True)), "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, 0)), "invalid_quantity"),
+        ("prepare_order", prepare((COLA, 1000)), "invalid_quantity"),
+        ("prepare_order", prepare(), "invalid_tool_input"),
+        ("prepare_order", prepare(*[(COLA, 1)] * 31), "invalid_tool_input"),
+        ("prepare_order", prepare((COLA, 1), (str(COLA).upper(), 1)), "invalid_tool_input"),
         ("search_products", {"query": ""}, "invalid_tool_input"),
         ("search_products", {"query": "x" * 101}, "invalid_tool_input"),
         ("search_products", {"query": 5}, "invalid_tool_input"),
@@ -117,3 +157,51 @@ def test_a_failed_read_is_returned_and_grounds_nothing(name: str, tool_input: An
     erp.failure = ErrorCode.RULES_UNAVAILABLE
     assert error_code(t.run(name, tool_input).content) == "rules_unavailable"
     assert not t._ledger.grounds(COLA)
+
+
+@pytest.mark.parametrize("product_id", [str(UNPRICED), "cola", str(COLA) + "0"])
+def test_an_id_no_tool_returned_is_rejected_before_quoting(product_id: str) -> None:
+    erp, proposals = FakeErp(), FakeProposals()
+    t = tools(erp, proposals)
+    t.run("search_products", {"query": "cola"})
+    outcome = t.run("prepare_order", prepare((COLA, 1), (product_id, 20)))
+    assert error_code(outcome.content) == "ungrounded_product" and outcome.shown == ()
+    assert [name for name, _ in erp.calls] == ["search_products"] and proposals.saved == []
+
+
+def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
+    line = ProposalLine(COLA15, 3, Money(185_000), Money(555_000))  # what the store returns
+    first_id = ProposalId(SequentialIdGenerator().new_id())
+    stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), DAY, NOW)
+    proposals = FakeProposals(stored)
+    t = tools(proposals=proposals)
+    t.run("search_products", {"query": "cola"})
+    outcome = t.run("prepare_order", prepare((COLA, 20), (PACK, 2)))
+    [(company, saved)] = proposals.saved
+    assert company == COMPANY and saved.id == stored.id  # from the id generator
+    assert (saved.customer_id, saved.conversation_id) == (
+        SESSION.customer_id,
+        SESSION.conversation_id,
+    )
+    assert [x.unit_price for x in saved.lines] == [PRICES[COLA], PRICES[PACK]]  # from `quote`
+    assert saved.total == Money(6_280_000) and saved.status is ProposalStatus.PREPARED
+    shown = (ShownLine(COLA15, 3, Money(185_000), Money(555_000)),)
+    assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), DAY),)
+    body = json.loads(outcome.content)
+    assert body["confirmed"] is False and body["note"] == NOT_CONFIRMED
+    assert body["lines"] == [{"product_id": str(COLA15), "quantity": 3, "unit_price": "$ 1.850,00"}]
+    assert body["total"] == "$ 5.550,00" and str(stored.id) not in outcome.content
+
+
+def test_a_failed_proposal_write_is_rules_unavailable(caplog: pytest.LogCaptureFixture) -> None:
+    down = OperationalError("INSERT", {"customer": "secret"}, Exception("down"))
+    t = tools(proposals=FakeProposals(error=down))
+    t.run("search_products", {"query": "cola"})
+    with caplog.at_level(logging.ERROR):
+        outcome = t.run("prepare_order", prepare((COLA, 20)))
+    assert error_code(outcome.content) == "rules_unavailable" and outcome.shown == ()
+    assert caplog.messages == [f"prepare_order failed for company {COMPANY}: OperationalError"]
+    bug = tools(proposals=FakeProposals(error=ArgumentError("bad statement")))
+    bug.run("search_products", {"query": "cola"})
+    with pytest.raises(ArgumentError):  # a programming error is not an outage
+        bug.run("prepare_order", prepare((COLA, 20)))
