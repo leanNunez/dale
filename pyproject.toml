@@ -107,7 +107,7 @@ forbidden_modules = [
 id = "4"
 name = "verifier is independent of erp_sim, brain and channels"
 type = "forbidden"
-source_modules = ["dale.verifier", "dale.apps.verifier"]
+source_modules = ["dale.verifier", "dale.apps.verifier", "dale.apps.verifier_runner"]
 forbidden_modules = ["dale.erp_sim", "dale.brain", "dale.channels"]
 
 # 5. The terminal channel talks to the brain only through its application layer.
