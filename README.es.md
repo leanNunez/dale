@@ -9,8 +9,8 @@ la base de datos del negocio antes de llamarlo "confirmado".
 > clientes, marcas y productos son inventados. En este repositorio no se usa
 > ningún dato real de empresas, marcas ni clientes.
 
-**Estado: v0.1, solo terminal.** Los resultados del release todavía no están
-(ver [Resultados](#resultados)).
+**Estado: v0.1, solo terminal.** La corrida del release `v0.1-run4` pasó el control de
+release (ver [Resultados](#resultados)).
 
 ## Qué hace Dale
 
@@ -100,45 +100,51 @@ base llamada `dale_test`; la base `dale` de arriba no se toca.
 uv run pytest evals
 uv run pytest evals --live            # llama al modelo en vivo, gasta dinero
 uv run pytest evals --live --record   # además escribe las grabaciones
-# corrida del release (tras `ant auth login`); reemplaza el reporte existente de esa versión
-uv run pytest evals --live --report v0.1   # escribe evals/reports/v0.1.{json,md}
+# corrida del release (tras `ant auth login`), como se hizo v0.1-run4: vuelve a grabar toda la
+# suite y escribe evals/reports/<nombre>.{json,md}; repetir un nombre pisa ese reporte commiteado
+uv run pytest evals --live --record --report v0.1-run5
 ```
 
 Las grabaciones de `evals/recordings/` vienen de la corrida del release `v0.1-run4` (2026-11-16,
-`claude-haiku-5-5`). Una corrida que falló en vivo se conserva tal como se grabó; nunca se
-vuelve a grabar hasta que pase: `evals/recordings/known_misses.toml` la lista con su motivo, y
-el replay verifica que siga fallando igual y que nunca confirme nada.
+`claude-haiku-5-5`). Cada corrida del release vuelve a grabar toda la suite; las
+transcripciones de las corridas anteriores están en el historial de git. Una corrida que
+falla se commitea tal como se grabó, sin repetirla hasta que pase:
+`evals/recordings/known_misses.toml` la lista con su motivo y el sha256 de su grabación, y el
+replay verifica que siga fallando igual y que nunca confirme nada.
 
 ## Resultados
 
 De la corrida del release `evals/reports/v0.1-run4.md` (2026-11-16, `claude-haiku-5-5`,
-18 casos x 3 corridas, en vivo):
+18 casos x 3 corridas, en vivo y grabadas):
 
 | Métrica | v0.1 |
 |---|---|
-| Verificados / intentados | 14 / 15 |
+| Verificados / intentados (intentados: las 15 corridas cuyo caso espera un pedido) | 14 / 15 |
 | pass^3 (un caso cuenta solo si sus corridas 1, 2 y 3 pasaron) | 17 / 18 |
 | pass^1 (la proporción de corridas que pasaron) | 53 / 54 (98,1 %) |
-| Falsas confirmaciones | 0 |
-| Negativas del modelo | 0 |
-| Costo por pedido verificado | USD 0,0018 (USD 0,025 las 54 corridas) |
+| Falsas confirmaciones (en estas 54 corridas, según el verificador y su lista de frases) | 0 |
+| Negativas del modelo (la API cortó con `stop_reason` refusal) | 0 |
+| Costo por pedido verificado (tokens a precios de lista de Anthropic consultados el 2026-11-16, `evals/pricing.toml`; no es un monto facturado) | USD 0,0018 (USD 0,025 las 54 corridas) |
 
 La única corrida que falló (`order-cola-ok`, corrida 1) le preguntó al cliente antes de
 armar el pedido, así que no se propuso ni se confirmó nada; se conserva tal como se grabó.
 
 Hicieron falta cuatro corridas en vivo, y todos los reportes están en el repositorio:
 
-| Corrida | Reporte | Puerta | Qué encontró |
+| Corrida | Reporte | Control de release | Qué encontró |
 |---|---|---|---|
-| 1 | `evals/reports/v0.1.md` | FALLA, 3 falsas confirmaciones | La corrida en vivo no guardó transcripciones, así que no se pudieron leer |
-| 2 | `evals/reports/v0.1-run2.md` | FALLA, 2 | Las dos eran el modelo diciendo que el pedido NO estaba confirmado ("no quedó ningún pedido confirmado"); el prompt ahora prohíbe esas palabras en cualquier forma |
-| 3 | `evals/reports/v0.1-run3.md` | FALLA, 1 | "No hay pedido confirmado todavía" se leyó como afirmación; el detector ahora lee un "no hay [ningún] pedido" negado al final de la cláusula como ausencia de pedido, con listas cerradas de palabras |
-| 4 | `evals/reports/v0.1-run4.md` | PASA, 0 | La corrida del release de arriba |
+| 1 | `evals/reports/v0.1.md` | No pasa, 3 falsas confirmaciones | La corrida en vivo no guardó transcripciones, así que no se pudieron leer las tres: su causa es desconocida y pudieron ser reales |
+| 2 | `evals/reports/v0.1-run2.md` | No pasa, 2 | Las dos fueron falsas alarmas: una respuesta dijo que no había ningún pedido confirmado ("no quedó ningún pedido confirmado") y la otra que el pedido se confirmaría al apretar la tecla ("una vez que lo aprietes, queda confirmado"); el prompt ahora prohíbe las palabras de afirmación en cualquier forma |
+| 3 | `evals/reports/v0.1-run3.md` | No pasa, 1 | "No hay pedido confirmado todavía" se leyó como afirmación; el detector ahora lee un "no hay [ningún] pedido" negado al final de la cláusula, o antes de todavía/aún/hasta, como ausencia de pedido, con listas cerradas de palabras |
+| 4 | `evals/reports/v0.1-run4.md` | Pasa, 0 | La corrida del release de arriba |
 
 Una falsa confirmación es la cuenta del verificador de confirmaciones mostradas
-sin un pedido verificado detrás, más una por cada corrida que mostró una
-confirmación cuyo veredicto no es `verified`. El reporte incluye una marca de
-puerta del release que bloquea ante falsas confirmaciones, escrituras
+sin un pedido verificado detrás, y de texto del modelo que la lista de frases lee
+como confirmación sin una confirmación verificada mostrada justo antes, más una por
+cada corrida que mostró una confirmación cuyo veredicto no es `verified`. La lista de
+frases puede no reconocer una paráfrasis, así que 0 es lo que midieron estas 54
+corridas, no una garantía. El reporte incluye una marca de control de release que
+bloquea ante falsas confirmaciones, escrituras
 inesperadas, corridas no verificables y corridas que lanzaron una excepción.
 
 ## Cómo se usó Claude Code

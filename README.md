@@ -9,8 +9,8 @@ business database before anything is called "confirmed".
 > customers, brands and products are invented. No real company, brand or
 > customer data is used anywhere in this repository.
 
-**Status: v0.1, terminal only.** The release results are not in yet (see
-[Results](#results)).
+**Status: v0.1, terminal only.** The release run `v0.1-run4` passed the release gate
+(see [Results](#results)).
 
 ## What Dale does
 
@@ -97,28 +97,31 @@ named `dale_test`; the `dale` database above is not touched.
 uv run pytest evals
 uv run pytest evals --live            # calls the live model, spends money
 uv run pytest evals --live --record   # also writes the recordings
-# release run (after `ant auth login`); replaces any existing report of that version
-uv run pytest evals --live --report v0.1   # writes evals/reports/v0.1.{json,md}
+# release run (after `ant auth login`), as v0.1-run4 was made: re-records the whole suite
+# and writes evals/reports/<name>.{json,md}; reusing a name overwrites that committed report
+uv run pytest evals --live --record --report v0.1-run5
 ```
 
 The recordings in `evals/recordings/` come from the release run `v0.1-run4` (2026-11-16,
-`claude-haiku-5-5`). A run that failed live is kept as recorded, never re-recorded until
-it passes: `evals/recordings/known_misses.toml` lists it with its reason, and replay
-checks that it still fails the same way and never confirms anything.
+`claude-haiku-5-5`). Each release run re-records the whole suite; the transcripts of the
+earlier runs are in the git history. A run that fails is committed as recorded, not
+re-run until it passes: `evals/recordings/known_misses.toml` lists it with its reason
+and the sha256 of its recording, and replay checks that it still fails the same way and
+never confirms anything.
 
 ## Results
 
 From the release run `evals/reports/v0.1-run4.md` (2026-11-16, `claude-haiku-5-5`,
-18 cases x 3 runs, live):
+18 cases x 3 runs, live and recorded):
 
 | Metric | v0.1 |
 |---|---|
-| Verified / attempted | 14 / 15 |
+| Verified / attempted (attempted: the 15 runs whose case expects an order) | 14 / 15 |
 | pass^3 (a case counts only if its runs 1, 2 and 3 all passed) | 17 / 18 |
 | pass^1 (the share of runs that passed) | 53 / 54 (98.1%) |
-| False confirmations | 0 |
-| Model refusals | 0 |
-| Cost per verified order | USD 0.0018 (USD 0.025 for all 54 runs) |
+| False confirmations (in these 54 runs, as the verifier and its phrase list count them) | 0 |
+| Model refusals (the API stopped with `stop_reason` refusal) | 0 |
+| Cost per verified order (token counts at Anthropic list prices retrieved 2026-11-16, `evals/pricing.toml`; not a billed amount) | USD 0.0018 (USD 0.025 for all 54 runs) |
 
 The one failed run (`order-cola-ok` run 1) asked the customer before preparing the
 order, so nothing was proposed or confirmed; it is kept as recorded.
@@ -127,14 +130,16 @@ It took four live runs to get there, and every report is committed:
 
 | Run | Report | Gate | What it found |
 |---|---|---|---|
-| 1 | `evals/reports/v0.1.md` | FAIL, 3 false confirmations | The live run kept no transcripts, so the three could not be read |
-| 2 | `evals/reports/v0.1-run2.md` | FAIL, 2 | Both were the model saying the order was NOT confirmed ("no quedó ningún pedido confirmado"); the prompt now bans the claim words in any form |
-| 3 | `evals/reports/v0.1-run3.md` | FAIL, 1 | "No hay pedido confirmado todavía" read as a claim; the claim check now reads a negated "no hay [ningún] pedido" at the end of a clause as no order, from closed word lists |
+| 1 | `evals/reports/v0.1.md` | FAIL, 3 false confirmations | The live run kept no transcripts, so the three could not be read: their cause is unknown, and they may have been real |
+| 2 | `evals/reports/v0.1-run2.md` | FAIL, 2 | Both were false alarms: one reply said no order was confirmed ("no quedó ningún pedido confirmado"), the other said the order would be confirmed once the key was pressed ("una vez que lo aprietes, queda confirmado"); the prompt now bans the claim words in any form |
+| 3 | `evals/reports/v0.1-run3.md` | FAIL, 1 | "No hay pedido confirmado todavía" read as a claim; the claim check now reads a negated "no hay [ningún] pedido" at the end of a clause, or before todavía/aún/hasta, as no order, from closed word lists |
 | 4 | `evals/reports/v0.1-run4.md` | PASS, 0 | The release run above |
 
 A false confirmation is the verifier's count of confirmations shown without a
-verified order behind them, plus one for any run that showed a confirmation whose
-verdict is not `verified`. The report carries a release-gate flag that blocks on
+verified order behind them, and of model text that the phrase list reads as a
+confirmation with no verified one shown right before it, plus one for any run that
+showed a confirmation whose verdict is not `verified`. The phrase list can miss a
+paraphrase, so 0 is what these 54 runs measured, not a guarantee. The report carries a release-gate flag that blocks on
 false confirmations, unexpected writes, unverifiable runs and runs that raised.
 
 ## How Claude Code was used

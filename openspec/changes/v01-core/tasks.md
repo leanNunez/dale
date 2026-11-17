@@ -282,7 +282,7 @@ Covers: R12, R14, proposal "Repo" scope, plan §7.1, §7.2, §7.4, design §14.
 - [x] 15.4 Spec-to-code proportion check (plan §7.1): count `openspec/` lines versus authored code lines and note the ratio in the PR body; if the record outweighs the code, flag it to the user for a method adjustment.
 - [ ] 15.5 User checkpoint (plan §7.4): the user explains the delivery unaided. Anything they cannot explain is removed from the public summary. This task is the user's; the agent only reminds.
 - [ ] 15.6 GATED, explicit user confirmation required: after every slice is merged into `dev`, open the release PR `dev` → `main` for the user's whole-delivery review; merge it only with the user's yes. Then create the `v0.1` tag on `main`, only after 15.2 shows 0 false confirmations and the user confirms.
-- [ ] 15.7 Closing: blind review of the docs, PR body, commit with the slice title.
+- [x] 15.7 Closing: blind review of the docs, PR body, commit with the slice title.
 
 Status: 15.1 and 15.4 done (B99). Left: 15.2, 15.3 and 15.6 (gated), 15.5 (user checkpoint), 15.7 (no blind review recorded for slice 15 yet; PR body at push time, gate 1.8).
 
