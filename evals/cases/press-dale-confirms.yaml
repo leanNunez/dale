@@ -1,0 +1,16 @@
+# S4.1, S5.1. Two lines, so the order is the stored proposal and nothing else: COLA-225 20 x 2450
+# = 49000 and ACEI-900 4 x 3300 = 13200, total 62200 >= 30000. Thursday 2026-11-19.
+id: press-dale-confirms
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Quiero 20 colas de dos y cuarto y 4 aceites de girasol
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}, {sku: ACEI-900, qty: 4}]
+      total_pesos: 62200
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

@@ -146,9 +146,16 @@ def test_every_expected_order_and_premise_agrees_with_the_seed_and_the_rules() -
 
 def test_the_negatives_that_rest_on_the_seed_declare_their_premise() -> None:
     kinds = {c.id: c.premise.kind for c in CASES if c.premise}
-    assert kinds["order-below-minimum"] == "below_minimum"
+    assert kinds["order-below-minimum"] == kinds["min-by-count"] == "below_minimum"
     assert kinds["order-ambiguous-product"] == "ambiguous"
     assert kinds["cutoff-missed-delivers-monday"] == "past_cutoff"
+
+
+def test_min_by_count_asks_about_the_minimum_and_expects_no_handoff() -> None:
+    """B96: a misread minimum is a question, not an exception request: the agent explains."""
+    case = BY_ID["min-by-count"]
+    assert case.expect.handoff is None and "?" in case.message
+    assert "gauchada" not in case.message.casefold()
 
 
 @pytest.mark.parametrize(
