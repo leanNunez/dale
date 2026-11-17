@@ -1,0 +1,27 @@
+# Model prices for the cost per verified order (design §10, task 13.3, B89).
+# US dollars per million tokens (MTok); the cost formula is in evals/harness/pricing.py.
+# A request whose prompt (input + cache writes + cache reads) is over the threshold uses
+# [long_context]; every other request uses [standard].
+
+model = "claude-haiku-5-5"
+long_context_threshold_tokens = 100_000
+
+[source]
+url = "https://platform.claude.com/docs/en/about-claude/pricing"
+retrieved = "2026-11-03"
+# Printed in every report. Check the prices against the live page before the release run (15.2).
+note = """STALE SOURCE: the prices come from the claude-api skill's cached copy of the pricing \
+table (2026-11-03), not from the live page, which could not be fetched. The cache write and \
+cache read multipliers (1.25x and 0.1x of input) were not checked against the live page."""
+
+[standard]  # prompts of 100,000 tokens or fewer
+input = 0.10
+output = 0.50
+cache_write_5m = 0.125
+cache_read = 0.01
+
+[long_context]  # prompts of more than 100,000 tokens
+input = 0.50
+output = 2.50
+cache_write_5m = 0.625
+cache_read = 0.05
