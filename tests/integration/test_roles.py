@@ -12,6 +12,8 @@ DENIED = [
     ("dale_verifier", "UPDATE erp.sales_order SET total_cents = total_cents"),
     ("dale_verifier", "DELETE FROM erp.sales_order_line"),
     ("dale_verifier", "TRUNCATE erp.product"),
+    ("dale_verifier", "DELETE FROM brain.order_proposal"),
+    ("dale_verifier", "UPDATE brain.handoff_request SET note = note"),
     ("dale_verifier", "CREATE TABLE erp.x (id int)"),
     ("dale_app", "CREATE TABLE erp.x (id int)"),
     ("dale_app", "CREATE TABLE brain.x (id int)"),
@@ -19,6 +21,7 @@ DENIED = [
     ("dale_app", "CREATE SCHEMA x"),
     ("dale_app", "ALTER TABLE erp.zone ADD COLUMN x int"),
     ("dale_app", "TRUNCATE erp.product"),
+    ("dale_app", "DROP TABLE brain.conversation"),
 ]
 
 
