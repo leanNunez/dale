@@ -38,7 +38,9 @@ from dale.brain.application.model_port import (
     ModelUnavailableError,
     parse_response,
 )
-from dale.brain.application.prompt import fingerprint
+from dale.brain.application.prompt import fingerprint, system_blocks
+from dale.brain.application.tools import TOOL_SCHEMAS
+from dale.erp_sim.infrastructure.seed import el_hornero
 
 FIELDS = {"case", "run", "step", "fingerprint", "messages", "message"}
 RECORDINGS = Path(__file__).parents[1] / "recordings"
@@ -67,6 +69,11 @@ def recording_path(root: Path, case: str, run: int) -> Path:
 
 def request_fingerprint(request: ModelRequest, settings: ModelSettings = MODEL_SETTINGS) -> str:
     return fingerprint(settings, request.system, request.tools)
+
+
+def prompt_fingerprint(settings: ModelSettings = MODEL_SETTINGS) -> str:
+    """The fingerprint of the real request prefix: the settings, the system blocks and the tools."""
+    return fingerprint(settings, system_blocks(el_hornero.NAME), TOOL_SCHEMAS)
 
 
 def messages_digest(request: ModelRequest) -> str:
