@@ -8,11 +8,13 @@ so AND the customer was shown a proposal to press it on. Then the verifier proce
 everything shown, and the final state is read back for the grader: the orders, the handoffs,
 the conversation's stored proposals, the list prices and the valid delivery date at `now`
 (management's own rule, through its facade). Last, a model with `finish` is told the run is
-over: replay fails it on a recorded step it never used, record writes its file.
+over: replay fails it on a recorded step it never used, record writes its file. A failure there
+does not hide the run: `run_case` still returns the state, with the error in `harness_error`,
+and the caller fails the run (B91). Only an exception before the verdict leaves no state.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Protocol, runtime_checkable
 from uuid import UUID
@@ -81,6 +83,7 @@ class RunState:
     verdict: VerifierVerdict
     usage: tuple[Usage, ...]  # one per model call
     failures: tuple[ErrorCode, ...]  # the code of each turn that did not end in an answer
+    harness_error: Exception | None = None  # `finish` failed: the run must fail, the rest stands
 
 
 def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
@@ -127,7 +130,10 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
     )
     for one in built:
         if isinstance(one, Finishes):
-            one.finish()  # only now: the whole run went through
+            try:
+                one.finish()  # only now: the whole run went through
+            except Exception as error:
+                state = replace(state, harness_error=state.harness_error or error)
     return state
 
 

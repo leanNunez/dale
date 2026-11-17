@@ -102,8 +102,10 @@ def test_a_recorded_step_the_run_never_used_fails_it(db: Engine, tmp_path: Path)
     path = tmp_path / "fixture-order" / "run-1.jsonl"
     last = json.loads(path.read_text().splitlines()[-1])
     path.write_text(path.read_text() + json.dumps(last | {"step": 3}) + "\n")
-    with pytest.raises(ReplayError, match=r"steps \[3\] were never asked for"):
-        replay(db, "fixture-order", 1, tmp_path)
+    state = replay(db, "fixture-order", 1, tmp_path)  # the run is whole; its error rides along
+    assert isinstance(state.harness_error, ReplayError)
+    assert re.search(r"steps \[3\] were never asked for", str(state.harness_error))
+    assert state.verdict.verified and not grade(CASES["fixture-order"], state).problems
 
 
 def test_the_committed_recordings_are_current(db: Engine, tmp_path: Path) -> None:
