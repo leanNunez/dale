@@ -147,3 +147,17 @@ def test_any_entry_that_is_not_a_yaml_case_file_is_refused(tmp_path: Path, name:
         write(tmp_path, name, YAML)
     with pytest.raises(ValueError, match=f"not a \\*.yaml case file: {name}"):
         load_cases(tmp_path)
+
+
+def test_a_price_change_needs_a_press_and_a_case_is_not_its_own_negative() -> None:
+    moved = {"sku": "COLA-225", "pesos": 2600}
+    assert case(price_change=moved).price_change.pesos == 2600  # type: ignore[union-attr]
+    with pytest.raises(ValidationError, match="press_dale"):
+        case(price_change=moved, press_dale=False)
+    with pytest.raises(ValidationError, match="pesos"):
+        case(price_change=moved | {"pesos": 0})
+    with pytest.raises(ValidationError, match="its own negative"):
+        case(negative_of="order-cola-ok")
+    with pytest.raises(ValidationError, match="String should match"):
+        case(negative_of="Not A Slug")
+    assert case(negative_of="press-dale-confirms").negative_of == "press-dale-confirms"

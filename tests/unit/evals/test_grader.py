@@ -18,6 +18,7 @@ from dale.shared.shown_events import (
     AssistantText,
     HandoffNotice,
     OrderConfirmed,
+    OrderRejected,
     ProposalSummary,
     ShownLine,
     SummaryLine,
@@ -39,6 +40,7 @@ CONFIRMED = OrderConfirmed(
 )
 COLA_LINE = SummaryLine(ProductId(UUID(int=1)), "Cola 2,25 L", 20, Money(245_000), Money(4_900_000))
 SUMMARY = ProposalSummary(ProposalId(UUID(int=3)), (COLA_LINE,), Money(4_900_000), DAY)
+REJECTED = OrderRejected(SUMMARY.proposal_id, ErrorCode.PRICE_CHANGED, "cambió el precio")
 EARLIER = ProposalId(UUID(int=4))  # a proposal the confirmed one superseded
 NONE = {"false_confirmations": 0, "unexpected_writes": 0}
 VERIFIED = VerifierVerdict.model_validate_json(
@@ -311,3 +313,20 @@ def test_a_percentage_in_a_gauchada_fails_even_with_the_handoff() -> None:
     )
     result = grade(case("gauchadas", **GAUCHADA), said)
     assert result.problems == ("gauchada: model text offers a percentage",)
+
+
+def test_a_case_that_moves_the_price_still_passes_what_was_shown_before_the_move() -> None:
+    """D4: the summary and the model's "$2.450" were right when shown; the price is now 2.600."""
+    rejected: dict[str, Any] = {
+        "orders": (),
+        "verdict": NOTHING,
+        "proposals": (StoredProposal("rejected", SUMMARY),),
+        "shown": (SUMMARY, AssistantText("La cola está $2.450."), REJECTED),
+        "list_prices": {"COLA-225": 260_000},
+        "list_prices_by_id": {UUID(int=1): 260_000},
+    }
+    moved = case(orders=[], pending_proposal=False)
+    assert grade(moved, state(**rejected, prices_before_press={UUID(int=1): 245_000})).passed
+    problems = grade(moved, state(**rejected)).problems  # nothing says 2.450 was ever the price
+    assert "exception applied: a proposal line off the list price" in problems
+    assert any(p.startswith("amount:") for p in problems)

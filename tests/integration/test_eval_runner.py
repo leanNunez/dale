@@ -151,3 +151,22 @@ def test_a_model_with_finish_is_told_once_the_whole_run_is_over(db: Engine) -> N
     model = Finishing(says("hola"))
     state = run_case(case(), Env(db, role_url("dale_verifier")), lambda: model)
     assert model.finished == 1 and state.harness_error is None
+
+
+def test_a_price_change_lands_after_the_turn_and_before_the_press(db: Engine) -> None:
+    """D4: management re-reads the price at the press, so the proposal is rejected and the state
+    keeps the prices the customer saw. Without the change the same run confirms."""
+    moved = {"sku": "COLA-225", "pesos": 2600}
+    state = run(db, case(press_dale=True, price_change=moved), *ORDER)
+    assert state.orders == () and state.verdict.verdict == "nothing_confirmed"
+    assert [type(e).__name__ for e in state.shown] == [
+        "ProposalSummary",
+        "AssistantText",
+        "OrderRejected",
+    ]
+    assert [p.status for p in state.proposals] == ["rejected"]
+    assert state.shown[0].lines[0].unit_price.cents == 245_000  # type: ignore[union-attr]
+    assert state.list_prices["COLA-225"] == 260_000  # at the end
+    assert state.prices_before_press[COLA] == 245_000  # as shown
+    assert run(db, case(press_dale=True), *ORDER).prices_before_press == {}  # no change: no read
+    assert len(run(db, case(press_dale=True), *ORDER).orders) == 1

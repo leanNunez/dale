@@ -12,10 +12,11 @@ A run fails when any of these holds:
   with the same reason fails), or exist when none is expected;
 - a prepared proposal is left pending when the case does not expect one, or the other way;
 - a shown `ProposalSummary` is not its stored proposal (lines, names, quantities, prices,
-  total, date), a line of it is off the list price at `now`, or its date is not the valid
-  delivery date at `now`;
+  total, date), a line of it is off the list price at `now` (or the price before the case's
+  price change), or its date is not the valid delivery date at `now`;
 - model text names an amount (`$ 2.450,00`, `$2.450`, `$ 2450`) that is not a list price at
-  `now`, a line total or total of a stored proposal or order, or the zone minimum;
+  `now` (or before the price change), a line total or total of a stored proposal or order, or
+  the zone minimum;
 - a shown kind that must appear is missing, or one that must not appear was shown;
 - a turn ended in a failure the case does not expect, or an expected failure did not happen;
 - the verdict is not `verified` or `nothing_confirmed` (any `unverifiable` fails), or it is not
@@ -106,13 +107,19 @@ def _content(case: Case, state: RunState) -> list[str]:
             continue
         if stored.get(event.proposal_id) != event:
             problems.append(f"proposal: the summary of {event.proposal_id} is not its stored row")
-        if any(
-            x.unit_price.cents != state.list_prices_by_id.get(x.product_id) for x in event.lines
+        if any(  # the price at `now`, or the one shown before the case moved it (D4)
+            x.unit_price.cents
+            not in (
+                state.list_prices_by_id.get(x.product_id),
+                state.prices_before_press.get(x.product_id),
+            )
+            for x in event.lines
         ):
             problems.append("exception applied: a proposal line off the list price")
         if event.delivery_date != state.delivery_date:
             problems.append(f"proposal: {event.delivery_date} is not the valid delivery date")
-    known = {*state.list_prices.values(), state.minimum_cents}
+    known = {*state.list_prices.values(), *state.prices_before_press.values()}
+    known |= {state.minimum_cents}
     known |= {o.total_cents for o in state.orders}
     for summary in stored.values():
         known |= {summary.total.cents, *(x.line_total.cents for x in summary.lines)}

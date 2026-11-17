@@ -3,6 +3,7 @@
 It deletes rows in foreign-key order instead of TRUNCATE: `dale_app` has no TRUNCATE (B13).
 """
 
+from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -25,3 +26,14 @@ def reseed(
         for table, name in ((t.zone, "zones"), (t.customer, "customers"), (t.product, "products")):
             conn.execute(sa.insert(table), data[name])
         conn.execute(sa.insert(t.product_price), data["prices"])
+
+
+def change_price(engine: sa.Engine, sku: str, pesos: int, valid_from: datetime) -> None:
+    """A new list price for `sku` that takes effect at `valid_from` (D4's price change). A row is
+    added, never rewritten, so the price history stays; an unknown sku fails on the foreign key."""
+    row = {"company_id": el_hornero.COMPANY_ID, "product_id": el_hornero.row_id("product", sku)}
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(t.product_price),
+            [row | {"valid_from": valid_from, "unit_price_cents": pesos * 100}],
+        )

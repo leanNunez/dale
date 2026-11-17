@@ -3,18 +3,20 @@
 Before every run the brain's rows are removed through the brain's own reset, and the erp is
 reseeded with the case's overrides, so no run sees another's rows. The app is the terminal's
 own `compose` with the case's frozen clock and whatever model the caller gives. The case's
-earlier messages and its message are turns; the Dale key is pressed only when the case says
-so AND the customer was shown a proposal to press it on. Then the verifier process judges
-everything shown, and the final state is read back for the grader: the orders, the handoffs,
-the conversation's stored proposals, the list prices and the valid delivery date at `now`
-(management's own rule, through its facade). Last, a model with `finish` is told the run is
-over: replay fails it on a recorded step it never used, record writes its file. A failure there
-does not hide the run: `run_case` still returns the state, with the error in `harness_error`,
-and the caller fails the run (B91). Only an exception before the verdict leaves no state.
+earlier messages and its message are turns. A price change of the case then lands, after the
+last turn and before the press, so management's second check sees it (D4). The Dale key is
+pressed only when the case says so AND the customer was shown a proposal to press it on. Then
+the verifier process judges everything shown, and the final state is read back for the grader:
+the orders, the handoffs, the conversation's stored proposals, the list prices and the valid
+delivery date at `now` (management's own rule, through its facade). Last, a model with
+`finish` is told the run is over: replay fails it on a recorded step it never used, record
+writes its file. A failure there does not hide the run: `run_case` still returns the state,
+with the error in `harness_error`, and the caller fails the run (B91). Only an exception
+before the verdict leaves no state.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Protocol, runtime_checkable
 from uuid import UUID
@@ -30,7 +32,7 @@ from dale.brain.infrastructure.reset import reset_brain
 from dale.channels.terminal.pending import Pending
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
-from dale.erp_sim.infrastructure.seed import el_hornero, reseed
+from dale.erp_sim.infrastructure.seed import change_price, el_hornero, reseed
 from dale.shared.customer_input import CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode, Failure, Ok
 from dale.shared.ids import ConversationId, ProductId, ProposalId, SequentialIdGenerator
@@ -84,6 +86,8 @@ class RunState:
     usage: tuple[Usage, ...]  # one per model call
     failures: tuple[ErrorCode, ...]  # the code of each turn that did not end in an answer
     harness_error: Exception | None = None  # `finish` failed: the run must fail, the rest stands
+    # With a price change: the list prices (by product id) as the customer saw them. Else empty.
+    prices_before_press: Mapping[UUID, int] = field(default_factory=dict)
 
 
 def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
@@ -111,6 +115,10 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
         events = backend.take_turn(CustomerText(text))
         shown.extend(events)
         pending.after_turn(events)
+    before = dict[UUID, int]()
+    if change := case.price_change:  # after the last turn, before the press (D4)
+        before = _list_prices(env.app, case)[1]
+        change_price(env.app, change.sku, change.pesos, case.now)
     if case.press_dale and pending.proposal_id is not None:
         press = KeyPress(Key.DALE, pending.proposal_id)
         outcome = backend.confirm(press)
@@ -127,6 +135,7 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
         verdict=verdict,
         usage=tuple(u for turn in turns for u in turn.usage),
         failures=tuple(turn.failure for turn in turns if turn.failure is not None),
+        prices_before_press=before,
     )
     for one in built:
         if isinstance(one, Finishes):
@@ -149,12 +158,11 @@ def _database(
 ]:
     """Orders, handoff reasons, list prices at `now` (by sku and by id), the customer's minimum
     and the conversation's proposals, as stored."""
-    company, o, line, p, price = (
+    company, o, line, p = (
         el_hornero.COMPANY_ID,
         erp.sales_order,
         erp.sales_order_line,
         erp.product,
-        erp.product_price,
     )
     orders = (
         sa.select(o.c.id, o.c.total_cents, o.c.delivery_date, p.c.sku, line.c.qty)
@@ -162,13 +170,6 @@ def _database(
         .join(line, sa.and_(line.c.company_id == o.c.company_id, line.c.order_id == o.c.id))
         .join(p, sa.and_(p.c.company_id == line.c.company_id, p.c.id == line.c.product_id))
         .where(o.c.company_id == company)
-    )
-    listed = (  # the latest price that has taken effect by `now`, per product
-        sa.select(p.c.sku, p.c.id, price.c.unit_price_cents)
-        .join(p, sa.and_(p.c.company_id == price.c.company_id, p.c.id == price.c.product_id))
-        .where(price.c.company_id == company, price.c.valid_from <= case.now)
-        .order_by(p.c.sku, price.c.valid_from.desc())
-        .ext(distinct_on(p.c.sku))
     )
     c, z = erp.customer, erp.zone
     minimum = (
@@ -187,6 +188,7 @@ def _database(
         .where(pr.c.company_id == company, pr.c.conversation_id == chat)
         .order_by(pr.c.id, pl.c.product_id, pl.c.qty)
     )
+    prices = _list_prices(engine, case)
     with engine.connect() as conn:
         by_order: dict[object, list[tuple[str, int, int]]] = {}
         header: dict[object, tuple[int, date]] = {}
@@ -194,7 +196,6 @@ def _database(
             by_order.setdefault(oid, []).append((sku, qty, unit))
             header[oid] = (total, day)
         states = tuple(OrderState(tuple(sorted(by_order[oid])), *header[oid]) for oid in by_order)
-        prices = conn.execute(listed).all()
         lines: dict[UUID, list[SummaryLine]] = {}
         heads: dict[UUID, tuple[str, int, date]] = {}
         for pid, status, total, day, product, name, qty, unit, line_total in conn.execute(
@@ -212,8 +213,22 @@ def _database(
         return (
             states,
             tuple(sorted(conn.execute(reasons).scalars().all())),
-            {sku: cents for sku, _, cents in prices},
-            {pid: cents for _, pid, cents in prices},
+            *prices,
             conn.execute(minimum).scalar_one(),
             stored,
         )
+
+
+def _list_prices(engine: sa.Engine, case: Case) -> tuple[dict[str, int], dict[UUID, int]]:
+    """The latest price that has taken effect by `now`, per product: by sku, and by id."""
+    company, p, price = el_hornero.COMPANY_ID, erp.product, erp.product_price
+    listed = (
+        sa.select(p.c.sku, p.c.id, price.c.unit_price_cents)
+        .join(p, sa.and_(p.c.company_id == price.c.company_id, p.c.id == price.c.product_id))
+        .where(price.c.company_id == company, price.c.valid_from <= case.now)
+        .order_by(p.c.sku, price.c.valid_from.desc())
+        .ext(distinct_on(p.c.sku))
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(listed).all()
+    return {sku: cents for sku, _, cents in rows}, {pid: cents for _, pid, cents in rows}
