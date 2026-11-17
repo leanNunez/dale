@@ -36,8 +36,10 @@ locked in `uv.lock`; `pyproject.toml` pins them with `==`.
 
 - Import-linter contract 3 is split into 3a and 3b, and contract 7 into 7a and
   7b, because the tool expresses each as a separate forbidden contract.
-- The exact Anthropic effort field is checked against `anthropic` 2.8.0 in the
-  slice that adds the model adapter, and recorded here then.
+- Anthropic effort field (checked 2026-11-12 against the installed `anthropic` 2.8.0):
+  `messages.create(output_config={"effort": "medium"})`. `OutputConfigParam.effort` takes
+  `low`, `medium`, `high`, `xhigh` or `max`; there is no top-level `effort` argument. A unit
+  test pins the field, so an SDK upgrade that moves it fails CI.
 
 ## Consequences
 
