@@ -7,12 +7,14 @@ earlier messages and its message are turns; the Dale key is pressed only when th
 so AND the customer was shown a proposal to press it on. Then the verifier process judges
 everything shown, and the final state is read back for the grader: the orders, the handoffs,
 the conversation's stored proposals, the list prices and the valid delivery date at `now`
-(management's own rule, through its facade).
+(management's own rule, through its facade). Last, a model with `finish` is told the run is
+over: replay fails it on a recorded step it never used, record writes its file.
 """
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -33,6 +35,11 @@ from dale.shared.ids import ConversationId, ProductId, ProposalId, SequentialIdG
 from dale.shared.money import Money
 from dale.shared.shown_events import ProposalSummary, ShownEvent, SummaryLine
 from evals.harness.case import Case
+
+
+@runtime_checkable
+class Finishes(Protocol):
+    def finish(self) -> None: ...  # raises when the run must fail
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,11 +86,17 @@ class RunState:
 def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
     reset_brain(env.app, el_hornero.COMPANY_ID)
     reseed(env.app, case.overrides())
+    built = list[ModelPort]()
+
+    def build() -> ModelPort:
+        built.append(model())
+        return built[-1]
+
     composed = compose(
         env.app,
         el_hornero.SLUG,
         case.customer,
-        model,
+        build,
         case.clock(),
         SequentialIdGenerator(),
         lambda request: run_verifier(request, env.verifier_url),
@@ -104,7 +117,7 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
     erp_now = SqlErpFacade(env.app, case.clock()).check_delivery(
         session.company_id, session.customer_id
     )
-    return RunState(
+    state = RunState(
         *_database(env.app, case, session.conversation_id),
         delivery_date=erp_now.value.delivery_date if isinstance(erp_now, Ok) else None,
         shown=tuple(shown),
@@ -112,6 +125,10 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
         usage=tuple(u for turn in turns for u in turn.usage),
         failures=tuple(turn.failure for turn in turns if turn.failure is not None),
     )
+    for one in built:
+        if isinstance(one, Finishes):
+            one.finish()  # only now: the whole run went through
+    return state
 
 
 def _database(
