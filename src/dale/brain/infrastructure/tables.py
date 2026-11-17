@@ -66,7 +66,9 @@ order_proposal_line = _tenant_table(
     sa.Column("qty", sa.Integer, nullable=False),
     sa.Column("unit_price_cents", sa.BigInteger, nullable=False),
     sa.Column("line_total_cents", sa.BigInteger, nullable=False),
+    sa.Column("product_name", sa.Text, nullable=False),  # 0005
     _ref("order_proposal", "proposal_id"),
+    sa.CheckConstraint("btrim(product_name) <> ''", name="product_name"),
     sa.CheckConstraint("qty BETWEEN 1 AND 999", name="qty"),
     sa.CheckConstraint("unit_price_cents > 0", name="unit_price_cents"),
     sa.CheckConstraint("line_total_cents = qty * unit_price_cents", name="line_total_cents"),

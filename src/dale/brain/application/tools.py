@@ -26,7 +26,7 @@ from dale.shared.errors import ErrorCode, Failure, Ok, message_for
 from dale.shared.ids import CompanyId, IdGenerator, ProductId, new_proposal_id
 from dale.shared.money import pesos
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
-from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownEvent, ShownLine
+from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownEvent, SummaryLine
 
 logger = logging.getLogger(__name__)
 MAX_QUERY, MAX_PRICE_IDS, MAX_LINES = 100, 20, 30
@@ -239,7 +239,8 @@ class Tools:
             return _error(quoted.code)  # S3.2: nothing is stored
         q, new_id = quoted.value, new_proposal_id(self._ids)
         lines = tuple(
-            ProposalLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in q.lines
+            ProposalLine(x.product_id, x.name, x.quantity, x.unit_price, x.line_total)
+            for x in q.lines
         )
         proposal = OrderProposal.prepared(
             new_id, self._session, lines, q.total, q.delivery_date, q.quoted_at
@@ -257,7 +258,8 @@ class Tools:
         except (OperationalError, InterfaceError) as error:  # database down; other errors raise
             return _unavailable("prepare_order", company, error)
         shown = tuple(
-            ShownLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in stored.lines
+            SummaryLine(x.product_id, x.name, x.quantity, x.unit_price, x.line_total)
+            for x in stored.lines
         )
         summary = ProposalSummary(stored.id, shown, stored.total, stored.delivery_date)  # S3.3
         rows = [

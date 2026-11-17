@@ -100,6 +100,41 @@ def test_quote_writes_nothing_and_fails_closed_only_on_database_errors(
         ask(broken, NOW, "C-001", ("COLA-225", 20))
 
 
+def test_each_line_carries_managements_product_name(app: Engine) -> None:
+    """B61: the summary names come from the catalog: name, brand and size, never the model."""
+    result = ask(app, NOW, "C-001", ("COLA-225", 20), ("AGUA-6X2", 2))
+    assert isinstance(result, Ok)
+    names = {x.product_id: x.name for x in result.value.lines}
+    assert names == {
+        el_hornero.row_id("product", "COLA-225"): "Gaseosa cola Burbuja 2,25 L",
+        el_hornero.row_id("product", "AGUA-6X2"): "Agua sin gas pack Manantial Sur 6 x 2 L",
+    }
+    gone = Mock(wraps=SqlRuleData(app))  # deactivated between the price and the name reads
+    gone.product_names.return_value = {}
+    assert ask(gone, NOW, "C-001", ("COLA-225", 20)) == Failure(ErrorCode.PRODUCT_NOT_FOUND)
+
+
+def test_a_name_skips_blank_parts_and_a_product_with_no_name_is_not_found(app: Engine) -> None:
+    """B83: an empty brand or size leaves no stray space; with no name to show, fail closed."""
+    p, cola = erp.product, el_hornero.row_id("product", "COLA-225")
+    with app.connect() as conn:
+        kept = conn.execute(sa.select(p.c.name, p.c.brand, p.c.presentation).where(p.c.id == cola))
+        before = kept.one()._asdict()
+
+    def change(**values: str) -> None:
+        with app.begin() as conn:
+            conn.execute(sa.update(p).where(p.c.id == cola).values(**values))
+
+    try:
+        change(brand="", presentation=" ")
+        result = ask(app, NOW, "C-001", ("COLA-225", 20))
+        assert isinstance(result, Ok) and result.value.lines[0].name == "Gaseosa cola"
+        change(name="  ")
+        assert ask(app, NOW, "C-001", ("COLA-225", 20)) == Failure(ErrorCode.PRODUCT_NOT_FOUND)
+    finally:
+        change(**before)
+
+
 def test_ids_that_do_not_parse_are_not_found(app: Engine) -> None:
     facade, bad = SqlErpFacade(app, FrozenClock(NOW)), cast(Any, "not-a-uuid")
     c001, cola = el_hornero.row_id("customer", "C-001"), el_hornero.row_id("product", "COLA-225")
@@ -124,7 +159,7 @@ def test_every_rule_query_filters_by_the_company(app: Engine) -> None:
         assert isinstance(facade.check_delivery(COMPANY, CustomerId(c001)), Ok)
     finally:
         sa.event.remove(app, "before_cursor_execute", record)
-    assert len(seen) == 5  # quote reads twice (customer and zone, prices); each read once
+    assert len(seen) == 6  # quote reads customer and zone, prices, names; each other read once
     for params in seen:
         assert {v for k, v in params.items() if k.startswith("company_id")} == {COMPANY}
     with pytest.raises(TypeError, match="company_id"):

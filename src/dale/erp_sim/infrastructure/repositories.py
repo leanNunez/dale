@@ -73,6 +73,20 @@ class SqlRuleData:
         rows = self._rows(stmt)
         return {ProductId(i): None if cents is None else Money(cents) for i, cents in rows}
 
+    def product_names(
+        self, company_id: CompanyId, product_ids: Sequence[ProductId]
+    ) -> dict[ProductId, str]:
+        p = t.product
+        cols = (p.c.id, p.c.name, p.c.brand, p.c.presentation)
+        stmt = sa.select(*cols).where(
+            of_company(p, company_id), p.c.active, p.c.id.in_(product_ids)
+        )
+        rows = self._rows(stmt)
+        named = {
+            ProductId(i): " ".join(x.strip() for x in parts if x.strip()) for i, *parts in rows
+        }
+        return {i: name for i, name in named.items() if name}
+
     def active_products(self, company_id: CompanyId) -> list[CatalogProduct]:
         p = t.product
         cols = (p.c.id, p.c.sku, p.c.name, p.c.brand, p.c.presentation, p.c.search_terms)

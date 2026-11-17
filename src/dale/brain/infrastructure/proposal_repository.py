@@ -51,7 +51,7 @@ class SqlLockedProposals:
             own
             | {"id": uuid4(), "proposal_id": proposal.id, "product_id": x.product_id}
             | {"qty": x.quantity, "unit_price_cents": x.unit_price.cents}
-            | {"line_total_cents": x.line_total.cents}
+            | {"line_total_cents": x.line_total.cents, "product_name": x.name}
             for x in proposal.lines
         ]
         conn, superseded = self._conn, {"status": ProposalStatus.SUPERSEDED.value}
@@ -116,8 +116,9 @@ def _read(
         return None
     parts = (li.c.product_id, li.c.qty, li.c.unit_price_cents, li.c.line_total_cents)
     where = (of_company(li, company_id), li.c.proposal_id == proposal_id)
-    rows: list[Any] = list(conn.execute(sa.select(*parts).where(*where).order_by(*parts[:2])))
-    lines = tuple(ProposalLine(ProductId(i), q, Money(u), Money(x)) for i, q, u, x in rows)
+    stmt = sa.select(*parts, li.c.product_name).where(*where).order_by(*parts[:2])
+    rows: list[Any] = list(conn.execute(stmt))
+    lines = tuple(ProposalLine(ProductId(i), n, q, Money(u), Money(x)) for i, q, u, x, n in rows)
     conversation, customer, status, total, day, created_at = head
     who = (ConversationId(conversation), CustomerId(customer), ProposalStatus(status))
     return OrderProposal(proposal_id, *who, lines, Money(total), day, created_at)

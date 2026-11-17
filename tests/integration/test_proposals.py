@@ -39,13 +39,14 @@ from dale.shared.ids import (
     new_proposal_id,
 )
 from dale.shared.money import Money
-from dale.shared.shown_events import ProposalSummary, ShownLine
+from dale.shared.shown_events import ProposalSummary, SummaryLine
 
 pytestmark = pytest.mark.integration
 HORNERO, TWIN = CompanyId(el_hornero.COMPANY_ID), CompanyId(uuid5(NAMESPACE_URL, "dale:twin"))
 NOW = datetime(2026, 11, 18, 9, tzinfo=ZoneInfo(el_hornero.TIMEZONE))  # delivery Thursday 19
 C001 = CustomerId(el_hornero.row_id("customer", "C-001"))
 COLA = ProductId(el_hornero.row_id("product", "COLA-225"))
+COLA_NAME = "Gaseosa cola Burbuja 2,25 L"  # management's name, brand and size
 DAY = date(2026, 11, 19)
 
 
@@ -89,12 +90,12 @@ def test_a_valid_proposal_is_stored_at_server_prices_and_is_not_an_order(db: Eng
     assert order(tools, 20, unit_price=50_000) == "invalid_tool_input"  # S1.2: never stored
     assert rows(db, t.order_proposal, "id") == []
     summary = order(tools, 20)  # S1.1, S3.1
-    line = ShownLine(COLA, 20, Money(245_000), Money(4_900_000))
+    line = SummaryLine(COLA, COLA_NAME, 20, Money(245_000), Money(4_900_000))
     assert summary == ProposalSummary(summary.proposal_id, (line,), Money(4_900_000), DAY)
     head = rows(db, t.order_proposal, "id", "status", "total_cents", "delivery_date")
     assert head == [(summary.proposal_id, "prepared", 4_900_000, DAY)]  # S3.3
-    assert rows(db, t.order_proposal_line, "product_id", "qty", "unit_price_cents") == [
-        (COLA, 20, 245_000)
+    assert rows(db, t.order_proposal_line, "product_id", "qty", "product_name") == [
+        (COLA, 20, COLA_NAME)  # B61: stored from the quote, so the summary names the product
     ]
     assert rows(db, erp.sales_order, "id") == []
 
@@ -119,7 +120,7 @@ def test_a_twin_company_with_the_same_ids_reads_and_supersedes_only_its_own(db: 
     store, conversation, proposal_id = SqlProposalRepository(db), uuid4(), new_proposal_id()
     for company, qty in ((TWIN, 1), (HORNERO, 20)):
         at = session(db, company, conversation)
-        line = ProposalLine(COLA, qty, Money(111_100), Money(111_100 * qty))
+        line = ProposalLine(COLA, COLA_NAME, qty, Money(111_100), Money(111_100 * qty))
         mine = OrderProposal.prepared(proposal_id, at, (line,), line.line_total, DAY, NOW)
         assert save(store, company, mine) == mine
     ours, twins = store.get(HORNERO, proposal_id), store.get(TWIN, proposal_id)
@@ -139,7 +140,7 @@ def test_a_new_proposal_supersedes_only_its_own_conversations(db: Engine) -> Non
 
 def test_a_proposal_without_its_conversation_row_raises(db: Engine) -> None:
     """A wiring bug, not an outage. A twin company's conversation with that id does not count."""
-    line = ProposalLine(COLA, 20, Money(245_000), Money(4_900_000))
+    line = ProposalLine(COLA, COLA_NAME, 20, Money(245_000), Money(4_900_000))
     for at in (SessionContext(HORNERO, C001, ConversationId(uuid4())), session(db, TWIN)):
         mine = replace(at, company_id=HORNERO)
         proposal = OrderProposal.prepared(

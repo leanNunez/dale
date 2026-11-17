@@ -16,6 +16,7 @@ from dale.shared.shown_events import (
     ProposalSummary,
     ShownEvent,
     ShownLine,
+    SummaryLine,
 )
 from dale.verifier.domain.rules import ZoneRule
 from dale.verifier.domain.verdict import (
@@ -56,7 +57,11 @@ SHOWN = OrderConfirmed(
     "Listo, tu pedido quedó confirmado por $ 50.000,00. Entrega programada: jueves 19/11/2026.",
 )
 CLAIM = AssistantText("Listo, ya está confirmado tu pedido.")
-SUMMARY = ProposalSummary(ProposalId(UUID(int=93)), SHOWN.lines, SHOWN.total, DAY)
+NAMED = tuple(
+    SummaryLine(x.product_id, "Gaseosa", x.quantity, x.unit_price, x.line_total)
+    for x in SHOWN.lines
+)
+SUMMARY = ProposalSummary(ProposalId(UUID(int=93)), NAMED, SHOWN.total, DAY)
 
 
 EVIDENCE = Evidence((ORDER,), {PID: PROPOSAL}, ZONE)

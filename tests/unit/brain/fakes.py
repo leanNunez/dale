@@ -20,6 +20,7 @@ COMPANY, CUSTOMER = CompanyId(UUID(int=1)), CustomerId(UUID(int=2))
 SESSION = SessionContext(COMPANY, CUSTOMER, ConversationId(UUID(int=3)))
 COLA, COLA15, PACK, UNPRICED = (ProductId(UUID(int=n)) for n in (11, 12, 13, 14))
 PRICES = {COLA: Money(245_000), COLA15: Money(185_000), PACK: Money(690_000)}
+NAME = "Gaseosa cola Burbuja 1 L"  # what management's quote names each product
 MATCHES = tuple(ProductMatch(p, "SKU", "Gaseosa cola", "Burbuja", "1 L") for p in PRICES)
 DAY, NOW = date(2026, 11, 19), datetime.fromisoformat("2026-11-18T12:00:00+00:00")
 
@@ -56,7 +57,9 @@ class FakeErp:
         if failed := self._call("quote", company_id):
             return failed
         priced = [(x, PRICES[x.product_id]) for x in request.lines]
-        lines = tuple(QuoteLine(x.product_id, x.quantity, u, u * x.quantity) for x, u in priced)
+        lines = tuple(
+            QuoteLine(x.product_id, NAME, x.quantity, u, u * x.quantity) for x, u in priced
+        )
         return Ok(Quote(CUSTOMER, lines, money_sum(x.line_total for x in lines), DAY, NOW))
 
     def find_order(self, company_id: CompanyId, proposal_id: Any) -> Result[Any]:

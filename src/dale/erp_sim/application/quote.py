@@ -29,6 +29,13 @@ class RuleData(Protocol):
         """Active products only; None when no price is valid at `at`."""
         ...
 
+    def product_names(
+        self, company_id: CompanyId, product_ids: Sequence[ProductId]
+    ) -> dict[ProductId, str]:
+        """Active products only: catalog name, brand and size, as the customer sees them, without
+        the blank parts. A product with no name to show is left out, so it is not found."""
+        ...
+
 
 def rules_unavailable(read: str, company_id: CompanyId, error: DBAPIError) -> Failure:
     """Fail closed (design §6). The log names the read, the company and the error type only."""
@@ -46,6 +53,7 @@ def quote(
     try:
         found = data.customer(company_id, request.customer_id)
         prices = data.current_prices(company_id, ids, now)
+        names = data.product_names(company_id, ids)
     except DBAPIError as error:  # only a failed read; any other error is a bug and raises
         return rules_unavailable("quote", company_id, error)
     if found is None:
@@ -59,7 +67,10 @@ def quote(
     if isinstance(result, Failure):
         return result
     ev = result.value
+    if any(q.product_id not in names for q in ev.lines):  # deactivated between the two reads
+        return Failure(ErrorCode.PRODUCT_NOT_FOUND)
     quoted = tuple(
-        QuoteLine(q.product_id, q.quantity, q.unit_price, q.line_total) for q in ev.lines
+        QuoteLine(q.product_id, names[q.product_id], q.quantity, q.unit_price, q.line_total)
+        for q in ev.lines
     )
     return Ok(Quote(request.customer_id, quoted, ev.total, ev.delivery_date, now))

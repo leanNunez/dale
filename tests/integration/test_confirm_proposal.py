@@ -31,9 +31,16 @@ from dale.shared.customer_input import Key, KeyPress
 from dale.shared.errors import ErrorCode, Failure, Result, message_for
 from dale.shared.ids import CompanyId, ProposalId, Uuid4Generator, new_proposal_id
 from dale.shared.money import Money
-from dale.shared.shown_events import OrderConfirmed, OrderRejected, ProposalSummary, SystemNotice
+from dale.shared.shown_events import (
+    OrderConfirmed,
+    OrderRejected,
+    ProposalSummary,
+    ShownLine,
+    SystemNotice,
+)
 from tests.integration.test_proposals import (
     COLA,
+    COLA_NAME,
     DAY,
     HORNERO,
     NOW,
@@ -111,7 +118,10 @@ def test_a_double_press_makes_one_order_and_shows_it_twice(db: Engine) -> None:
     summary = order(grounded(db, at), 20)
     first, second = press(db, at, summary.proposal_id), press(db, at, summary.proposal_id)
     assert isinstance(first, OrderConfirmed) and first == second  # S5.2, 8.5a
-    assert (first.lines, first.total, first.delivery_date) == (summary.lines, summary.total, DAY)
+    unnamed = tuple(
+        ShownLine(x.product_id, x.quantity, x.unit_price, x.line_total) for x in summary.lines
+    )
+    assert (first.lines, first.total, first.delivery_date) == (unnamed, summary.total, DAY)
     assert rows(db, erp.sales_order, "id", "proposal_id") == [(first.order_id, summary.proposal_id)]
     assert rows(db, t.order_proposal, "status", "order_id") == [("confirmed", first.order_id)]
 
@@ -226,7 +236,7 @@ def test_a_twin_company_with_the_same_ids_is_neither_read_nor_marked(db: Engine)
     saved = ((TWIN, conversation, 1, pid), (TWIN, uuid4(), 1, twin_only))
     for company, chat, qty, i in (*saved, (HORNERO, conversation, 20, pid)):
         at = session(db, company, chat)
-        line = ProposalLine(COLA, qty, Money(245_000), Money(245_000 * qty))
+        line = ProposalLine(COLA, COLA_NAME, qty, Money(245_000), Money(245_000 * qty))
         mine = OrderProposal.prepared(i, at, (line,), line.line_total, DAY, NOW)
         save(SqlProposalRepository(db), company, mine)
     assert press(db, at, twin_only) == notice(ErrorCode.PROPOSAL_NOT_FOUND)
