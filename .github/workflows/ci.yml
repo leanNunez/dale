@@ -49,9 +49,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      DALE_OWNER_DATABASE_URL: postgresql+psycopg://dale_owner@127.0.0.1:5432/dale
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - run: psql -v ON_ERROR_STOP=1 -f db/roles.sql
+      - run: createdb --owner=dale_owner dale
+      - run: uv run --locked alembic upgrade head
+      - run: uv run --locked alembic check
       - run: uv run --locked pytest
 
   # Only dev merges into main, and only from this repository (never a fork's "dev").
