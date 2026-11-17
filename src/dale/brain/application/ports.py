@@ -103,3 +103,9 @@ class HandoffPort(Protocol):
     ) -> None:
         """One request for the session's conversation and customer (D1); raises on failure."""
         ...
+
+
+class ConversationPort(Protocol):
+    def open(self, session: SessionContext) -> None:
+        """The session's `brain.conversation` row, written once (B61); raises on failure."""
+        ...
