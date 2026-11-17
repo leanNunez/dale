@@ -4,7 +4,12 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 
-from dale.erp_sim.application.catalog import check_delivery, get_prices, search_products
+from dale.erp_sim.application.catalog import (
+    check_delivery,
+    find_customer,
+    get_prices,
+    search_products,
+)
 from dale.erp_sim.application.confirm import confirm, find_order
 from dale.erp_sim.application.quote import quote
 from dale.erp_sim.infrastructure.repositories import SqlOrderStore, SqlRuleData
@@ -16,6 +21,7 @@ from dale.erp_sim.public import (
     ProductPrice,
     Quote,
     QuoteRequest,
+    SessionCustomer,
 )
 from dale.shared.clock import Clock
 from dale.shared.errors import Result
@@ -33,6 +39,9 @@ class SqlErpFacade:
     def __init__(self, engine: sa.Engine, clock: Clock, ids: IdGenerator | None = None) -> None:
         self._data, self._orders = SqlRuleData(engine), SqlOrderStore(engine)
         self._clock, self._ids = clock, ids or Uuid4Generator()
+
+    def find_customer(self, company_slug: str, customer_code: str) -> Result[SessionCustomer]:
+        return find_customer(company_slug, customer_code, self._data)
 
     def quote(self, company_id: CompanyId, request: QuoteRequest) -> Result[Quote]:
         return quote(company_id, request, self._data, self._clock)

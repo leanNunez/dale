@@ -14,6 +14,7 @@ from dale.erp_sim.application.confirm import Order
 from dale.erp_sim.domain.catalog import CatalogProduct
 from dale.erp_sim.domain.rules import Customer, QuotedLine, Zone
 from dale.erp_sim.infrastructure import tables as t
+from dale.erp_sim.public import SessionCustomer
 from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
 from dale.shared.money import Money
 
@@ -72,6 +73,21 @@ class SqlRuleData:
         )
         rows = self._rows(stmt)
         return {ProductId(i): None if cents is None else Money(cents) for i, cents in rows}
+
+    def session_customer(self, company_slug: str, customer_code: str) -> SessionCustomer | None:
+        """The tenant root by its slug; the customer within that company only (R15)."""
+        co, c = t.company, t.customer
+        stmt = (
+            sa.select(co.c.id, co.c.name, c.c.id)
+            .join_from(co, c, c.c.company_id == co.c.id)
+            .where(co.c.slug == company_slug, c.c.code == customer_code, c.c.active)
+        )
+        rows = self._rows(stmt)  # (company_id, code) is unique: one row at most
+        return (
+            SessionCustomer(CompanyId(rows[0][0]), rows[0][1], CustomerId(rows[0][2]))
+            if rows
+            else None
+        )
 
     def product_names(
         self, company_id: CompanyId, product_ids: Sequence[ProductId]

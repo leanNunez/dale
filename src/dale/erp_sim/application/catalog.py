@@ -1,5 +1,6 @@
 """Catalog reads (R1): search, current prices and the next delivery. They write nothing."""
 
+import logging
 from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
@@ -9,10 +10,30 @@ from sqlalchemy.exc import DBAPIError
 from dale.erp_sim.application.quote import RuleData, rules_unavailable
 from dale.erp_sim.domain.catalog import CatalogProduct, rank
 from dale.erp_sim.domain.rules import cutoff_for, delivery_date
-from dale.erp_sim.public import Delivery, ProductMatch, ProductPrice
+from dale.erp_sim.public import Delivery, ProductMatch, ProductPrice, SessionCustomer
 from dale.shared.clock import Clock
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId, ProductId
+
+logger = logging.getLogger(__name__)
+
+
+class CustomerData(Protocol):
+    def session_customer(self, company_slug: str, customer_code: str) -> SessionCustomer | None:
+        """An active customer by its code, within the company with that slug."""
+        ...
+
+
+def find_customer(
+    company_slug: str, customer_code: str, data: CustomerData
+) -> Result[SessionCustomer]:
+    """D2: an unknown company, an unknown code and an inactive customer are all not found."""
+    try:
+        found = data.session_customer(company_slug, customer_code)
+    except DBAPIError as error:  # fail closed on a failed read only
+        logger.error("find_customer failed: %s", type(error).__name__)
+        return Failure(ErrorCode.RULES_UNAVAILABLE)
+    return Failure(ErrorCode.CUSTOMER_NOT_FOUND) if found is None else Ok(found)
 
 
 class CatalogData(Protocol):
