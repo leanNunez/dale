@@ -1,0 +1,16 @@
+# S1.1 lookup. The 2,25 L cola is COLA-225 at $2.450 (seed). 20 x 2450 = 49000, above the Centro
+# minimum 30000. Wednesday 09:00 is before the 18:00 cutoff, so delivery is Thursday 2026-11-19.
+id: order-cola-ok
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Buenas, necesito 20 colas de dos y cuarto
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}]
+      total_pesos: 49000
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

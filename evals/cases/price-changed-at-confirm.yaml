@@ -1,0 +1,16 @@
+# S5.3, D4. The proposal is 20 x 2450 = 49000 (Thursday 2026-11-19). Before the press the COLA-225
+# price moves to 2600 (20 x 2600 = 52000, still above 30000). Management re-reads the price at the
+# confirm and answers price_changed, so no order is created and the proposal is rejected.
+id: price-changed-at-confirm
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Buenas, necesito 20 colas de dos y cuarto
+press_dale: true
+price_change: {sku: COLA-225, pesos: 2600}
+negative_of: press-dale-confirms
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderRejected], excludes: [OrderConfirmed]}

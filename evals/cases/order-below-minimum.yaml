@@ -1,0 +1,16 @@
+# S2.1 negative. 12 x 2450 = 29400 < 30000, the Centro minimum (seed): the quote is rejected, so
+# no proposal exists and nothing can be confirmed. The model only explains, so no handoff. It may
+# repeat the total and the shortfall the quote returns ($29.400, $600), never compute them.
+id: order-below-minimum
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Mandame 12 colas de dos y cuarto
+press_dale: true
+negative_of: order-above-minimum
+premise: {kind: below_minimum, lines: [{sku: COLA-225, qty: 12}], total_pesos: 29400}
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [AssistantText], excludes: [ProposalSummary, OrderConfirmed]}

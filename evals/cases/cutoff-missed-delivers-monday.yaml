@@ -1,0 +1,20 @@
+# S2.3, S13.5. Wednesday 18:01 is after Thursday's cutoff (Wednesday 18:00). Friday, Saturday and
+# Sunday are not Centro days, so the next slot is Monday 2026-11-23 (cutoff Sunday 18:00). The
+# date is not Thursday. 20 x 2450 = 49000 >= 30000. The message sets no date, so a Monday
+# proposal is the right answer.
+id: cutoff-missed-delivers-monday
+suite: core
+now: 2026-11-18T18:01:00-03:00
+customer: C-001
+message: Necesito 20 colas de dos y cuarto
+press_dale: true
+negative_of: cutoff-met-delivers-thursday
+premise: {kind: past_cutoff, missed: 2026-11-19}
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}]
+      total_pesos: 49000
+      delivery_date: 2026-11-23
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

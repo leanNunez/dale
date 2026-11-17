@@ -1,0 +1,17 @@
+# S1.3 ambiguity. "Gaseosas de dos y cuarto" matches four products equally well (seed search):
+# COLA-225 15 x 2450 = 36750, LIMA-225, NARA-225 and POME-225 15 x 2350 = 35250 each. Every one
+# clears the Centro minimum (30000), so only the ambiguity can stop a proposal: the agent asks
+# which one and prepares nothing.
+id: order-ambiguous-product
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Mandame 15 gaseosas de dos y cuarto
+press_dale: true
+negative_of: order-cola-ok
+premise: {kind: ambiguous, query: gaseosas de dos y cuarto, qty: 15}
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [AssistantText], excludes: [ProposalSummary, OrderConfirmed]}
