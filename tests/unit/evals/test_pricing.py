@@ -60,8 +60,8 @@ def test_the_pricing_values_are_the_recorded_ones_and_name_the_model_in_use() ->
         Decimal("0.10"),
         Decimal("2.5"),
     )
-    assert PRICING.retrieved == date(2026, 11, 3)
-    assert "STALE" in PRICING.note and "multipliers" in PRICING.note
+    assert PRICING.retrieved == date(2026, 11, 16)
+    assert "live page on 2026-11-16" in PRICING.note and "5-minute" in PRICING.note
 
 
 def test_no_price_has_more_than_three_decimals_so_nine_places_are_exact() -> None:

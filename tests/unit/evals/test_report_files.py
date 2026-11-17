@@ -47,10 +47,10 @@ def report(*records: list[RunRecord]) -> dict[str, Any]:
     )
 
 
-def test_the_markdown_carries_the_pricing_source_and_its_stale_note() -> None:
+def test_the_markdown_carries_the_pricing_source_and_its_note() -> None:
     text = render_markdown(report())
     assert "https://platform.claude.com/docs/en/about-claude/pricing" in text
-    assert "STALE SOURCE" in text and "2026-11-03" in text
+    assert "live page on 2026-11-16" in text and "2026-11-16" in text
 
 
 def test_the_markdown_names_the_claim_phrase_list_that_graded_the_runs() -> None:

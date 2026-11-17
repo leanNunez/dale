@@ -93,7 +93,7 @@ local server that trusts local connections. They drop and recreate a database
 named `dale_test`; the `dale` database above is not touched.
 
 ```bash
-# replay (recorded model, no network): fails until the recordings exist; needs Postgres
+# replay (recorded model, no network, no key); needs Postgres; CI runs this on every PR
 uv run pytest evals
 uv run pytest evals --live            # calls the live model, spends money
 uv run pytest evals --live --record   # also writes the recordings
@@ -101,7 +101,10 @@ uv run pytest evals --live --record   # also writes the recordings
 uv run pytest evals --live --report v0.1   # writes evals/reports/v0.1.{json,md}
 ```
 
-The recordings arrive with the release run.
+The recordings in `evals/recordings/` come from the first live run (2026-11-16,
+`claude-haiku-5-5`). A run that failed live is kept as recorded, never re-recorded until
+it passes: `evals/recordings/known_misses.toml` lists it with its reason, and replay
+checks that it still fails the same way and never confirms anything.
 
 ## Results
 

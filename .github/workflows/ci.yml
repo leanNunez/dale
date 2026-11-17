@@ -61,6 +61,8 @@ jobs:
       - run: uv run --locked alembic upgrade head
       - run: uv run --locked alembic check
       - run: uv run --locked pytest
+      # replay only: no network, no key; known misses must fail exactly as recorded
+      - run: uv run --locked pytest evals
 
   # Only dev merges into main, and only from this repository (never a fork's "dev").
   pr-base:

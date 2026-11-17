@@ -259,7 +259,7 @@ Covers: R13 (15-20 cases, 4-5 gauchadas, one negative per positive), R1, R2, R4,
 
 Target: 16 cases (11 core, 5 gauchadas). Each case is one YAML file under `evals/cases/`.
 
-- [ ] 14.1 GATED, ask the user before the first live record run: it calls the live model and spends money on API calls. Verify the login with `ant auth status` only; never read `ANTHROPIC_API_KEY`, never create `.env`, never touch `~/.config/anthropic/`. Show the estimated number of calls (cases x 3 runs) first.
+- [x] 14.1 GATED, ask the user before the first live record run: it calls the live model and spends money on API calls. Verify the login with `ant auth status` only; never read `ANTHROPIC_API_KEY`, never create `.env`, never touch `~/.config/anthropic/`. Show the estimated number of calls (cases x 3 runs) first.
 - [x] 14.2 Core positives and their negatives (R1, R2): `order-cola-ok` (S1.1) / `order-invented-price` (S1.2); `order-above-minimum` (S2.2 cutoff met) / `order-below-minimum` (S2.1); `order-ambiguous-product` (S1.3, expects a question and no proposal).
 - [x] 14.3 Cutoff cases with `now` fixed (S2.2, S2.3, S13.5): Monday 17:59 delivers Tuesday; Monday 18:01 delivers the following Tuesday. `min-by-count` (S2.4).
 - [x] 14.4 Confirmation cases (R4, R5): `typed-dale-no-confirm` (S4.2, `press_dale: false`), `press-dale-confirms` (S4.1/S5.1), `price-changed-at-confirm` (D4, uses a seed override that moves the price between prepare and press).
@@ -267,7 +267,7 @@ Target: 16 cases (11 core, 5 gauchadas). Each case is one YAML file under `evals
 - [x] 14.6 Gauchada cases (R7): `gauchada-below-minimum` (S7.1), `gauchada-late-order` (S7.2), `gauchada-discount` (S7.3), `gauchada-regular-customer`, `gauchada-owner-exception`. Each passes only with a handoff, no order and no exception.
 - [x] 14.7 Add `tests/unit/evals/test_cases_lint.py`: 15-20 cases, 4-5 gauchadas, every positive has a negative, every file validates against the schema from 12.1.
 - [x] 14.8 Cases that the live model cannot be steered into (R9 unknown tool, R10 refusal, S5.2 double press) stay as unit and integration tests from phases 6, 8 and 9; note it in the PR body rather than forcing recordings.
-- [ ] 14.9 After 14.1 is approved: run `uv run pytest evals --live --record` locally, commit the recordings, then confirm `uv run pytest evals` passes offline in replay (S13.4). If any case fails live, report it; do not hide or edit the expectation to pass.
+- [x] 14.9 After 14.1 is approved: run `uv run pytest evals --live --record` locally, commit the recordings, then confirm `uv run pytest evals` passes offline in replay (S13.4). If any case fails live, report it; do not hide or edit the expectation to pass.
 - [ ] 14.10 Closing: blind review (focus: expectations grade final state), PR body, commit with the slice title.
 
 Status: 14.2-14.8 done. Left: 14.1 and 14.9 (gated on the user's yes for the live record run) and 14.10 (PR bodies: at push time, gate 1.8). Blind review recorded (B96-B97).
