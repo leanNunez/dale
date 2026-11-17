@@ -5,6 +5,8 @@ import os
 from alembic import context
 from sqlalchemy import create_engine, pool, text
 
+from dale.erp_sim.infrastructure.tables import METADATA as ERP
+
 OWNER = "dale_owner"
 SCHEMAS = {"erp", "brain"}
 
@@ -24,7 +26,7 @@ with create_engine(url, poolclass=pool.NullPool).begin() as connection:
         raise RuntimeError(f"migrations must run as {OWNER}, not {user}")
     context.configure(
         connection=connection,
-        target_metadata=[],  # the table metadata of each schema joins as it lands
+        target_metadata=[ERP],
         include_schemas=True,
         include_name=include_name,
     )
