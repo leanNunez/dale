@@ -57,6 +57,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"- Model: {report['model']}, effort {report['effort']}, mode {report['mode']}",
         f"- Prompt fingerprint: `{prompt['fingerprint']}` (prompt {prompt['version']})",
+        f"- Claim phrase list: {report['claim_phrases']}",
         f"- Commit: `{report['commit']}`, generated {report['generated']}",
         "",
         "| Metric | Value |",
