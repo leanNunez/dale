@@ -1,10 +1,13 @@
-"""`confirm`: the second check and the only write (R5, R6, §6)."""
+"""`confirm`: the second check and the only write, one order per proposal id (R5, R6, §6)."""
 
+import threading
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, datetime
 from typing import Any, cast
+from unittest.mock import patch
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -15,6 +18,7 @@ from sqlalchemy.exc import OperationalError
 
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
+from dale.erp_sim.infrastructure.repositories import SqlOrderData
 from dale.erp_sim.infrastructure.seed import el_hornero
 from dale.erp_sim.public import ConfirmLine, ConfirmRequest, OrderConfirmation, QuoteLine
 from dale.shared.clock import FrozenClock
@@ -74,6 +78,120 @@ def test_a_valid_proposal_stores_one_order_and_the_message_comes_from_it(app: En
         "Listo, tu pedido quedó confirmado por $ 49.000,00. Entrega programada: jueves 19/11/2026."
     )
     assert counts(app) == [orders + 1, lines + 1]
+
+
+def test_a_retry_returns_the_stored_confirmation_even_after_the_rules_changed(app: Engine) -> None:
+    """S5.2 and a retry after a crash: the stored order answers; the rules are not re-run."""
+    request = proposal()
+    first, before = confirm(app, request), counts(app)
+    later = datetime(2026, 12, 1, tzinfo=BA)  # by now a new price and a missed cutoff
+    assert isinstance(first, Ok) and confirm(app, request, later) == first
+    assert counts(app) == before
+
+
+TWENTY_ONE: dict[str, Any] = {
+    "lines": (ConfirmLine(COLA, 21, Money(245_000)),),
+    "total": Money(5_145_000),
+}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        TWENTY_ONE,
+        {"customer_id": CustomerId(el_hornero.row_id("customer", "C-002"))},
+        {"delivery_date": date(2026, 11, 23)},
+        {"total": Money(4_900_001)},
+    ],
+)
+def test_the_same_id_with_another_payload_is_not_pending(app: Engine, change: Any) -> None:
+    """B45: only an identical replay returns the stored confirmation."""
+    request = proposal()
+    stored, before = confirm(app, request), counts(app)
+    assert confirm(app, replace(request, **change)) == Failure(ErrorCode.PROPOSAL_NOT_PENDING)
+    assert counts(app) == before and confirm(app, request) == stored
+
+
+LIMA, NARA, POME = ("LIMA-225", 10, 235_000), ("NARA-225", 10, 235_000), ("POME-225", 10, 235_000)
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        (LIMA, POME),  # another product
+        (("LIMA-225", 12, 235_000), ("NARA-225", 8, 235_000)),  # other quantities
+        (("LIMA-225", 10, 240_000), ("NARA-225", 10, 230_000)),  # other unit prices
+        (LIMA,),  # a line fewer
+    ],
+)
+def test_a_replay_that_differs_in_any_line_field_is_not_pending(
+    app: Engine, lines: tuple[tuple[str, int, int], ...]
+) -> None:
+    """B45: lines compare product by product, quantity and unit price; the total alone is not it."""
+    request = proposal(LIMA, NARA)
+    stored, before = confirm(app, request), counts(app)
+    assert isinstance(stored, Ok) and stored.value.total == Money(4_700_000)
+    other = replace(request, lines=proposal(*lines).lines, total=request.total)  # equal total
+    assert confirm(app, other) == Failure(ErrorCode.PROPOSAL_NOT_PENDING)
+    assert counts(app) == before and confirm(app, request) == stored
+
+
+def test_replayed_lines_in_another_order_match_but_another_multiset_does_not(app: Engine) -> None:
+    """Stored lines keep no order, and a repeated line counts twice: a multiset, not a set."""
+    request = proposal(LIMA, LIMA, NARA)
+    stored, before = confirm(app, request), counts(app)
+    assert isinstance(stored, Ok)
+    for same in (proposal(NARA, LIMA, LIMA), proposal(LIMA, NARA, LIMA)):
+        assert confirm(app, replace(request, lines=same.lines)) == stored
+    other = replace(request, lines=proposal(LIMA, NARA, NARA).lines)  # the same set, same total
+    assert confirm(app, other) == Failure(ErrorCode.PROPOSAL_NOT_PENDING)
+    assert counts(app) == before
+
+
+@pytest.fixture(params=[None, "REPEATABLE READ"], ids=["default_level", "repeatable_read"])
+def racing(app: Engine, request: pytest.FixtureRequest) -> Iterator[Engine]:
+    """The app engine, and one whose default is REPEATABLE READ: its snapshot, taken at the first
+    statement, would hide the race winner's row from the loser's re-read unless the store pins
+    READ COMMITTED itself."""
+    engine = (
+        app
+        if request.param is None
+        else sa.create_engine(app.url, isolation_level="REPEATABLE READ")
+    )
+    yield engine
+    if engine is not app:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("same_payload", [True, False])
+def test_concurrent_confirms_store_one_order(
+    app: Engine, racing: Engine, same_payload: bool
+) -> None:
+    """S5.2 concurrent: both pass the lookup, then race on INSERT ... ON CONFLICT DO NOTHING."""
+    request = proposal()
+    other = request if same_payload else replace(request, **TWENTY_ONE)
+    both = threading.Barrier(2, timeout=10)
+
+    def meet(*args: Any) -> None:  # (conn, cursor, statement, ...): hold both at the insert
+        if args[2].startswith("INSERT INTO erp.sales_order "):
+            both.wait()
+
+    (orders, lines) = counts(app)
+    with hooked(racing, before_cursor_execute=meet), ThreadPoolExecutor(2) as pool:
+        results = list(pool.map(lambda r: confirm(racing, r), (request, other)))
+    assert counts(app) == [orders + 1, lines + 1]
+    [won] = {r for r in results if isinstance(r, Ok)}  # one confirmation, maybe returned twice
+    assert results.count(won) == (2 if same_payload else 1)
+    assert same_payload or Failure(ErrorCode.PROPOSAL_NOT_PENDING) in results
+
+
+def test_an_order_missing_after_the_write_raises_and_rolls_back(app: Engine) -> None:
+    """The answer comes from the stored order: if the re-read finds none, nothing is confirmed."""
+    before = counts(app)
+    no_order = patch.object(SqlOrderData, "find_order", return_value=None)
+    with no_order, pytest.raises(RuntimeError, match="missing"):
+        confirm(app, proposal())
+    assert counts(app) == before  # the insert rolled back with the failure
 
 
 @pytest.mark.parametrize(
@@ -143,6 +261,40 @@ def test_every_read_and_the_write_share_one_company_scoped_transaction(app: Engi
     assert [s for s, _ in seen if s in hooks] == ["begin", "commit"]
     assert (seen[0][0], seen[-1][0]) == ("begin", "commit")
     selects = [p for s, p in seen if s.startswith("SELECT")]
-    assert len(selects) == 2  # the customer and the prices
+    assert len(selects) == 5  # the order lookup, customer, prices, then the order and its lines
     for params in selects:
         assert {v for k, v in params.items() if k.startswith("company_id")} == {COMPANY}
+
+
+def find(app: Engine, proposal_id: Any) -> Result[OrderConfirmation | None]:
+    return SqlErpFacade(app, FrozenClock(NOW)).find_order(COMPANY, proposal_id)
+
+
+def test_find_order_answers_as_a_replay_does_and_writes_nothing(app: Engine) -> None:
+    """B68: the read-only lookup returns the stored confirmation, or None before the write."""
+    request = proposal()
+    assert find(app, request.proposal_id) == Ok(None) == find(app, BAD)
+    stored, before = confirm(app, request), counts(app)
+    assert isinstance(stored, Ok) and find(app, request.proposal_id) == stored
+    assert counts(app) == before
+
+
+def test_find_order_fails_closed_only_on_a_database_error(
+    app: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    request = proposal()
+    confirm(app, request)
+
+    def fail(*args: Any) -> None:
+        if args[2].startswith("SELECT erp.sales_order"):
+            raise OperationalError("SELECT 1", {"x": 9}, Exception("down"))
+
+    with hooked(app, before_cursor_execute=fail):
+        assert find(app, request.proposal_id) == Failure(ErrorCode.RULES_UNAVAILABLE)
+    assert caplog.messages == [f"find_order failed for company {COMPANY}: OperationalError"]
+
+    def bug(*_: Any) -> None:
+        raise sa.exc.ArgumentError("a bug, not an unreadable order")
+
+    with hooked(app, before_cursor_execute=bug), pytest.raises(sa.exc.ArgumentError):
+        find(app, request.proposal_id)

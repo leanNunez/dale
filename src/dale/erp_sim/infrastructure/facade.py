@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from dale.erp_sim.application.catalog import check_delivery, get_prices, search_products
-from dale.erp_sim.application.confirm import confirm
+from dale.erp_sim.application.confirm import confirm, find_order
 from dale.erp_sim.application.quote import quote
 from dale.erp_sim.infrastructure.repositories import SqlOrderStore, SqlRuleData
 from dale.erp_sim.public import (
@@ -19,7 +19,14 @@ from dale.erp_sim.public import (
 )
 from dale.shared.clock import Clock
 from dale.shared.errors import Result
-from dale.shared.ids import CompanyId, CustomerId, IdGenerator, ProductId, Uuid4Generator
+from dale.shared.ids import (
+    CompanyId,
+    CustomerId,
+    IdGenerator,
+    ProductId,
+    ProposalId,
+    Uuid4Generator,
+)
 
 
 class SqlErpFacade:
@@ -45,3 +52,8 @@ class SqlErpFacade:
 
     def confirm(self, company_id: CompanyId, request: ConfirmRequest) -> Result[OrderConfirmation]:
         return confirm(company_id, request, self._orders, self._clock, self._ids)
+
+    def find_order(
+        self, company_id: CompanyId, proposal_id: ProposalId
+    ) -> Result[OrderConfirmation | None]:
+        return find_order(company_id, proposal_id, self._orders)
