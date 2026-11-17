@@ -3,7 +3,6 @@ proposal per conversation, and no read or write across companies."""
 
 import json
 import threading
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime
@@ -32,6 +31,7 @@ from dale.shared.ids import (
     ConversationId,
     CustomerId,
     IdGenerator,
+    OrderId,
     ProductId,
     SequentialIdGenerator,
     Uuid4Generator,
@@ -46,14 +46,6 @@ NOW = datetime(2026, 11, 18, 9, tzinfo=ZoneInfo(el_hornero.TIMEZONE))  # deliver
 C001 = CustomerId(el_hornero.row_id("customer", "C-001"))
 COLA = ProductId(el_hornero.row_id("product", "COLA-225"))
 DAY = date(2026, 11, 19)
-
-
-@pytest.fixture
-def db(app: Engine) -> Iterator[Engine]:
-    yield app
-    with app.begin() as conn:  # the brain owns its reset (B24); orders go too
-        for table in (*reversed(t.METADATA.sorted_tables), erp.sales_order_line, erp.sales_order):
-            conn.execute(sa.delete(table))
 
 
 def session(db: Engine, company: CompanyId = HORNERO, id: Any = None) -> SessionContext:
@@ -195,3 +187,21 @@ def test_an_ordered_earlier_proposal_is_confirmed_not_superseded(db: Engine) -> 
     marked = [(first.proposal_id, "confirmed", done.order_id)]
     assert rows(db, t.order_proposal, "id", "status", "order_id") == marked
     assert rows(db, erp.sales_order, "id") == [(done.order_id,)]
+
+
+def test_a_mark_moves_exactly_one_proposal_in_the_status_it_expects(db: Engine) -> None:
+    """B68: a mark on a proposal that is no longer prepared raises and changes nothing; with no
+    status guard the second mark would overwrite the first order id."""
+    at = session(db)
+    tools = grounded(db, at)
+    first, second = order(tools, 20), order(tools, 30)  # the first is now superseded
+    store, one, other = SqlProposalRepository(db), OrderId(uuid4()), OrderId(uuid4())
+    with store.locked(HORNERO, at.conversation_id) as locked:
+        locked.mark_confirmed(second.proposal_id, one)
+    for proposal_id in (second.proposal_id, first.proposal_id):
+        conversation = store.locked(HORNERO, at.conversation_id)
+        with pytest.raises(RuntimeError, match="exactly one"), conversation as locked:
+            locked.mark_confirmed(proposal_id, other)
+    statuses = rows(db, t.order_proposal, "id", "status", "order_id")
+    expected = [(first.proposal_id, "superseded", None), (second.proposal_id, "confirmed", one)]
+    assert sorted(statuses) == sorted(expected)
