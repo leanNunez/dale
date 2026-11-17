@@ -9,13 +9,10 @@ and pytest-socket checks that first in every test's setup, enabling sockets and 
 before it applies the allowed hosts (pytest_socket 0.8.1, `pytest_runtest_setup`).
 """
 
-from pathlib import Path
-
 import pytest
 
 from evals.harness.model import Mode, mode_from_flags
-
-RECORDINGS = Path(__file__).parent / "recordings"
+from tests.conftest import engines, migrated_db  # noqa: F401  (the session database fixtures)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
