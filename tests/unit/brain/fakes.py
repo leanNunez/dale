@@ -1,8 +1,10 @@
 """Fakes for the brain's ports and the helpers the tool tests share."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from dale.brain.application.tools import Tools
@@ -22,15 +24,16 @@ DAY, NOW = date(2026, 11, 19), datetime.fromisoformat("2026-11-18T12:00:00+00:00
 
 
 class FakeErp:
-    """Records every call; returns `failure` from every call when it is set."""
+    """Records every call; returns `failure` from `failing` (or every call) when it is set."""
 
-    def __init__(self) -> None:
+    def __init__(self, *orders: Any) -> None:
         self.calls: list[tuple[str, CompanyId]] = []
         self.failure: ErrorCode | None = None
+        self.failing, self.orders = "", {o.proposal_id: o for o in orders}
 
     def _call(self, name: str, company_id: CompanyId) -> Failure | None:
         self.calls.append((name, company_id))
-        return Failure(self.failure) if self.failure else None
+        return Failure(self.failure) if self.failure and self.failing in ("", name) else None
 
     def search_products(
         self, company_id: CompanyId, query: str
@@ -55,19 +58,35 @@ class FakeErp:
         lines = tuple(QuoteLine(x.product_id, x.quantity, u, u * x.quantity) for x, u in priced)
         return Ok(Quote(CUSTOMER, lines, money_sum(x.line_total for x in lines), DAY, NOW))
 
+    def find_order(self, company_id: CompanyId, proposal_id: Any) -> Result[Any]:
+        return self._call("find_order", company_id) or Ok(self.orders.get(proposal_id))
+
 
 class FakeProposals:
-    """Returns `stored` (or what it was given) as the stored row, or raises `error`."""
+    """Returns `stored` (or what it was given) as the stored row, or raises `error` on locking."""
 
     def __init__(self, stored: OrderProposal | None = None, error: Exception | None = None) -> None:
         self.saved: list[tuple[CompanyId, OrderProposal]] = []
-        self.stored, self.error = stored, error
+        self.stored, self.error, self.marks = stored, error, list[tuple[Any, ...]]()
+        self.earlier: OrderProposal | None = None
 
-    def save_prepared(self, company_id: CompanyId, proposal: OrderProposal) -> OrderProposal:
+    @contextmanager
+    def locked(self, company_id: CompanyId, conversation_id: object) -> Iterator[Any]:
+        assert conversation_id == SESSION.conversation_id
         if self.error:
             raise self.error
-        self.saved.append((company_id, proposal))
+        self.company = company_id
+        yield self
+
+    def prepared(self) -> OrderProposal | None:
+        return self.earlier
+
+    def save_prepared(self, proposal: OrderProposal) -> OrderProposal:
+        self.saved.append((self.company, proposal))
         return self.stored or proposal
+
+    def mark_confirmed(self, *mark: Any, **was: Any) -> None:
+        self.marks.append((*mark, *was.values()))
 
     def get(self, company_id: CompanyId, proposal_id: object) -> OrderProposal | None:
         raise AssertionError("no tool reads a proposal by id")

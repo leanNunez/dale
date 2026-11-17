@@ -3,23 +3,34 @@ prepare_order that stores only quoted prices and shows only the stored proposal.
 
 import json
 import logging
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
 import pytest
 from anthropic import transform_schema
-from sqlalchemy.exc import ArgumentError, OperationalError
+from sqlalchemy.exc import (
+    ArgumentError,
+    DataError,
+    IntegrityError,
+    InterfaceError,
+    OperationalError,
+    ProgrammingError,
+)
 
-from dale.brain.application.tools import INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
+from dale.brain.application.shown import order_confirmed
+from dale.brain.application.tools import EARLIER_ORDERED, INPUT_MODELS, NOT_CONFIRMED, TOOL_SCHEMAS
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
+from dale.erp_sim.public import OrderConfirmation, QuoteLine
 from dale.shared.errors import ErrorCode
-from dale.shared.ids import ProposalId, SequentialIdGenerator
+from dale.shared.ids import OrderId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
 from dale.shared.shown_events import ProposalSummary, ShownLine
 from tests.unit.brain.fakes import (
     COLA,
     COLA15,
     COMPANY,
+    CUSTOMER,
     DAY,
     MATCHES,
     NOW,
@@ -172,7 +183,8 @@ def test_an_id_no_tool_returned_is_rejected_before_quoting(product_id: str) -> N
 def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
     line = ProposalLine(COLA15, 3, Money(185_000), Money(555_000))  # what the store returns
     first_id = ProposalId(SequentialIdGenerator().new_id())
-    stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), DAY, NOW)
+    later = DAY + timedelta(days=7)  # not the quote's date: what is shown is what was stored
+    stored = OrderProposal.prepared(first_id, SESSION, (line,), Money(555_000), later, NOW)
     proposals = FakeProposals(stored)
     t = tools(proposals=proposals)
     t.run("search_products", {"query": "cola"})
@@ -186,22 +198,61 @@ def test_it_stores_quoted_prices_and_shows_the_stored_proposal() -> None:
     assert [x.unit_price for x in saved.lines] == [PRICES[COLA], PRICES[PACK]]  # from `quote`
     assert saved.total == Money(6_280_000) and saved.status is ProposalStatus.PREPARED
     shown = (ShownLine(COLA15, 3, Money(185_000), Money(555_000)),)
-    assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), DAY),)
+    assert outcome.shown == (ProposalSummary(stored.id, shown, Money(555_000), later),)
     body = json.loads(outcome.content)
     assert body["confirmed"] is False and body["note"] == NOT_CONFIRMED
     assert body["lines"] == [{"product_id": str(COLA15), "quantity": 3, "unit_price": "$ 1.850,00"}]
     assert body["total"] == "$ 5.550,00" and str(stored.id) not in outcome.content
+    assert body["delivery_date"] == "2026-11-26"
 
 
-def test_a_failed_proposal_write_is_rules_unavailable(caplog: pytest.LogCaptureFixture) -> None:
-    down = OperationalError("INSERT", {"customer": "secret"}, Exception("down"))
+@pytest.mark.parametrize("error", [OperationalError, InterfaceError])
+def test_a_failed_proposal_write_is_rules_unavailable(
+    caplog: pytest.LogCaptureFixture, error: type[OperationalError]
+) -> None:
+    down = error("INSERT", {"customer": "secret"}, Exception("down"))
     t = tools(proposals=FakeProposals(error=down))
     t.run("search_products", {"query": "cola"})
     with caplog.at_level(logging.ERROR):
         outcome = t.run("prepare_order", prepare((COLA, 20)))
     assert error_code(outcome.content) == "rules_unavailable" and outcome.shown == ()
-    assert caplog.messages == [f"prepare_order failed for company {COMPANY}: OperationalError"]
-    bug = tools(proposals=FakeProposals(error=ArgumentError("bad statement")))
-    bug.run("search_products", {"query": "cola"})
-    with pytest.raises(ArgumentError):  # a programming error is not an outage
-        bug.run("prepare_order", prepare((COLA, 20)))
+    assert caplog.messages == [f"prepare_order failed for company {COMPANY}: {error.__name__}"]
+
+
+@pytest.mark.parametrize("error", [IntegrityError, ProgrammingError, DataError])
+def test_a_bug_in_the_proposal_write_raises(error: type[IntegrityError]) -> None:
+    for bug in (error("INSERT", {}, Exception("bug")), ArgumentError("bad statement")):
+        t = tools(proposals=FakeProposals(error=bug))
+        t.run("search_products", {"query": "cola"})
+        with pytest.raises(type(bug)):  # a wiring or data bug is not an outage
+            t.run("prepare_order", prepare((COLA, 20)))
+
+
+ONE, EARLIER_ID = ProposalLine(COLA, 1, PRICES[COLA], PRICES[COLA]), ProposalId(UUID(int=41))
+EARLIER = OrderProposal.prepared(EARLIER_ID, SESSION, (ONE,), ONE.line_total, DAY, NOW)
+QUOTED = QuoteLine(COLA, 1, ONE.unit_price, ONE.line_total)
+ORDERED = OrderConfirmation(
+    OrderId(UUID(int=51)), EARLIER_ID, CUSTOMER, (QUOTED,), ONE.line_total, DAY, NOW, "Listo."
+)
+
+
+@pytest.mark.parametrize(("orders", "failure"), [((ORDERED,), None), ((), "rules_unavailable")])
+def test_an_earlier_proposal_with_an_order_or_an_unknown_one_is_not_superseded(
+    orders: tuple[OrderConfirmation, ...], failure: Any
+) -> None:
+    """B67, B68: its Dale press may have gone through though the brain never heard the answer.
+    An order exists: it is shown and marked, and nothing is prepared; unknown: nothing moves."""
+    erp, proposals = FakeErp(*orders), FakeProposals()
+    erp.failing, erp.failure = "find_order", failure and ErrorCode(failure)
+    proposals.earlier = EARLIER
+    t = tools(erp, proposals)
+    t.run("search_products", {"query": "cola"})
+    outcome = t.run("prepare_order", prepare((COLA, 30)))
+    assert ("find_order", COMPANY) in erp.calls and proposals.saved == []
+    if failure:
+        assert error_code(outcome.content) == failure and outcome.shown == ()
+        assert proposals.marks == []
+    else:
+        body, marks = json.loads(outcome.content), [(EARLIER.id, ORDERED.order_id)]
+        assert (body["confirmed"], body["prepared"], body["note"]) == (True, False, EARLIER_ORDERED)
+        assert outcome.shown == (order_confirmed(ORDERED),) and proposals.marks == marks
