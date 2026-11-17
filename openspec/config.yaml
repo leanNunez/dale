@@ -1,0 +1,54 @@
+schema: spec-driven
+
+context: |
+  Project: dale (greenfield, no code yet). AI agent that takes wholesale orders by chat and verifies each against the business database.
+  Stack (PLANNED, not detected; versions pinned during v0.1): Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL with RLS; React+TS+Vite+Tailwind from v0.2+.
+  Architecture: single service in v0.1 with three modules (erp-sim, brain, verifier) separated by interfaces, hexagonal inside; split into services in v0.5.
+  Testing (PLANNED): pytest against real PostgreSQL, Hypothesis, ruff, mypy strict, import-linter. No runner exists yet.
+  Style: artifacts in English; README in English and Spanish; chat and test data in Rioplatense Spanish. Conventional commits, no AI attribution. PRs up to 400 changed lines excluding specs and generated files.
+  Authoritative docs: the internal project plan and the v0.1 kickoff. They are private and not published; "plan §N" and "kickoff" references point to them.
+
+strict_tdd: false   # no test runner yet; re-evaluate once the v0.1 skeleton and pytest exist
+
+testing:
+  status: planned
+  runner: pytest (planned, real PostgreSQL)
+  layers:
+    unit: planned (pytest, Hypothesis)
+    integration: planned (pytest + PostgreSQL)
+    e2e: not planned for v0.1
+  coverage: not decided
+  quality:
+    linter: ruff (planned)
+    type_checker: mypy strict (planned)
+    formatter: ruff format (planned)
+    architecture: import-linter (planned)
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Keep v0.1 to a single short spec (proposal, requirements, design, tasks); out-of-scope items go to "known pending items"
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document architecture decisions with rationale
+    - Follow backend-foundations rules, each with a CI check; include only the rules v0.1 needs
+    - The model proposes and code executes; the prepared order lives in the brain module and is confirmed by code via the management module, with the proposal ID as idempotency key
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Forecast 400-line budget risk (delivery_strategy ask-on-risk, review_budget_lines 400)
+  apply:
+    guidelines:
+      - Never read ANTHROPIC_API_KEY, never create .env with keys, never touch or print ~/.config/anthropic/; use Anthropic() with no arguments
+      - Conventional commits, no AI attribution
+      - All data is fictitious (distributor "Distribuidora El Hornero")
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
