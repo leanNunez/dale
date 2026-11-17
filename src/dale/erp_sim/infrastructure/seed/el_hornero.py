@@ -42,12 +42,12 @@ C-008|Kiosco Cerrado Definitivo|Norte|0
 """
 # sku | name | brand | presentation | search terms | price in pesos | active
 PRODUCTS = """
-COLA-225|Gaseosa cola|Burbuja|2,25 L|cola gaseosa|2450|1
+COLA-225|Gaseosa cola|Burbuja|2,25 L|cola gaseosa dos cuarto|2450|1
 COLA-15|Gaseosa cola|Burbuja|1,5 L|cola gaseosa|1850|1
 COLA-6X500|Gaseosa cola pack|Burbuja|6 x 500 ml|cola pack|6900|1
-LIMA-225|Gaseosa lima limon|Burbuja|2,25 L|lima limon|2350|1
-NARA-225|Gaseosa naranja|Burbuja|2,25 L|naranja|2350|1
-POME-225|Gaseosa pomelo|Burbuja|2,25 L|pomelo|2350|1
+LIMA-225|Gaseosa lima limon|Burbuja|2,25 L|lima limon dos cuarto|2350|1
+NARA-225|Gaseosa naranja|Burbuja|2,25 L|naranja dos cuarto|2350|1
+POME-225|Gaseosa pomelo|Burbuja|2,25 L|pomelo dos cuarto|2350|1
 AGUA-2|Agua sin gas|Manantial Sur|2 L|agua sin gas|1100|1
 AGUA-6X2|Agua sin gas pack|Manantial Sur|6 x 2 L|agua pack|6200|1
 AGUA-GAS-15|Agua con gas|Manantial Sur|1,5 L|agua con gas soda|1250|1

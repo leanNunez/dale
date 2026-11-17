@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
+from dale.erp_sim.domain.catalog import CatalogProduct
 from dale.erp_sim.domain.rules import Customer, Zone
 from dale.erp_sim.infrastructure import tables as t
 from dale.shared.ids import CompanyId, CustomerId, ProductId
@@ -60,3 +61,10 @@ class SqlRuleData:
         with self._engine.connect() as conn:
             rows = conn.execute(stmt).all()
         return {ProductId(i): None if cents is None else Money(cents) for i, cents in rows}
+
+    def active_products(self, company_id: CompanyId) -> list[CatalogProduct]:
+        p = t.product
+        cols = (p.c.id, p.c.sku, p.c.name, p.c.brand, p.c.presentation, p.c.search_terms)
+        stmt = sa.select(*cols).where(of_company(p, company_id), p.c.active).order_by(p.c.sku)
+        with self._engine.connect() as conn:
+            return [CatalogProduct(ProductId(r[0]), *r[1:]) for r in conn.execute(stmt)]

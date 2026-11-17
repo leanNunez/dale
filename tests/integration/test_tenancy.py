@@ -11,7 +11,7 @@ from sqlalchemy import Engine
 from dale.erp_sim.infrastructure import tables as t
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.infrastructure.seed import el_hornero
-from dale.erp_sim.public import QuoteLineRequest, QuoteRequest
+from dale.erp_sim.public import Delivery, ProductPrice, QuoteLineRequest, QuoteRequest
 from dale.shared.clock import FrozenClock
 from dale.shared.errors import ErrorCode, Failure, Ok
 from dale.shared.ids import CompanyId, CustomerId, ProductId
@@ -58,3 +58,20 @@ def test_each_company_quotes_with_its_own_prices_customers_zones_and_timezone(ap
     assert quote(app, TWIN, "C-001", "GASE-VIE", 1) == (Money(290_100), twin)
     assert quote(app, HORNERO, "C-001", "COLA-225", 1) == Failure(ErrorCode.BELOW_MINIMUM_AMOUNT)
     assert quote(app, TWIN, "C-001", "COLA-225", 1) == (Money(111_100), twin)
+
+
+def test_catalog_reads_return_only_the_requested_company(app: Engine) -> None:
+    erp = SqlErpFacade(app, FrozenClock(NOW))
+    c001 = CustomerId(el_hornero.row_id("customer", "C-001"))
+    cola, old = (ProductId(el_hornero.row_id("product", s)) for s in ("COLA-225", "GASE-VIE"))
+    assert erp.get_prices(HORNERO, [cola, old]) == Ok((ProductPrice(cola, Money(245_000)),))
+    twin = (ProductPrice(cola, Money(111_100)), ProductPrice(old, Money(290_100)))
+    assert erp.get_prices(TWIN, [cola, old]) == Ok(twin)
+    hornero = Delivery(date(2026, 11, 19), datetime(2026, 11, 18, 18, tzinfo=BA), Money(3_000_000))
+    assert erp.check_delivery(HORNERO, c001) == Ok(hornero)
+    later = Delivery(date(2026, 11, 25), datetime(2026, 11, 24, 8, tzinfo=TOKYO), Money(100))
+    assert erp.check_delivery(TWIN, c001) == Ok(later)
+    colas = ["COLA-15", "COLA-225", "COLA-6X500"]  # the old cola is active only in the twin
+    for company, expected in ((HORNERO, colas), (TWIN, ["GASE-VIE", *colas])):
+        result = erp.search_products(company, "cola vieja")
+        assert isinstance(result, Ok) and [m.sku for m in result.value] == expected
