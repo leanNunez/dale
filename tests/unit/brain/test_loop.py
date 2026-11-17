@@ -1,4 +1,4 @@
-"""The agent loop with a scripted ModelPort (R4, R8, R9, R10). Replies go through the shared
+"""The agent loop with a scripted ModelPort (R4, R8, R9, R10, D10). Replies go through the shared
 parser, as replay does. Nothing reaches a confirm, an unknown tool runs nothing, the loop stops
 at six calls, and every ending other than an answer shows a fixed message. Every request the
 model receives is checked to be well formed (B75)."""
@@ -17,13 +17,15 @@ from dale.brain.application.model_port import (
 )
 from dale.brain.application.prompt import system_blocks
 from dale.brain.application.take_turn import MAX_MODEL_CALLS, MAX_TURNS, TakeTurn, TurnResult
-from dale.brain.application.tools import TOOL_SCHEMAS
+from dale.brain.application.tools import HANDOFF_NOTICE, TOOL_SCHEMAS
+from dale.brain.domain.handoff import HandoffReason
 from dale.shared.customer_input import CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode, message_for
 from dale.shared.ids import ProposalId
-from dale.shared.shown_events import AssistantText, ProposalSummary, SystemNotice
+from dale.shared.shown_events import AssistantText, HandoffNotice, ProposalSummary, SystemNotice
 from tests.unit.brain.fakes import (
     COLA,
+    COMPANY,
     SESSION,
     FakeConversations,
     FakeErp,
@@ -106,7 +108,8 @@ class Chat:
         self.proposals, self.handoffs = FakeProposals(), FakeHandoffs(handoff_error)
         loop_tools = tools(self.erp, self.proposals, self.handoffs)
         rows = FakeConversations(self.log, open_error)
-        self.take = TakeTurn(SESSION, self.model, loop_tools, rows, SYSTEM)
+        stores = (rows, self.handoffs, self.proposals)
+        self.take = TakeTurn(SESSION, self.model, loop_tools, *stores, SYSTEM)
 
     def __call__(self, said: str) -> TurnResult:
         return self.take(CustomerText(said))
@@ -136,6 +139,42 @@ def test_a_model_that_always_calls_tools_stops_at_six_calls() -> None:
     assert len(chat.model.requests) == len(done.usage) == MAX_MODEL_CALLS == 6
     assert [n for n, _ in chat.erp.calls].count("quote") == 4  # the sixth reply ran nothing
     assert done.failure is ErrorCode.TURN_LIMIT_REACHED and done.shown[-1] == fixed(done.failure)
+
+
+REFUSED = (fixed(ErrorCode.MODEL_REFUSAL), HandoffNotice(HANDOFF_NOTICE))
+
+
+def test_a_refusal_shows_a_fixed_message_withdraws_the_proposal_and_writes_the_handoff() -> None:
+    chat = Chat(SEARCH, PREPARE, PREPARE, says("", "refusal"))
+    done = chat("haceme la gauchada")  # S10.1, D10
+    assert chat.handoffs.written == [(SESSION, HandoffReason.AGENT_REFUSAL, None)]
+    assert done.shown == REFUSED and done.failure is ErrorCode.MODEL_REFUSAL  # no summary
+    last = chat.proposals.saved[-1][1].id  # B75: its save superseded the turn's first one
+    assert len(chat.proposals.saved) == 2 and chat.proposals.withdrawn == [(COMPANY, last)]
+
+
+def test_a_refusal_whose_withdraw_fails_still_offers_the_handoff(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    chat = Chat(SEARCH, PREPARE, says("", "refusal"))
+    chat.proposals.withdraw_error = OperationalError("x", {}, Exception())
+    assert chat("haceme la gauchada").shown == REFUSED and chat.handoffs.written
+    assert "withdraw failed" in caplog.text and chat.proposals.withdrawn == []
+
+
+def test_a_refused_turn_leaves_the_history_as_it_was() -> None:
+    chat = Chat(says("Hola."), SEARCH, says("", "refusal"), says("Dale."))
+    for said in ("hola", "haceme la gauchada", "quiero cola"):
+        chat(said)
+    assert customer_texts(chat.model.requests[-1]) == ["hola", "quiero cola"]
+
+
+def test_a_refusal_whose_handoff_fails_promises_no_person() -> None:
+    chat = Chat(says("", "refusal"), handoff_error=OperationalError("x", {}, Exception()))
+    done = chat("haceme la gauchada")  # S7.4, B31
+    assert done.shown == (fixed(ErrorCode.MODEL_REFUSAL),) and chat.handoffs.written == []
+    assert "persona" not in message_for(ErrorCode.MODEL_REFUSAL)
+    assert chat.erp.calls == [] and chat.proposals.saved == chat.proposals.withdrawn == []
 
 
 @pytest.mark.parametrize(

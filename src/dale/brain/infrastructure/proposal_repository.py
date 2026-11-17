@@ -69,6 +69,9 @@ class SqlLockedProposals:
         confirmed = ProposalStatus.CONFIRMED.value
         self._mark(proposal_id, was, status=confirmed, order_id=order_id, rejection_code=None)
 
+    def withdraw(self, proposal_id: ProposalId) -> None:
+        self._mark(proposal_id, PREPARED, status=ProposalStatus.SUPERSEDED.value)
+
     def mark_rejected(self, proposal_id: ProposalId, code: ErrorCode) -> None:
         rejected = ProposalStatus.REJECTED.value
         self._mark(proposal_id, PREPARED, status=rejected, rejection_code=code.value)

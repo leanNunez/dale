@@ -64,12 +64,15 @@ class FakeErp:
 
 
 class FakeProposals:
-    """Returns `stored` (or what it was given) as the stored row, or raises `error` on locking."""
+    """Returns `stored` (or what it was given) as the stored row, or raises `error` on locking
+    and `withdraw_error` on a withdraw."""
 
     def __init__(self, stored: OrderProposal | None = None, error: Exception | None = None) -> None:
         self.saved: list[tuple[CompanyId, OrderProposal]] = []
         self.stored, self.error, self.marks = stored, error, list[tuple[Any, ...]]()
         self.earlier: OrderProposal | None = None
+        self.withdrawn: list[tuple[CompanyId, Any]] = []
+        self.withdraw_error: Exception | None = None
 
     @contextmanager
     def locked(self, company_id: CompanyId, conversation_id: object) -> Iterator[Any]:
@@ -88,6 +91,11 @@ class FakeProposals:
 
     def mark_confirmed(self, *mark: Any, **was: Any) -> None:
         self.marks.append((*mark, *was.values()))
+
+    def withdraw(self, proposal_id: Any) -> None:
+        if self.withdraw_error:
+            raise self.withdraw_error
+        self.withdrawn.append((self.company, proposal_id))
 
     def get(self, company_id: CompanyId, proposal_id: object) -> OrderProposal | None:
         raise AssertionError("no tool reads a proposal by id")

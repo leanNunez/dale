@@ -1,8 +1,9 @@
-"""One customer turn (design §7; R4, R8, R9): our own loop, at most six model calls, closed
-tool dispatch, fenced customer text. Only an `end_turn` with text is an answer. Any other
-ending shows a fixed message and keeps the exchanges that completed (B75): every tool call in
-the history has its result, so every request is well formed. Typed text reaches only the
-model: this class has no path to management's confirm (S4.2)."""
+"""One customer turn (design §7; R4, R8, R9, R10, D10): our own loop, at most six model calls,
+closed tool dispatch, fenced customer text. Only an `end_turn` with text is an answer. A
+refusal is code's to handle. Any other ending shows a fixed message and keeps the exchanges
+that completed (B75): every tool call in the history has its result, so every request is well
+formed. Typed text reaches only the model: this class has no path to management's confirm
+(S4.2)."""
 
 import logging
 from collections.abc import Sequence
@@ -19,12 +20,19 @@ from dale.brain.application.model_port import (
     ModelUnavailableError,
     Usage,
 )
-from dale.brain.application.ports import ConversationPort
-from dale.brain.application.tools import TOOL_SCHEMAS, Tools
+from dale.brain.application.ports import ConversationPort, HandoffPort, ProposalRepository
+from dale.brain.application.tools import HANDOFF_NOTICE, TOOL_SCHEMAS, Tools
+from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.session import SessionContext
 from dale.shared.customer_input import CustomerText
 from dale.shared.errors import ErrorCode, message_for
-from dale.shared.shown_events import AssistantText, ShownEvent, SystemNotice
+from dale.shared.shown_events import (
+    AssistantText,
+    HandoffNotice,
+    ProposalSummary,
+    ShownEvent,
+    SystemNotice,
+)
 
 logger = logging.getLogger(__name__)
 MAX_MODEL_CALLS, MAX_TURNS = 6, 8  # model calls per turn; customer turns the model sees
@@ -33,7 +41,7 @@ MAX_MODEL_CALLS, MAX_TURNS = 6, 8  # model calls per turn; customer turns the mo
 @dataclass(frozen=True, slots=True)
 class TurnResult:
     shown: tuple[ShownEvent, ...]
-    failure: ErrorCode | None  # None when the model answered
+    failure: ErrorCode | None  # None when the model answered; refusals count apart (D10)
     usage: tuple[Usage, ...]  # one per model call
 
 
@@ -46,9 +54,12 @@ class TakeTurn:
         model: ModelPort,
         tools: Tools,
         conversations: ConversationPort,
+        handoffs: HandoffPort,
+        proposals: ProposalRepository,
         system: Sequence[Json],
     ) -> None:
-        self._session, self._model, self._tools = session, model, tools
+        self._session, self._model, self._tools, self._handoffs = session, model, tools, handoffs
+        self._proposals = proposals
         self._system, self._history = tuple(system), list[Json]()
         self._conversations, self._opened = conversations, False
 
@@ -75,6 +86,8 @@ class TakeTurn:
                 said_only = [b for b in reply.content if b["type"] != "tool_use"]  # never run
                 self._history = [*messages, {"role": "assistant", "content": said_only}]
                 return TurnResult((*shown, AssistantText(reply.text)), None, tuple(usage))
+            if reply.stop_reason == "refusal":
+                return self._refused(shown, usage)
             if reply.stop_reason != "tool_use" or not reply.tool_calls:  # empty, max_tokens, ...
                 why = reply.stop_reason
                 return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, why)
@@ -106,6 +119,28 @@ class TakeTurn:
         self._history = messages
         logger.warning("turn failed for company %s: %s", self._session.company_id, why or "none")
         return TurnResult((*shown, _notice(code)), code, tuple(usage))
+
+    def _refused(self, shown: list[ShownEvent], usage: list[Usage]) -> TurnResult:
+        """D10: a fixed message and a handoff written by code. A refused turn offers nothing to
+        confirm (S10.1), only a written handoff promises a person (B31, S7.4), and the history
+        stays as it was before the turn."""
+        code, company = ErrorCode.MODEL_REFUSAL, self._session.company_id
+        hidden = [e.proposal_id for e in shown if isinstance(e, ProposalSummary)]
+        if hidden:  # B75: each prepare superseded the one before, so only the last is left
+            try:
+                with self._proposals.locked(company, self._session.conversation_id) as locked:
+                    locked.withdraw(hidden[-1])
+            except (OperationalError, InterfaceError) as error:  # never shown: no key reaches it
+                logger.error("withdraw failed for company %s: %s", company, type(error).__name__)
+        kept = [*(e for e in shown if not isinstance(e, ProposalSummary)), _notice(code)]
+        try:
+            self._handoffs.request_handoff(self._session, HandoffReason.AGENT_REFUSAL, None)
+        except (OperationalError, InterfaceError) as error:  # other errors raise
+            kind = type(error).__name__
+            logger.error("agent_refusal handoff failed for company %s: %s", company, kind)
+        else:
+            kept.append(HandoffNotice(HANDOFF_NOTICE))
+        return TurnResult(tuple(kept), code, tuple(usage))
 
 
 def _notice(code: ErrorCode) -> SystemNotice:
