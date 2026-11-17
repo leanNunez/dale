@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from dale.brain.application.tools import Tools
+from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.proposal import OrderProposal
 from dale.brain.domain.session import SessionContext
 from dale.erp_sim.public import Delivery, ProductMatch, ProductPrice, Quote, QuoteLine, QuoteRequest
@@ -92,8 +93,28 @@ class FakeProposals:
         raise AssertionError("no tool reads a proposal by id")
 
 
-def tools(erp: FakeErp | None = None, proposals: FakeProposals | None = None) -> Tools:
-    return Tools(SESSION, erp or FakeErp(), proposals or FakeProposals(), SequentialIdGenerator())
+class FakeHandoffs:
+    """Records each written request, or raises `error` and writes nothing."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.written: list[tuple[SessionContext, HandoffReason, str | None]] = []
+        self.error = error
+
+    def request_handoff(
+        self, session: SessionContext, reason: HandoffReason, note: str | None
+    ) -> None:
+        if self.error:
+            raise self.error
+        self.written.append((session, reason, note))
+
+
+def tools(
+    erp: FakeErp | None = None,
+    proposals: FakeProposals | None = None,
+    handoffs: FakeHandoffs | None = None,
+) -> Tools:
+    stores = (proposals or FakeProposals(), SequentialIdGenerator(), handoffs or FakeHandoffs())
+    return Tools(SESSION, erp or FakeErp(), *stores)
 
 
 def prepare(*lines: tuple[object, object], **extra: object) -> dict[str, object]:

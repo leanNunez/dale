@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from typing import Protocol
 
+from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalStatus
 from dale.brain.domain.session import SessionContext
 from dale.erp_sim.public import (
@@ -97,6 +98,8 @@ class ConfirmableProposals(Protocol):
 
 
 class HandoffPort(Protocol):
-    """Declared here; slice 8 implements it against `brain.handoff_request` (D1)."""
-
-    def request_handoff(self, session: SessionContext, reason: str, note: str | None) -> None: ...
+    def request_handoff(
+        self, session: SessionContext, reason: HandoffReason, note: str | None
+    ) -> None:
+        """One request for the session's conversation and customer (D1); raises on failure."""
+        ...

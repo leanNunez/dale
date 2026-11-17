@@ -19,6 +19,7 @@ from dale.brain.application.tools import Tools
 from dale.brain.domain.proposal import OrderProposal, ProposalLine, ProposalStatus
 from dale.brain.domain.session import SessionContext
 from dale.brain.infrastructure import tables as t
+from dale.brain.infrastructure.handoff_repository import SqlHandoffRepository
 from dale.brain.infrastructure.proposal_repository import SqlProposalRepository
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
@@ -62,7 +63,7 @@ def grounded(
     """Tools whose search returned COLA. Ids are sequential by default, so two Tools reuse the
     first id; `writes` is the engine of the proposal store."""
     erp_facade, store = SqlErpFacade(db, FrozenClock(NOW)), SqlProposalRepository(writes or db)
-    tools = Tools(at, erp_facade, store, ids or SequentialIdGenerator())
+    tools = Tools(at, erp_facade, store, ids or SequentialIdGenerator(), SqlHandoffRepository(db))
     assert not tools.run("search_products", {"query": "cola dos y cuarto"}).is_error
     return tools
 
