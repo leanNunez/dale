@@ -42,12 +42,13 @@ EXPECTED: dict[str, tuple[int, str]] = {
     "model_refusal": (422, "Eso no lo puedo resolver por este medio."),
     "model_unavailable": (503, "Estoy con un problema ahora. Probá de nuevo en un rato."),
     "unknown_tool": (500, "No pude hacer eso. Probemos de otra manera."),
+    "invalid_tool_input": (422, "No pude procesar eso. Probemos de otra manera."),
 }
 PROMISES = ("te paso", "te llamo", "te contacta", "te armo", "te aviso", "te escribo", "confirmé")
 
 
-def test_catalog_has_the_sixteen_design_codes() -> None:
-    assert len(ErrorCode) == 16
+def test_catalog_has_the_design_codes_plus_invalid_tool_input() -> None:
+    assert len(ErrorCode) == 17
 
 
 def test_codes_are_unique_snake_case() -> None:
@@ -62,7 +63,7 @@ def test_every_code_has_status_and_customer_message(code: ErrorCode) -> None:
     message = ERROR_MESSAGES[code]
     assert message.strip()
     assert message_for(code) == message
-    assert not re.search(r"Traceback|Exception|SQL|\{|_id\b", message)
+    assert not re.search(r"Traceback|Exception|SQL|\{|_id\b|[Hh]erramienta|[Tt]ool", message)
 
 
 def test_mappings_cover_exactly_the_enum() -> None:

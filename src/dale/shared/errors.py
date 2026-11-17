@@ -23,6 +23,7 @@ class ErrorCode(StrEnum):
     MODEL_REFUSAL = "model_refusal"
     MODEL_UNAVAILABLE = "model_unavailable"
     UNKNOWN_TOOL = "unknown_tool"
+    INVALID_TOOL_INPUT = "invalid_tool_input"
 
 
 # Kept for the v0.2 HTTP channel (D7); v0.1 does not serve HTTP.
@@ -43,6 +44,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MODEL_REFUSAL: 422,
     ErrorCode.MODEL_UNAVAILABLE: 503,
     ErrorCode.UNKNOWN_TOOL: 500,
+    ErrorCode.INVALID_TOOL_INPUT: 422,
 }
 
 # Rioplatense Spanish, no internal details, no promises: a follow-up by a person
@@ -66,6 +68,7 @@ ERROR_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.MODEL_REFUSAL: "Eso no lo puedo resolver por este medio.",
     ErrorCode.MODEL_UNAVAILABLE: "Estoy con un problema ahora. Probá de nuevo en un rato.",
     ErrorCode.UNKNOWN_TOOL: "No pude hacer eso. Probemos de otra manera.",
+    ErrorCode.INVALID_TOOL_INPUT: "No pude procesar eso. Probemos de otra manera.",
 }
 
 
