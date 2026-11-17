@@ -2,7 +2,8 @@
 
 Strict mode takes no length or range keywords, so the schemas state the bounds in prose and
 the handlers check them again. Company and customer come only from the SessionContext (D2);
-prices, totals and dates only from `quote`.
+prices, totals and dates only from `quote`. A total below the minimum comes back with
+management's own total, minimum and shortfall, so the model never computes an amount (B96).
 """
 
 import json
@@ -22,9 +23,9 @@ from dale.brain.domain.handoff import MAX_NOTE, MODEL_REASONS, HandoffReason
 from dale.brain.domain.proposal import OrderProposal, ProposalLine
 from dale.brain.domain.session import GroundingLedger, SessionContext
 from dale.erp_sim.public import OrderConfirmation, QuoteLineRequest, QuoteRequest
-from dale.shared.errors import ErrorCode, Failure, Ok, message_for
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok, message_for
 from dale.shared.ids import CompanyId, IdGenerator, ProductId, new_proposal_id
-from dale.shared.money import pesos
+from dale.shared.money import Money, pesos
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
 from dale.shared.shown_events import HandoffNotice, ProposalSummary, ShownEvent, SummaryLine
 
@@ -32,7 +33,11 @@ logger = logging.getLogger(__name__)
 MAX_QUERY, MAX_PRICE_IDS, MAX_LINES = 100, 20, 30
 NOT_CONFIRMED = "NOT confirmed: only the customer's Dale key confirms it. Never say it is."
 EARLIER_ORDERED = "The earlier proposal WAS confirmed: its order exists. Nothing new was prepared."
-HANDOFF_RECORDED = "Recorded. A person will contact the customer. Promise no exception or time."
+# Not "Recorded": the model would echo it as an order that "quedó registrado" (B96).
+HANDOFF_SAVED = (
+    "The request was saved and a person will contact the customer. It is not an order and"
+    " confirms nothing. Promise no exception or time."
+)
 # The only text that promises a person: shown only after the handoff row is written (R7, B31).
 HANDOFF_NOTICE = (
     "Listo, dejé registrada tu consulta. Una persona del equipo se va a comunicar con vos."
@@ -136,8 +141,9 @@ def _ok(payload: dict[str, Any], *shown: ShownEvent) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), False, shown)
 
 
-def _error(code: ErrorCode) -> ToolOutcome:
+def _error(code: ErrorCode, **amounts: Money) -> ToolOutcome:
     payload = {"code": code.value, "message": message_for(code)}
+    payload |= {name: pesos(amount) for name, amount in amounts.items()}
     return ToolOutcome(json.dumps(payload, ensure_ascii=False), True)
 
 
@@ -235,8 +241,11 @@ class Tools:
             return _error(ErrorCode.UNGROUNDED_PRODUCT)  # checked before anything is quoted
         asked = tuple(QuoteLineRequest(i, x.quantity) for i, x in zip(ids, data.lines, strict=True))
         quoted = self._erp.quote(company, QuoteRequest(self._session.customer_id, asked))
+        if isinstance(quoted, BelowMinimum):  # S3.2: nothing is stored
+            short = {"total": quoted.total, "minimum": quoted.minimum, "missing": quoted.shortfall}
+            return _error(quoted.code, **short)
         if isinstance(quoted, Failure):
-            return _error(quoted.code)  # S3.2: nothing is stored
+            return _error(quoted.code)
         q, new_id = quoted.value, new_proposal_id(self._ids)
         lines = tuple(
             ProposalLine(x.product_id, x.name, x.quantity, x.unit_price, x.line_total)
@@ -278,4 +287,4 @@ class Tools:
             self._handoffs.request_handoff(self._session, data.reason, data.note or None)
         except (OperationalError, InterfaceError) as error:  # other errors raise
             return _unavailable("request_human_handoff", self._session.company_id, error)
-        return _ok({"recorded": True, "note": HANDOFF_RECORDED}, HandoffNotice(HANDOFF_NOTICE))
+        return _ok({"saved": True, "note": HANDOFF_SAVED}, HandoffNotice(HANDOFF_NOTICE))

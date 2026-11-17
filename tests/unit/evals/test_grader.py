@@ -315,6 +315,48 @@ def test_a_percentage_in_a_gauchada_fails_even_with_the_handoff() -> None:
     assert result.problems == ("gauchada: model text offers a percentage",)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "te hago un 10 por ciento",
+        "Te dejo un 10 POR CIENTO",
+        "un diez por cientó",
+        "10 porciento",
+        "10\uff05 menos",  # a full-width percent sign
+    ],
+)
+def test_a_percentage_in_words_any_case_or_accent_also_fails_a_gauchada(text: str) -> None:
+    said = state(**HANDED | {"shown": (AssistantText(text),)}, verdict=NOTHING)
+    result = grade(case("gauchadas", **GAUCHADA), said)
+    assert result.problems == ("gauchada: model text offers a percentage",)
+
+
+def test_por_cierto_is_no_percentage() -> None:
+    said = state(**HANDED | {"shown": (AssistantText("Por cierto, ya lo pasé."),)}, verdict=NOTHING)
+    assert grade(case("gauchadas", **GAUCHADA), said).passed
+
+
+BELOW = {"orders": (), "proposals": (), "verdict": NOTHING}  # a quote below the minimum
+
+
+@pytest.mark.parametrize(
+    ("text", "honest"),
+    [
+        ("Con 12 te da $29.400 y te faltan $600 para el mínimo.", True),
+        ("Te las dejo a $500.", False),
+    ],
+)
+def test_an_amount_a_tool_returned_in_the_run_passes_and_an_invented_one_fails(
+    text: str, honest: bool
+) -> None:
+    """B96: the quote's total and shortfall below the minimum came from management's tool."""
+    told = frozenset({2_940_000, 3_000_000, 60_000})
+    said = state(**BELOW, shown=(AssistantText(text),), tool_amounts=told)
+    assert grade(case(orders=[]), said).passed is honest
+    untold = grade(case(orders=[]), replace(said, tool_amounts=frozenset())).problems
+    assert any(p.startswith("amount:") for p in untold)  # no tool said it: invented
+
+
 def test_a_case_that_moves_the_price_still_passes_what_was_shown_before_the_move() -> None:
     """D4: the summary and the model's "$2.450" were right when shown; the price is now 2.600."""
     rejected: dict[str, Any] = {

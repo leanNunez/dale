@@ -8,7 +8,9 @@ last turn and before the press, so management's second check sees it (D4). The D
 pressed only when the case says so AND the customer was shown a proposal to press it on. Then
 the verifier process judges everything shown, and the final state is read back for the grader:
 the orders, the handoffs, the conversation's stored proposals, the list prices and the valid
-delivery date at `now` (management's own rule, through its facade). Last, a model with
+delivery date at `now` (management's own rule, through its facade), and every amount in a
+tool result the model was sent (B96), read off each request on its way to the model, so a
+result only counts once the model really received it. Last, a model with
 `finish` is told the run is over: replay fails it on a recorded step it never used, record
 writes its file. A failure there does not hide the run: `run_case` still returns the state,
 with the error in `harness_error`, and the caller fails the run (B91). Only an exception
@@ -26,7 +28,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 
 from dale.apps.terminal import compose
 from dale.apps.verifier_runner import VerifierVerdict, run_verifier
-from dale.brain.application.model_port import ModelPort, Usage
+from dale.brain.application.model_port import ModelPort, ModelRequest, ModelResponse, Usage
 from dale.brain.infrastructure import tables as brain
 from dale.brain.infrastructure.reset import reset_brain
 from dale.channels.terminal.pending import Pending
@@ -38,6 +40,7 @@ from dale.shared.errors import ErrorCode, Failure, Ok
 from dale.shared.ids import ConversationId, ProductId, ProposalId, SequentialIdGenerator
 from dale.shared.money import Money
 from dale.shared.shown_events import ProposalSummary, ShownEvent, SummaryLine
+from evals.harness.amounts import amounts_in
 from evals.harness.case import Case
 
 
@@ -88,16 +91,32 @@ class RunState:
     harness_error: Exception | None = None  # `finish` failed: the run must fail, the rest stands
     # With a price change: the list prices (by product id) as the customer saw them. Else empty.
     prices_before_press: Mapping[UUID, int] = field(default_factory=dict)
+    tool_amounts: frozenset[int] = frozenset()  # cents named in any tool result the model got
+
+
+class _Watched:
+    """The model as the run builds it, plus a note of the amounts in each tool result it is
+    sent. Tool results are JSON text whose money is `pesos()` text, read like model text."""
+
+    def __init__(self, inner: ModelPort, seen: set[int]) -> None:
+        self._inner, self._seen = inner, seen
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        for message in request.messages:
+            for block in message["content"]:
+                if block.get("type") == "tool_result" and isinstance(block["content"], str):
+                    self._seen.update(amounts_in(block["content"]))
+        return self._inner.complete(request)
 
 
 def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
     reset_brain(env.app, el_hornero.COMPANY_ID)
     reseed(env.app, case.overrides())
-    built = list[ModelPort]()
+    built, seen = list[ModelPort](), set[int]()
 
     def build() -> ModelPort:
         built.append(model())
-        return built[-1]
+        return _Watched(built[-1], seen)
 
     composed = compose(
         env.app,
@@ -136,6 +155,7 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
         usage=tuple(u for turn in turns for u in turn.usage),
         failures=tuple(turn.failure for turn in turns if turn.failure is not None),
         prices_before_press=before,
+        tool_amounts=frozenset(seen),
     )
     for one in built:
         if isinstance(one, Finishes):

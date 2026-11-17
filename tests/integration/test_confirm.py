@@ -221,7 +221,8 @@ def test_a_rejection_returns_a_catalog_code_and_message_and_writes_nothing(
     """S5.3, D4; S5.4 and S6.1: the code and its customer message come from the catalog."""
     before = counts(app)
     result = confirm(app, request_, now)
-    assert result == Failure(code) and result.message == ERROR_MESSAGES[code]
+    assert isinstance(result, Failure) and result.code is code  # below the minimum: a subtype
+    assert result.message == ERROR_MESSAGES[code]
     assert counts(app) == before
 
 

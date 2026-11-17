@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from dale.shared.errors import ErrorCode, Failure, Ok, Result
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CustomerId, ProductId
 from dale.shared.money import Money, money_sum
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
@@ -87,7 +87,7 @@ def evaluate_order(
         quoted.append(QuotedLine(x.product_id, x.quantity, x.unit_price, x.unit_price * x.quantity))
     total = money_sum(q.line_total for q in quoted)
     if total < zone.minimum:
-        return Failure(ErrorCode.BELOW_MINIMUM_AMOUNT)
+        return BelowMinimum(ErrorCode.BELOW_MINIMUM_AMOUNT, total, zone.minimum)
     day = delivery_date(zone, now)
     if day is None:
         return Failure(ErrorCode.NO_DELIVERY_SLOT)

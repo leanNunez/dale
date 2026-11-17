@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from dale.shared.money import Money
 from dale.shared.quantity import MAX_LINE_QUANTITY, MIN_LINE_QUANTITY
 
 
@@ -83,6 +84,23 @@ class Failure:
     @property
     def message(self) -> str:
         return message_for(self.code)
+
+
+@dataclass(frozen=True, slots=True)
+class BelowMinimum(Failure):
+    """`below_minimum_amount` with management's own figures (B96): the order's total at server
+    prices and the zone minimum. The model may repeat them; it never has to compute one."""
+
+    total: Money
+    minimum: Money
+
+    def __post_init__(self) -> None:
+        if self.code is not ErrorCode.BELOW_MINIMUM_AMOUNT or not self.total < self.minimum:
+            raise ValueError("BelowMinimum is a total below its minimum")
+
+    @property
+    def shortfall(self) -> Money:
+        return Money(self.minimum.cents - self.total.cents)
 
 
 @dataclass(frozen=True, slots=True)

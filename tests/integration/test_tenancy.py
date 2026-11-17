@@ -20,7 +20,7 @@ from dale.erp_sim.public import (
     QuoteRequest,
 )
 from dale.shared.clock import FrozenClock
-from dale.shared.errors import ErrorCode, Failure, Ok
+from dale.shared.errors import BelowMinimum, ErrorCode, Failure, Ok
 from dale.shared.ids import CompanyId, CustomerId, ProductId, ProposalId
 from dale.shared.money import Money
 
@@ -63,7 +63,8 @@ def test_each_company_quotes_with_its_own_prices_customers_zones_and_timezone(ap
     assert quote(app, TWIN, "C-008", "COLA-225", 20) == (Money(2_222_000), twin)
     assert quote(app, HORNERO, "C-001", "GASE-VIE", 20) == Failure(ErrorCode.PRODUCT_NOT_FOUND)
     assert quote(app, TWIN, "C-001", "GASE-VIE", 1) == (Money(290_100), twin)
-    assert quote(app, HORNERO, "C-001", "COLA-225", 1) == Failure(ErrorCode.BELOW_MINIMUM_AMOUNT)
+    short = BelowMinimum(ErrorCode.BELOW_MINIMUM_AMOUNT, Money(245_000), Money(3_000_000))
+    assert quote(app, HORNERO, "C-001", "COLA-225", 1) == short
     assert quote(app, TWIN, "C-001", "COLA-225", 1) == (Money(111_100), twin)
 
 
