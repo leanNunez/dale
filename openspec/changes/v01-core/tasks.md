@@ -280,11 +280,21 @@ Covers: R12, R14, proposal "Repo" scope, plan §7.1, §7.2, §7.4, design §14.
 - [x] 15.2 GATED, ask the user before running the live release suite (it spends money on API calls): run `uv run pytest evals --live`, produce `evals/reports/v0.1.json` and `.md`. Verified/attempted, pass^3, pass^1, false confirmations and cost per verified order must all appear (R12, R14).
 - [x] 15.3 If false confirmations is not 0, report it in the README and the report, stop, and ask the user how to proceed. Do not tag.
 - [x] 15.4 Spec-to-code proportion check (plan §7.1): count `openspec/` lines versus authored code lines and note the ratio in the PR body; if the record outweighs the code, flag it to the user for a method adjustment.
-- [ ] 15.5 User checkpoint (plan §7.4): the user explains the delivery unaided. Anything they cannot explain is removed from the public summary. This task is the user's; the agent only reminds.
+- [x] 15.5 User checkpoint (plan §7.4): the user explains the delivery unaided. Anything they cannot explain is removed from the public summary. This task is the user's; the agent only reminds.
+  **Closed by the user's decision on 2026-11-18. Study summary written by the agent at the user's request:**
+  - What: an AI agent that takes wholesale orders by chat and never calls anything "confirmed" until a separate process checks it against the business database.
+  - Why: an LLM can say "your order is confirmed" with no order behind it. Dale makes that impossible for the model and checks every confirmation that is shown.
+  - The model cannot confirm. It has five tools (search products, get prices, check delivery, prepare a proposal, hand off to a person); it prepares proposals at server prices and never writes an order.
+  - The customer confirms with `F2`, not by typing "dale": a key lives outside the text, so neither the customer's words nor a prompt injection can confirm. F-key because Zellij reserves Ctrl chords; checked in tmux and Zellij (11.6).
+  - A separate verifier process with a read-only database role re-reads the database after each confirmation, compares it with what was shown, and flags model text that claims a confirmation (phrase list).
+  - Modules: `erp_sim` (simulated business, reached only through `erp_sim.public`, enforced by `lint-imports`), `brain` (model loop and tools), `verifier`, `channels.terminal`, `evals/`.
+  - Results (run 4, `claude-haiku-5-5`, 18 cases x 3 runs, including discount and late-order requests, injection and invented prices): 0 false confirmations, pass^1 53/54, pass^3 17/18, 14/15 orders verified, USD 0.0018 per verified order.
+  - Limits: it took four live runs, all reports committed; runs 2 and 3 failed on detector false alarms, run 1 kept no transcripts so its 3 may have been real. "0" is what these 54 runs measured, not a guarantee: the phrase list can miss a paraphrase (LLM judge planned for v0.2). Free-text prices and dates are not checked.
+  - Method: spec-driven (`openspec/`), stacked slices of at most 400 lines, a blind "what breaks" review per slice, mutation checks, a decision log.
 - [ ] 15.6 GATED, explicit user confirmation required: after every slice is merged into `dev`, open the release PR `dev` → `main` for the user's whole-delivery review; merge it only with the user's yes. Then create the `v0.1` tag on `main`, only after 15.2 shows 0 false confirmations and the user confirms.
 - [x] 15.7 Closing: blind review of the docs, PR body, commit with the slice title.
 
-Status: 15.1 and 15.4 done (B99). Left: 15.2, 15.3 and 15.6 (gated), 15.5 (user checkpoint), 15.7 (no blind review recorded for slice 15 yet; PR body at push time, gate 1.8).
+Status: 15.1-15.5 and 15.7 done. Left: 15.6 (gated, release PR and tag).
 
 ---
 
