@@ -1,7 +1,7 @@
 # 0002. The confirm key (Dale key)
 
 Date: 2026-11-13
-Status: accepted for tmux; Zellij pending a manual check
+Status: accepted (tmux and Zellij checked)
 
 ## Context
 
@@ -19,7 +19,7 @@ the brain.
 | Multiplexer | Version | Result | How |
 |---|---|---|---|
 | tmux | 3.4 (`default-terminal tmux-256color`) | `F2` reaches the app | Automated, 2026-11-13 (re-run after B83) |
-| Zellij | — | Not checked: not installed | Pending the user's manual check |
+| Zellij | 0.46.0, in Alacritty | `F2` reaches the app | Manual, real keyboard, live model, 2026-11-18 |
 
 The tmux check ran a probe with the real `dale.channels.terminal.keys.TerminalInput` in a
 detached tmux session, with each key sent by its own `send-keys`:
@@ -54,7 +54,15 @@ terminals bind F-keys (for example, to a menu), so the manual check below covers
 
 If `F2` is intercepted, do not change the key here: record it and decide with the user (D5).
 
+## Zellij result (2026-11-18)
+
+The user ran `python -m dale.apps.terminal --customer C-001` inside Zellij 0.46.0
+in Alacritty, ordered until the proposal appeared (14 x cola 1,5 L and 2 x cola
+2,25 L, total $ 30.800,00), and pressed `F2` at an empty prompt from a real keyboard. The app
+printed management's confirmation and the verifier's verdict `VERIFICADO`. Zellij and the
+terminal emulator both let `F2` through, so this also covers the outer-emulator path that the
+tmux probe did not.
+
 ## Decision
 
-Keep `F2` for confirm and `F3` for cancel. Record the Zellij result in this file when it is
-checked.
+Keep `F2` for confirm and `F3` for cancel.

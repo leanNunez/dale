@@ -74,7 +74,7 @@ In the chat: `F2` confirms the pending proposal (the Dale key), `F3` drops it,
 buffer (a hint is shown), when no proposal is pending, in a paste or multi-key
 burst, and for 1 s after a paste. After each confirmation the verifier prints its verdict. Logs go
 to `DALE_TERMINAL_LOG` (default `~/.local/state/dale/terminal.log`), never into
-the chat. `F2` is checked inside tmux; Zellij is still pending
+the chat. `F2` is checked inside tmux and Zellij
 ([decision 0002](docs/decisions/0002-confirm-key.md)).
 
 The verifier alone: `uv run python -m dale.verifier` reads a JSON request on stdin
