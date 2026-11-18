@@ -151,7 +151,7 @@ false confirmations, unexpected writes, unverifiable runs and runs that raised.
 - Mutation checks: each guard was shown to fail when its code is broken; they are
   recorded in the decision log and the apply-progress notes.
 - A decision log records every choice and why:
-  `openspec/changes/v01-core/decision-log.md`.
+  `openspec/changes/archive/2026-11-18-v01-core/decision-log.md`.
 
 ## License
 
