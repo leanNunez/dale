@@ -35,4 +35,4 @@ def test_results_cite_the_release_report_and_every_earlier_run(name: str) -> Non
 def test_readme_names_the_test_admin_url_and_decision_log(name: str) -> None:
     text = (ROOT / name).read_text(encoding="utf-8")
     assert "DALE_TEST_ADMIN_URL" in text
-    assert "openspec/changes/v01-core/decision-log.md" in text
+    assert "openspec/changes/archive/2026-11-18-v01-core/decision-log.md" in text

@@ -156,7 +156,7 @@ inesperadas, corridas no verificables y corridas que lanzaron una excepción.
 - Comprobaciones de mutación: cada salvaguarda se probó rompiendo su código; están
   registradas en el registro de decisiones y en las notas de apply-progress.
 - Un registro de decisiones anota cada elección y su motivo:
-  `openspec/changes/v01-core/decision-log.md`.
+  `openspec/changes/archive/2026-11-18-v01-core/decision-log.md`.
 
 ## Licencia
 
