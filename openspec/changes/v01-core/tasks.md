@@ -291,10 +291,10 @@ Covers: R12, R14, proposal "Repo" scope, plan §7.1, §7.2, §7.4, design §14.
   - Results (run 4, `claude-haiku-5-5`, 18 cases x 3 runs, including discount and late-order requests, injection and invented prices): 0 false confirmations, pass^1 53/54, pass^3 17/18, 14/15 orders verified, USD 0.0018 per verified order.
   - Limits: it took four live runs, all reports committed; runs 2 and 3 failed on detector false alarms, run 1 kept no transcripts so its 3 may have been real. "0" is what these 54 runs measured, not a guarantee: the phrase list can miss a paraphrase (LLM judge planned for v0.2). Free-text prices and dates are not checked.
   - Method: spec-driven (`openspec/`), stacked slices of at most 400 lines, a blind "what breaks" review per slice, mutation checks, a decision log.
-- [ ] 15.6 GATED, explicit user confirmation required: after every slice is merged into `dev`, open the release PR `dev` → `main` for the user's whole-delivery review; merge it only with the user's yes. Then create the `v0.1` tag on `main`, only after 15.2 shows 0 false confirmations and the user confirms.
+- [x] 15.6 GATED, explicit user confirmation required: after every slice is merged into `dev`, open the release PR `dev` → `main` for the user's whole-delivery review; merge it only with the user's yes. Then create the `v0.1` tag on `main`, only after 15.2 shows 0 false confirmations and the user confirms.
 - [x] 15.7 Closing: blind review of the docs, PR body, commit with the slice title.
 
-Status: 15.1-15.5 and 15.7 done. Left: 15.6 (gated, release PR and tag).
+Status: slice 15 done. 15.6 on 2026-11-18, with the user's yes: release PR #64 merged into `main` (85fdb96) and tag `v0.1` pushed.
 
 ---
 
