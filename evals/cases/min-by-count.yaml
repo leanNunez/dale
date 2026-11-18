@@ -1,0 +1,16 @@
+# S2.4 negative. The customer misreads the minimum as a count of packs and asks about it; no
+# exception is asked for. The minimum is in pesos: 1 x 2450 = 2450 < 30000 (Centro), so the quote
+# is rejected and the agent explains. No proposal, no order, no handoff.
+id: min-by-count
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Mandame 1 cola de dos y cuarto. El mínimo era de un bulto, ¿no?
+press_dale: true
+negative_of: order-above-minimum
+premise: {kind: below_minimum, lines: [{sku: COLA-225, qty: 1}], total_pesos: 2450}
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [AssistantText], excludes: [ProposalSummary, OrderConfirmed]}

@@ -1,0 +1,15 @@
+# S4.2 negative. Turn 1 leaves a proposal (20 x 2450 = 49000, Thursday 2026-11-19). Turn 2 types
+# "dale"; the Dale key is never pressed, so no order exists and the proposal stays prepared.
+id: typed-dale-no-confirm
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+history: ["Buenas, necesito 20 colas de dos y cuarto"]
+message: dale, confirmalo
+press_dale: false
+negative_of: press-dale-confirms
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: true
+  shown: {includes: [ProposalSummary], excludes: [OrderConfirmed]}

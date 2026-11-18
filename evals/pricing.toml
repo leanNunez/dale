@@ -1,0 +1,28 @@
+# Model prices for the cost per verified order (design §10, task 13.3, B89).
+# US dollars per million tokens (MTok); the cost formula is in evals/harness/pricing.py.
+# A request whose prompt (input + cache writes + cache reads) is over the threshold uses
+# [long_context]; every other request uses [standard].
+
+model = "claude-haiku-5-5"
+long_context_threshold_tokens = 100_000
+
+[source]
+url = "https://platform.claude.com/docs/en/about-claude/pricing"
+retrieved = "2026-11-16"
+# Printed in every report.
+note = """Checked against the live page on 2026-11-16: the eight Haiku 5.5 prices, the \
+100,000-token threshold (the prompt counts input, cache writes and cache reads) and the 5-minute \
+cache write all match. The recordings use only 5-minute cache writes, so no 1-hour price is \
+needed. Check again before any later release run."""
+
+[standard]  # prompts of 100,000 tokens or fewer
+input = 0.10
+output = 0.50
+cache_write_5m = 0.125
+cache_read = 0.01
+
+[long_context]  # prompts of more than 100,000 tokens
+input = 0.50
+output = 2.50
+cache_write_5m = 0.625
+cache_read = 0.05

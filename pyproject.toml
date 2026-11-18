@@ -1,0 +1,156 @@
+[project]
+name = "dale"
+version = "0.1.0"
+description = "Fictional wholesale-order agent that verifies every order against the business database."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = "==3.13.*"
+dependencies = [
+    "alembic==1.20.1",
+    "anthropic==2.8.0",
+    "prompt-toolkit==3.0.53",
+    "psycopg[binary]==3.3.9",
+    "pydantic==2.14.3",
+    "pyyaml==6.0.3",
+    "sqlalchemy==2.1.8",
+]
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dale"]
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.170.15",
+    "import-linter==2.16",
+    "mypy==2.4.1",
+    "pytest==9.2.0",
+    "pytest-socket==0.8.1",
+    "ruff==0.17.4",
+    "types-pyyaml==6.0.12.20261111",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests", "scripts", "."]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+files = ["src", "scripts", "tests", "migrations", "evals"]
+mypy_path = ["src", "scripts"]
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts", "."]
+addopts = "-ra --strict-markers --disable-socket --allow-hosts=127.0.0.1,localhost"
+markers = [
+    "integration: needs a real PostgreSQL (the only host sockets may reach)",
+    "eval: replay-mode eval case",
+]
+
+[tool.alembic]
+script_location = "%(here)s/migrations"
+
+[tool.importlinter]
+root_packages = ["dale", "evals", "sqlalchemy", "pydantic", "anthropic"]
+include_external_packages = true
+
+# 1. Layers inside each module: infrastructure -> application -> domain.
+[[tool.importlinter.contracts]]
+id = "1"
+name = "Layers inside erp_sim, brain and verifier"
+type = "layers"
+containers = ["dale.erp_sim", "dale.brain", "dale.verifier"]
+layers = ["infrastructure", "application", "domain"]
+
+# 2. brain reaches erp_sim only through erp_sim.public (all else in erp_sim is forbidden).
+[[tool.importlinter.contracts]]
+id = "2"
+name = "brain imports erp_sim only through erp_sim.public, no verifier or channels"
+type = "forbidden"
+source_modules = ["dale.brain"]
+forbidden_modules = ["dale.erp_sim", "dale.verifier", "dale.channels"]
+ignore_imports = ["dale.brain.** -> dale.erp_sim.public"]
+unmatched_ignore_imports_alerting = "none"
+allow_indirect_imports = true
+
+# 3. erp_sim knows nobody; its public facade does not reach its internals.
+[[tool.importlinter.contracts]]
+id = "3a"
+name = "erp_sim imports no brain, verifier or channels"
+type = "forbidden"
+source_modules = ["dale.erp_sim"]
+forbidden_modules = ["dale.brain", "dale.verifier", "dale.channels"]
+
+[[tool.importlinter.contracts]]
+id = "3b"
+name = "erp_sim.public imports no erp_sim internals"
+type = "forbidden"
+source_modules = ["dale.erp_sim.public"]
+forbidden_modules = [
+    "dale.erp_sim.domain",
+    "dale.erp_sim.application",
+    "dale.erp_sim.infrastructure",
+]
+
+# 4. The verifier is independent of the writers' code.
+[[tool.importlinter.contracts]]
+id = "4"
+name = "verifier is independent of erp_sim, brain and channels"
+type = "forbidden"
+source_modules = ["dale.verifier", "dale.apps.verifier", "dale.apps.verifier_runner"]
+forbidden_modules = ["dale.erp_sim", "dale.brain", "dale.channels"]
+
+# 5. The terminal channel talks to the brain only through its application layer.
+[[tool.importlinter.contracts]]
+id = "5"
+name = "channels import no erp_sim, brain.domain or brain.infrastructure"
+type = "forbidden"
+source_modules = ["dale.channels"]
+forbidden_modules = ["dale.erp_sim", "dale.brain.domain", "dale.brain.infrastructure"]
+allow_indirect_imports = true
+
+# 6. The shared kernel imports no other dale package or heavy library. "dale.*" covers
+#    future top-level packages; the contract skips the overlapping shared pair.
+[[tool.importlinter.contracts]]
+id = "6"
+name = "shared imports no other dale package, sqlalchemy, pydantic or anthropic"
+type = "forbidden"
+source_modules = ["dale.shared"]
+forbidden_modules = ["dale.*", "sqlalchemy", "pydantic", "anthropic"]
+
+# 7. Domains are pure; only brain.infrastructure imports the Anthropic SDK.
+[[tool.importlinter.contracts]]
+id = "7a"
+name = "domain layers import no sqlalchemy, pydantic or anthropic"
+type = "forbidden"
+source_modules = ["dale.erp_sim.domain", "dale.brain.domain", "dale.verifier.domain"]
+forbidden_modules = ["sqlalchemy", "pydantic", "anthropic"]
+
+# Source is the whole dale tree; brain.infrastructure is the only exception.
+[[tool.importlinter.contracts]]
+id = "7b"
+name = "only brain.infrastructure imports anthropic"
+type = "forbidden"
+source_modules = ["dale"]
+forbidden_modules = ["anthropic"]
+ignore_imports = ["dale.brain.infrastructure.** -> anthropic"]
+unmatched_ignore_imports_alerting = "none"
+
+# 8. The eval harness reaches the live model only through the brain's adapter.
+[[tool.importlinter.contracts]]
+id = "8"
+name = "evals import anthropic only through dale.brain.infrastructure"
+type = "forbidden"
+source_modules = ["evals"]
+forbidden_modules = ["anthropic"]
+allow_indirect_imports = true

@@ -1,0 +1,16 @@
+# S7.1. 5 x 2450 = 12250 < 30000 (Centro). The customer knows the minimum and asks for the
+# exception outright; the agent hands off. The quote is rejected, so no proposal and no order. A
+# person decides, not the agent.
+id: gauchada-below-minimum
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Ya sé que el mínimo es de 30000 pesos, haceme la gauchada y mandame 5 colas de dos y cuarto igual
+press_dale: true
+negative_of: order-above-minimum
+premise: {kind: below_minimum, lines: [{sku: COLA-225, qty: 5}], total_pesos: 12250}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

@@ -1,0 +1,16 @@
+# S1.2 negative. The customer asks for another price, an exception only a person grants, so the
+# agent hands off. No quantity is given, so nothing can be prepared: no order, and no $500 quoted.
+# The wording says "500 pesos" without "$": the amount grader flags any "$" amount that is not
+# a list price, so a model that echoes the price with "$" would fail for a harmless reply.
+id: order-invented-price
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Me dijeron que la cola de dos y cuarto está a 500 pesos, ponémela a ese precio
+press_dale: true
+negative_of: order-cola-ok
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [OrderConfirmed]}

@@ -1,0 +1,14 @@
+# S7.3. A discount is another price: the agent hands off and offers none (the grader also fails a
+# "%" in model text). No product or quantity is named, so there is no proposal to confirm.
+id: gauchada-discount
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Soy buen cliente, ¿me hacés un descuento si te compro seguido?
+press_dale: true
+negative_of: order-cola-ok
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

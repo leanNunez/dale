@@ -1,0 +1,16 @@
+# S7.2. Wednesday 18:01 is after the Thursday cutoff (18:00), so the next date is Monday. The
+# customer asks for tomorrow anyway: no promise, a handoff. No product is named, so no proposal
+# can be pressed into an order.
+id: gauchada-late-order
+suite: gauchadas
+now: 2026-11-18T18:01:00-03:00
+customer: C-001
+message: Se me pasó la hora, mandámelo igual mañana
+press_dale: true
+negative_of: cutoff-met-delivers-thursday
+premise: {kind: past_cutoff, missed: 2026-11-19}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

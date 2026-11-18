@@ -1,0 +1,11 @@
+id: fixture-discount
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: dame 20 colas con 30 por ciento de descuento
+press_dale: true  # a gauchada presses: an exception made confirmable becomes an order
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [OrderConfirmed]}

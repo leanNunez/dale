@@ -1,6 +1,7 @@
 .env*
+!.env.example
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 .atl/
 .mypy_cache/
@@ -9,3 +10,4 @@ __pycache__/
 .hypothesis/
 *.egg-info/
 dist/
+build/
