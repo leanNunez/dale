@@ -86,7 +86,8 @@ Covers: D11, D12 (pins), §2 contracts 5/9/10/11, §9 ADRs 0003 and 0004; S18.3,
 - [x] 1.3 Add the empty package `src/dale/channels/web/__init__.py` (so contracts can resolve it), then edit the import-linter config: rename contract 5 to "channels (common, terminal, web)", add contract 9 (fastapi, starlette, uvicorn forbidden outside `dale.channels.web.**` and `dale.apps.web`, added to `root_packages`), contract 10 (terminal and web independent; common may not import either), contract 11 (`dale.channels` may not import `dale.apps` or `dale.verifier`). Test: `uv run lint-imports` passes; record in the PR that a deliberate violation was tried and failed the check. Satisfies D11, §2.
 - [x] 1.4 Pin `fastapi`, `uvicorn` (no extras) and dev `httpx` at exact versions in `pyproject.toml`, regenerate `uv.lock`, add the rows to `docs/decisions/0001-pinned-versions.md`. Test: `uv sync --locked` succeeds. Satisfies D12, D22.
 - [x] 1.5 Write `docs/decisions/0004-web-host-transport-channel-boundary.md` (D11-D13, D16, D17, D25). Test: structural readback.
-- [ ] 1.6 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+- [x] 1.6 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+  - Done 2026-11-19: blind review (Opus) gave 3 should-fix and 5 nits, all fixed in the commits that introduced them (B6-B9); per-commit lint-imports, ruff and mypy pass; 1099 tests and 54 evals replay pass; size 400/400. PR body Known pending: the proposal list plus the turn deadline (B6). Push and PR wait for the user.
 
 ## Phase 2: Tool trace and verdict evidence (slice 2, ~300 lines) [critical: fingerprint, verifier]
 
@@ -123,7 +124,7 @@ Covers: W1, W2 (S2.2), W5 (S5.1), W8, W9, W10 (S10.1), W11 (S11.2, S11.3), W18 (
 - [ ] 4.3 RED then GREEN: exception handlers in `channels/web/app.py` mapping `RequestValidationError`, `HTTPException` and `Exception` to the one envelope with fixed Spanish messages and no exception text; test four failure kinds share the same fields (S11.2) and an unexpected exception returns the generic code while the text appears only in the log (S11.3). Satisfies D14, W11.
 - [ ] 4.4 Extract `apps/compose.py` (`compose()` and `ChannelBackend` moved from `apps/terminal.py`, gaining `channel`); `apps/terminal.py` imports it. Test: existing terminal and composition tests pass with unchanged expectations (S18.3). Satisfies D11.
 - [ ] 4.5 GREEN: app factory with `docs_url`, `redoc_url` and `openapi_url` disabled, no CORS middleware (S1.2), `GET /v1/contract` returning `{v: 1, events, commands}` (S5.1 host side), `GET /health` running `SELECT 1` then 200 or 503 `rules_unavailable` (D25), `StaticFiles(apps/web/dist, html=True)` mount, unknown path and method rejected with the envelope (S2.2). Tests for each. Satisfies D12, D25.
-- [ ] 4.6 GREEN: `apps/web.py` composition root: env settings (port, `DALE_WEB_CUSTOMER` default `C-001`, `DALE_WEB_COMPANY`), maps `VerifierVerdict` to the web verdict type, runs uvicorn on `127.0.0.1` with no flag to change it, one worker, timeouts above 19.5 minutes. Test: the bind host constant is `127.0.0.1` and no CLI/env option changes it (S1.1); no `Access-Control-*` header on any route (S1.2).
+- [ ] 4.6 GREEN: `apps/web.py` composition root: env settings (port, `DALE_WEB_CUSTOMER` default `C-001`, `DALE_WEB_COMPANY`), maps `VerifierVerdict` to the web verdict type, runs uvicorn on `127.0.0.1` with no flag to change it, one worker, no request timeout configured (D17, B6). Test: the bind host constant is `127.0.0.1` and no CLI/env option changes it (S1.1); no `Access-Control-*` header on any route (S1.2).
 - [ ] 4.7 Write `docs/decisions/0005-web-confirmation-safety.md` (Dale action, press gate and replay, loopback, Host/Origin, JSON cap, CSP; D14, D15; extends 0002). Test: structural readback.
 - [ ] 4.8 Closing: blind review (focus: guard order and fail-closed), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
 
@@ -147,14 +148,14 @@ Covers: W2 (S2.1), W3 (S3.2, S3.3, S3.4), W4, W6 (S6.2, S6.3), W7, W13 (S13.1, S
 - [ ] 5b.3 GREEN: `POST /v1/conversations/{id}/confirm` (`PressDale`) and `POST /v1/conversations/{id}/cancel` (clears `Pending` only). Tests: a well-formed command is accepted (S4.1); unknown field, wrong type or unknown command is rejected and nothing executes (S4.2); extra price or total fields are rejected or ignored and the order uses the stored proposal (S7.4); a body with customer or company id is rejected or ignored and every proposal belongs to the fixed customer (S14.1, S14.2); the model cannot press: tool output or assistant text asking for confirmation invokes no confirm path (S6.3).
 - [ ] 5b.4 Route table test: the application route table equals exactly create, messages, confirm, cancel, contract, health plus the static mount, with exactly one route that can lead to `ConfirmProposal` (S2.1); no CORS header on any route (S1.2).
 - [ ] 5b.5 Same-rule test: the same stored proposal confirmed from the terminal path and from the web path produces the same management call and an identical order (R4 S4.4); `PressDale` with the Dale action calls `confirm(proposal_id)` (R4 S4.1); no proposal → nothing confirmed (R4 S4.3).
-- [ ] 5b.6 Restart and timeouts: a host restart rejects old conversation ids with the envelope and a new conversation works (S17.2); a test pins that every configured server timeout exceeds 19.5 minutes and the request timeout exceeds the verifier timeout (D17, W13).
+- [ ] 5b.6 Restart and timeouts: a host restart rejects old conversation ids with the envelope and a new conversation works (S17.2); a test pins that no request timeout is configured on the server, so the request outlives the verifier timeout (D17, B6, W13).
 - [ ] 5b.7 Closing: blind review (focus: the confirm route is the only path to `ConfirmProposal`), PR body with "Known pending items" (turn deadline in the brain), commit with the slice title, check the PR size guard output.
 
 ## Phase 6: Frontend scaffold, state and the web job (slice 6, ~350 lines)
 
 Covers: W5 (S5.3 generation), W10 (S10.3 lint), W18 (S18.1, S18.2), D20, D21, D22, §6, §8. Assumption to validate here: Vite, Rollup and Tailwind native packages install with `--ignore-scripts`; if one does not, ADR 0006 names the exception.
 
-- [ ] 6.1 Scaffold `apps/web`: React 19, TypeScript strict, Vite (dev proxy with `proxyTimeout` above 19.5 minutes), Tailwind 4 via CSS file, Vitest with Testing Library and jsdom, exact versions only, `.nvmrc`, `engines` with `engine-strict`, `.npmrc` with `save-exact`. Commit `package-lock.json`. Satisfies D22.
+- [ ] 6.1 Scaffold `apps/web`: React 19, TypeScript strict, Vite (dev proxy with no `proxyTimeout`, D17, B6), Tailwind 4 via CSS file, Vitest with Testing Library and jsdom, exact versions only, `.nvmrc`, `engines` with `engine-strict`, `.npmrc` with `save-exact`. Commit `package-lock.json`. Satisfies D22.
 - [ ] 6.2 RED then GREEN: `tests/unit/test_web_pins.py` fails on any non-exact version in `apps/web/package.json` and on missing `.nvmrc`/`engines`. Satisfies D22.
 - [ ] 6.3 Add the `gen:contract` script (`json-schema-to-typescript` over `contracts/v1`) writing `src/contract/generated/`, committed. Test: regeneration leaves `git diff --exit-code` clean (S5.3).
 - [ ] 6.4 RED then GREEN: `src/api/client.ts` (same-origin `fetch`, JSON, no timeout, parses any status into `ResponseEnvelope`). Vitest with a mocked `fetch`: success, error envelope, non-JSON failure.
@@ -257,7 +258,7 @@ Covers: R16 (S16.8), proposal Success Criteria, D23, §9 ADR 0008, §12. Nothing
 Not tasks; copied into PR bodies and the release notes.
 
 - SSE live tool reveal (observer hook), stretch only if time remains.
-- A turn deadline in the brain (a running sync turn cannot be cancelled; the worst case is about 19.5 minutes).
+- A turn deadline in the brain (a running sync turn cannot be cancelled; with `retry-after` there is no upper bound, B6). Required before the v0.3 public demo; whether browsers abort a long `fetch` is unverified.
 - A cap on in-memory conversations.
 - JS-safe integer bounds on `Money` (cents above 2^53).
 - LLM claim judge (D8c).
