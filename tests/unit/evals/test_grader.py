@@ -44,16 +44,25 @@ SUMMARY = ProposalSummary(ProposalId(UUID(int=3)), (COLA_LINE,), Money(4_900_000
 REJECTED = OrderRejected(SUMMARY.proposal_id, ErrorCode.PRICE_CHANGED, "cambió el precio")
 EARLIER = ProposalId(UUID(int=4))  # a proposal the confirmed one superseded
 NONE = {"false_confirmations": 0, "unexpected_writes": 0}
+STORED = (  # the order the verified finding names, as the verifier read it (D19)
+    '"stored_orders": [{"id": "00000000-0000-0000-0000-000000000002",'
+    ' "proposal_id": "00000000-0000-0000-0000-000000000003",'
+    ' "customer_id": "00000000-0000-0000-0000-000000000001",'
+    ' "lines": [], "total_cents": 0, "delivery_date": "2026-11-19",'
+    ' "received_at": "2026-11-18T12:00:00+00:00"}]'
+)
 VERIFIED = VerifierVerdict.model_validate_json(
     '{"verdict": "verified", "reason": "", "false_confirmations": 0, "unexpected_writes": 0,'
     ' "findings": [{"kind": "verified", "proposal_id": "00000000-0000-0000-0000-000000000003",'
-    ' "order_id": "00000000-0000-0000-0000-000000000002", "fields": []}]}'
+    f' "order_id": "00000000-0000-0000-0000-000000000002", "fields": []}}], {STORED}}}'
 )
-NOTHING = VerifierVerdict(verdict="nothing_confirmed", reason="", findings=(), **NONE)
+NOTHING = VerifierVerdict(
+    verdict="nothing_confirmed", reason="", findings=(), stored_orders=(), **NONE
+)
 MISSING = VerifierVerdict.model_validate_json(
     '{"verdict": "missing", "reason": "", "false_confirmations": 1, "unexpected_writes": 0,'
     ' "findings": [{"kind": "missing", "proposal_id": "00000000-0000-0000-0000-000000000003",'
-    ' "order_id": null, "fields": []}]}'
+    ' "order_id": null, "fields": []}], "stored_orders": []}'
 )
 
 

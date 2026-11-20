@@ -1,6 +1,8 @@
 """The verifier on a real database, as dale_verifier (R11, R12): verified on a real confirmed
-order, not verified once the database differs, and never able to write (S11.3)."""
+order, not verified once the database differs, and never able to write (S11.3). The verdict
+carries the orders it read, as it read them (D19)."""
 
+import json
 from dataclasses import replace
 from uuid import uuid4
 
@@ -10,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import DBAPIError
 
+from dale.apps.verifier_runner import StoredOrder, parse_verdict
 from dale.brain.domain.session import SessionContext
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.seed import el_hornero
@@ -39,6 +42,11 @@ def check(engine: Engine, at: SessionContext, *shown: ShownEvent) -> Report:
     return verify(Request(ids, shown), SqlEvidence(engine))
 
 
+def stored(report: Report) -> tuple[StoredOrder, ...]:
+    """The stored orders as the runner believes them, from the verdict JSON."""
+    return parse_verdict(report_to_json(report).encode()).stored_orders
+
+
 def test_a_real_confirmed_order_is_verified(db: Engine, engines: dict[str, Engine]) -> None:
     """S11.1, on an order written by management through the Dale key."""
     at, summary, shown = confirmed(db)
@@ -47,6 +55,13 @@ def test_a_real_confirmed_order_is_verified(db: Engine, engines: dict[str, Engin
     assert [(f.proposal_id, f.order_id) for f in report.findings] == [
         (shown.proposal_id, shown.order_id)
     ]
+    (read,) = stored(report)  # S11.1: lines, quantities, prices, total and delivery date
+    lines = [(x.product_id, x.quantity, x.unit_price_cents, x.line_total_cents) for x in read.lines]
+    cents = [
+        (x.product_id, x.quantity, x.unit_price.cents, x.line_total.cents) for x in shown.lines
+    ]
+    assert (read.id, read.proposal_id, lines) == (shown.order_id, shown.proposal_id, cents)
+    assert (read.total_cents, read.delivery_date) == (shown.total.cents, shown.delivery_date)
 
 
 @pytest.mark.parametrize(
@@ -78,6 +93,10 @@ def test_the_database_tampered_by_the_owner_is_a_mismatch(
         conn.exec_driver_sql(tamper)
     report = check(engines["dale_verifier"], at, shown)
     assert report.verdict is Verdict.MISMATCH and report.findings[0].fields == fields
+    (read,) = stored(report)  # S11.2: as read, not as shown
+    assert read.id == shown.order_id
+    if "SET total_cents" in tamper:  # the stored total moved; the shown one did not
+        assert read.total_cents == shown.total.cents + 1
 
 
 def test_other_customers_orders_are_not_in_the_run(db: Engine, engines: dict[str, Engine]) -> None:
@@ -103,7 +122,9 @@ def test_missing_and_unexpected_write(db: Engine, engines: dict[str, Engine]) ->
     assert check(reader, at, shown, elsewhere).verdict is Verdict.MISSING
     with engines["dale_owner"].begin() as conn:
         conn.exec_driver_sql("DELETE FROM erp.sales_order_line; DELETE FROM erp.sales_order")
-    assert check(reader, at, shown).verdict is Verdict.MISSING
+    missing = check(reader, at, shown)
+    assert missing.verdict is Verdict.MISSING and stored(missing) == ()  # S11.4: absent
+    assert json.loads(report_to_json(missing))["stored_orders"] == []
 
 
 def test_a_run_that_cannot_be_read_is_unverifiable(db: Engine, engines: dict[str, Engine]) -> None:

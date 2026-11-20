@@ -3,12 +3,12 @@ cannot be parsed, read or judged becomes `unverifiable`, which is never `verifie
 
 import json
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Protocol
 from uuid import UUID
 
 from dale.shared.shown_events import OrderConfirmed, ShownEvent, from_json
-from dale.verifier.domain.verdict import Evidence, Report, Session, judge
+from dale.verifier.domain.verdict import Evidence, Report, Session, StoredOrder, judge
 
 SESSION_KEYS = ("company_id", "customer_id", "conversation_id")
 
@@ -68,7 +68,21 @@ def report_to_json(report: Report) -> str:
     ]
     head = {"verdict": report.verdict.value, "reason": report.reason, "findings": findings}
     counts = {"false_confirmations": report.false_confirmations}
-    return json.dumps(head | counts | {"unexpected_writes": report.unexpected_writes})
+    counts["unexpected_writes"] = report.unexpected_writes
+    return json.dumps(head | counts | {"stored_orders": [_stored(o) for o in report.stored]})
+
+
+def _stored(order: StoredOrder) -> dict[str, object]:
+    """D19: the order as read, lines in cents, without the company (the page knows its own)."""
+    return {
+        "id": str(order.id),
+        "proposal_id": str(order.proposal_id),
+        "customer_id": str(order.customer_id),
+        "lines": [asdict(x) | {"product_id": str(x.product_id)} for x in order.lines],
+        "total_cents": order.total_cents,
+        "delivery_date": order.delivery_date.isoformat(),
+        "received_at": order.received_at.isoformat(),
+    }
 
 
 def _text(value: UUID | None) -> str | None:

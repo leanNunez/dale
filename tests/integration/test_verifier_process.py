@@ -19,8 +19,10 @@ def test_the_process_verifies_a_real_order_and_reports_a_lie(
     url = role_url("dale_verifier")
     verdict = run_verifier(request_json(*ids, [summary, shown]), url)
     assert verdict.verified and verdict.findings[0].order_id == shown.order_id
+    assert [o.id for o in verdict.stored_orders] == [shown.order_id]  # D19, across the process
     lie = run_verifier(request_json(*ids, [summary]), url)  # the order was never shown
     assert (lie.verdict, lie.unexpected_writes, lie.verified) == ("unexpected_write", 1, False)
     owner = run_verifier(request_json(*ids, [summary, shown]), role_url("dale_owner"))
     assert (owner.verdict, owner.reason) == ("unverifiable", "PermissionError")
+    assert owner.stored_orders == ()
     assert "builtins.PermissionError" in caplog.records[-1].getMessage()  # the child's stderr

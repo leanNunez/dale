@@ -105,15 +105,17 @@ class Report:
     verdict: Verdict
     findings: tuple[Finding, ...] = ()
     reason: str = ""  # why the run is unverifiable
+    stored: tuple[StoredOrder, ...] = ()  # D19: the session customer's orders read; not judged
 
     def __post_init__(self) -> None:
         expected = Verdict.UNVERIFIABLE if self.reason else _verdict_of(self.findings)
-        if self.verdict is not expected or (self.reason and self.findings):
+        if self.verdict is not expected or (self.reason and (self.findings or self.stored)):
             raise ValueError(f"the findings make {expected}, not {self.verdict}")
 
     @classmethod
-    def of(cls, findings: Sequence[Finding]) -> "Report":
-        return cls(_verdict_of(findings), tuple(findings))
+    def of(cls, findings: Sequence[Finding], *, stored: Sequence[StoredOrder] = ()) -> "Report":
+        by_time = tuple(sorted(stored, key=lambda o: (o.received_at, o.id)))
+        return cls(_verdict_of(findings), tuple(findings), stored=by_time)
 
     @classmethod
     def unverifiable(cls, reason: str) -> "Report":
@@ -205,4 +207,5 @@ def judge(session: Session, shown: Sequence[ShownEvent], evidence: Evidence) -> 
     for order in evidence.orders:
         if order.proposal_id not in confirmed:
             findings.append(Finding(Kind.UNEXPECTED_WRITE, order.proposal_id, order.id))
-    return Report.of(findings)
+    own = [o for o in evidence.orders if o.customer_id == session.customer_id]
+    return Report.of(findings, stored=own)  # another customer's order: by id in its finding only

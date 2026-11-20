@@ -158,6 +158,7 @@ def test_a_missing_verdict_is_printed_as_a_false_confirmation(db: Engine) -> Non
             findings=(lost,),
             false_confirmations=1,
             unexpected_writes=0,
+            stored_orders=(),
         )
 
     printed, backend = chat(db, missing, "quiero 20 colas\r", F2)
