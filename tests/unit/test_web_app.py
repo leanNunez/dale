@@ -11,6 +11,7 @@ from uuid import UUID
 import pytest
 import sqlalchemy as sa
 import uvicorn
+from fastapi import FastAPI
 from starlette.testclient import TestClient
 from starlette.types import ASGIApp
 
@@ -23,8 +24,10 @@ from dale.apps.verifier_runner import (
     VerifierVerdict,
     unverifiable,
 )
+from dale.channels.web import guard
 from dale.channels.web.app import create_app
 from dale.channels.web.conversations import PRESS_WAIT, InMemoryRegistry
+from dale.channels.web.guard import RequestGuard
 from dale.erp_sim.public import ErpFacade, SessionCustomer
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId
@@ -64,6 +67,24 @@ def test_no_timeout_is_changed_from_uvicorn_defaults() -> None:
     names = [n for n in inspect.signature(uvicorn.Config).parameters if n.startswith("timeout")]
     assert names and all(getattr(ours, n) == getattr(default, n) for n in names)
     assert not ours.proxy_headers
+
+
+def test_nothing_bounds_a_request_so_it_outlives_the_verifier_timeout() -> None:
+    """D17, B6, W13: uvicorn's timeouts cover idle connections, shutdown and worker health,
+    never a running request; a new one in a uvicorn upgrade fails here. The app adds no
+    middleware of its own, and the guard around it keeps no timer."""
+    names = {n for n in inspect.signature(uvicorn.Config).parameters if "timeout" in n}
+    assert names == {
+        "ws_ping_timeout",
+        "timeout_keep_alive",
+        "timeout_notify",
+        "timeout_graceful_shutdown",
+        "timeout_worker_healthcheck",
+    }
+    app = app_for(None)
+    assert isinstance(app, RequestGuard) and isinstance(app.app, FastAPI)
+    assert app.app.user_middleware == []
+    assert "timeout" not in inspect.getsource(guard).lower()
 
 
 def test_the_settings_default_to_the_fixed_customer_and_loopback() -> None:
