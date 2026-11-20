@@ -64,6 +64,27 @@ jobs:
       # replay only: no network, no key; known misses must fail exactly as recorded
       - run: uv run --locked pytest evals
 
+  # The page: Node is pinned by apps/web/.nvmrc, installs run no scripts, and the generated
+  # contract types must equal what the committed schemas produce.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: apps/web/.nvmrc
+      - run: npm ci --ignore-scripts
+      - run: npm run gen:contract
+      - run: git add --intent-to-add src/contract/generated && git diff --exit-code -- src/contract/generated
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx vitest --run
+      - run: npm run build
+
   # Only dev merges into main, and only from this repository (never a fork's "dev").
   pr-base:
     if: github.event_name == 'pull_request'
