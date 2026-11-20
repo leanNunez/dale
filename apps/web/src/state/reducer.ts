@@ -117,23 +117,56 @@ function applyEvent(state: ConversationState, event: WebEvent): ConversationStat
   }
 }
 
-const usable = (event: WebEvent, state: ConversationState) =>
-  Number.isInteger(event.seq) &&
-  event.seq > state.lastSeq &&
-  event.conversation_id === state.conversationId;
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A summary drives the Dale button, so it must carry what the page reads from it. */
+function summaryData(data: Record<string, unknown>): boolean {
+  const total = data["total"];
+  return (
+    typeof data["proposal_id"] === "string" &&
+    typeof data["delivery_date"] === "string" &&
+    isObject(total) &&
+    Number.isInteger(total["cents"]) &&
+    Array.isArray(data["lines"]) &&
+    data["lines"].every(isObject)
+  );
+}
+
+/**
+ * The boundary check for one event: the client passes events through unchecked (v1 is
+ * additive), so anything that is not an object with an integer `seq`, a string `type` and an
+ * object `data` is dropped here, never thrown on and never stored.
+ */
+function wellFormed(event: unknown): event is WebEvent {
+  if (!isObject(event)) return false;
+  const data = event["data"];
+  if (!Number.isInteger(event["seq"]) || typeof event["type"] !== "string" || !isObject(data)) {
+    return false;
+  }
+  return event["type"] !== "ProposalSummary" || summaryData(data);
+}
+
+const usable = (event: unknown, state: ConversationState): event is WebEvent =>
+  wellFormed(event) && event.seq > state.lastSeq && event.conversation_id === state.conversationId;
 
 function receive(state: ConversationState, envelope: ResponseEnvelope): ConversationState {
   const named = envelope.conversation_id;
-  if (named !== null && state.conversationId !== null && named !== state.conversationId) {
-    return state; // another conversation's envelope: not ours to apply
+  const other = named !== null && state.conversationId !== null && named !== state.conversationId;
+  if (other && state.inFlight !== "create") {
+    // Another conversation's answer: nothing in it is ours to apply, but the request it
+    // answered has ended, so the page is not left waiting.
+    return { ...state, inFlight: "none" };
   }
+  // A create answers with a new conversation, which replaces the one the page had.
+  const from = other ? initialState : state;
   let next: ConversationState = {
-    ...state,
-    conversationId: state.conversationId ?? named,
+    ...from,
+    conversationId: from.conversationId ?? named,
     inFlight: "none",
     error: envelope.error,
   };
-  for (const event of envelope.events) {
+  for (const event of envelope.events as unknown[]) {
     if (usable(event, next)) {
       next = { ...applyEvent(next, event), lastSeq: event.seq };
     }

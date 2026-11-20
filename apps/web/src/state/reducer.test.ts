@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { WebEvent } from "../contract";
 import {
   CONVERSATION,
+  OTHER_CONVERSATION,
   PROPOSAL_A,
   assistantText,
   envelope,
@@ -53,6 +55,68 @@ describe("a conversation starts and is adopted from the first envelope", () => {
     expect(state.conversationId).toBe(CONVERSATION);
     expect(state.inFlight).toBe("none");
     expect(state.lastSeq).toBe(0);
+  });
+
+  it("moves to the new conversation a create answers with, and frees the page", () => {
+    const ours = run([received(envelope({ events: [assistantText(1)] }))], started);
+    const state = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      ours,
+    );
+    expect(state).toEqual({ ...initialState, conversationId: OTHER_CONVERSATION });
+  });
+
+  it("drops another conversation's answer to any other request, but ends that request", () => {
+    const ours = run([received(envelope({ events: [assistantText(1)] }))], started);
+    const stray = failure("turn_failed", {
+      conversation_id: OTHER_CONVERSATION,
+      events: [{ ...assistantText(2), conversation_id: OTHER_CONVERSATION }],
+      seq: 2,
+    });
+    for (const kind of ["message", "press", "cancel"] as const) {
+      const flying = { ...ours, inFlight: kind };
+      expect(reducer(flying, received(stray))).toEqual(ours);
+    }
+    expect(reducer(ours, received(stray))).toEqual(ours);
+  });
+});
+
+const without = (event: WebEvent, key: string) =>
+  Object.fromEntries(Object.entries(event).filter(([name]) => name !== key));
+const brokenSummary = (patch: Record<string, unknown>) => {
+  const good = summary(1) as unknown as { data: Record<string, unknown> };
+  return { ...good, data: { ...good.data, ...patch } };
+};
+
+describe("malformed events are dropped at the boundary, never thrown on or stored", () => {
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["a number", 7],
+    ["a list", [assistantText(1)]],
+    ["an event with a string seq", { ...assistantText(1), seq: "1" }],
+    ["an event with no seq", without(assistantText(1), "seq")],
+    ["an event with no type", without(assistantText(1), "type")],
+    ["an event with a numeric type", { ...assistantText(1), type: 1 }],
+    ["an event with no data", without(assistantText(1), "data")],
+    ["an event whose data is text", { ...assistantText(1), data: "Hola" }],
+    ["a summary without data", without(summary(1), "data")],
+    ["a summary without a proposal id", brokenSummary({ proposal_id: 1 })],
+    ["a summary whose total is not cents", brokenSummary({ total: 3700 })],
+    ["a summary whose lines are not a list", brokenSummary({ lines: {} })],
+  ])("drops %s and still applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, assistantText(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(["AssistantText"]);
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("takes an envelope whose only event is null as one that brought nothing", () => {
+    const nothing = envelope({ events: [null as unknown as WebEvent], seq: 0 });
+    expect(run([received(nothing)], started)).toEqual(started);
   });
 });
 
