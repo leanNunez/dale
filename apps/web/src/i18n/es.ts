@@ -88,6 +88,53 @@ export const es = {
         invalid_tool_input: "Datos de la herramienta no válidos",
       } satisfies Record<ErrorCode, string>,
     },
+    verdict: {
+      title: "Veredicto del verificador",
+      empty: "Todavía no hay un veredicto: aparece después de pulsar Dale.",
+      proposal: "Propuesta",
+      noProposal: "Sin propuesta pendiente",
+      differs: "Campos que difieren",
+      // The names the verifier gives a difference (`COMPARED` and the checks of `compare`); a name
+      // not listed is shown as the host sent it.
+      fields: {
+        lines: "líneas",
+        total: "total",
+        delivery_date: "fecha de entrega",
+        order_count: "cantidad de pedidos",
+        customer: "cliente",
+        company: "empresa",
+        proposal: "propuesta",
+        order_id: "id del pedido",
+        message: "mensaje",
+        zone: "zona",
+        minimum: "mínimo",
+        delivery_rule: "regla de entrega",
+      },
+      // Each says what the verifier found; only `verified` may read as verified.
+      label: {
+        verified: "Verificado: el pedido guardado coincide con lo que se confirmó",
+        mismatch: "No verificado: el pedido guardado no coincide con lo que se confirmó",
+        missing: "No verificado: no se encontró en la base el pedido que se confirmó",
+        unexpected_write: "No verificado: la base tiene un pedido que no se confirmó",
+        nothing_confirmed: "Nada que verificar: no se confirmó ningún pedido",
+        unverifiable: "No se pudo verificar",
+        unknown: "No verificado: la página no reconoce este resultado",
+      },
+      // The verifier gave no result: it says nothing about the order, for or against it.
+      unverifiableNote: "Esto no dice nada sobre el pedido: ni que esté bien ni que esté mal.",
+      // Only for a press before the conversation had any turn (B62): there is nothing to verify yet.
+      yet: "Todavía no se pudo verificar",
+      reasons: {
+        timeout: "El verificador tardó demasiado.",
+        spawn_failed: "No se pudo iniciar el verificador.",
+        malformed_output: "El verificador respondió algo que no se pudo leer.",
+        bad_request: "La solicitud al verificador no era válida.",
+        no_database_url: "El verificador no sabe a qué base conectarse.",
+        unknown: "El verificador falló por un motivo que no se conoce.",
+        verifier_error: "El verificador no devolvió un resultado.",
+      },
+      unknownReason: "El verificador no devolvió un resultado por un motivo que no se conoce.",
+    },
   },
   newConversation: "Empezar una conversación nueva",
 } as const;
