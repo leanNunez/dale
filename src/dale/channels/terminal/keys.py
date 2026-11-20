@@ -25,7 +25,7 @@ from prompt_toolkit.key_binding.key_processor import KeyProcessor
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.output import Output
 
-from dale.channels.terminal.pending import Pending
+from dale.channels.common.pending import Pending
 from dale.shared.customer_input import CustomerInput, CustomerText, Key, KeyPress
 
 PROMPT = "vos> "

@@ -12,6 +12,7 @@ PACKAGES = [
     "dale.brain",
     "dale.verifier",
     "dale.channels",
+    "dale.channels.common",
     "dale.channels.terminal",
     "dale.apps",
 ]

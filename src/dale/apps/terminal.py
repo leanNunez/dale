@@ -31,8 +31,8 @@ from dale.brain.infrastructure.anthropic_model import AnthropicModel
 from dale.brain.infrastructure.conversation_repository import SqlConversationRepository
 from dale.brain.infrastructure.handoff_repository import SqlHandoffRepository
 from dale.brain.infrastructure.proposal_repository import SqlProposalRepository
+from dale.channels.common.pending import Pending
 from dale.channels.terminal.keys import TerminalInput
-from dale.channels.terminal.pending import Pending
 from dale.channels.terminal.render import plain_writer
 from dale.channels.terminal.session import TerminalSession
 from dale.erp_sim.infrastructure.facade import SqlErpFacade

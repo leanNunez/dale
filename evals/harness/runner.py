@@ -31,7 +31,7 @@ from dale.apps.verifier_runner import VerifierVerdict, run_verifier
 from dale.brain.application.model_port import ModelPort, ModelRequest, ModelResponse, Usage
 from dale.brain.infrastructure import tables as brain
 from dale.brain.infrastructure.reset import reset_brain
-from dale.channels.terminal.pending import Pending
+from dale.channels.common.pending import Pending
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.infrastructure.seed import change_price, el_hornero, reseed
