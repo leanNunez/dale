@@ -9,9 +9,9 @@ thread-safe, never runs twice at once. The lock is released in `finally`, so a f
 frees it (S12.2).
 
 Lock order, fixed: a press takes (1) the press lock of its proposal id, waiting at most
-`PRESS_WAIT` seconds, then (2) the conversation lock without waiting. A turn takes only (2).
-No path holds (2) while it takes (1), and (2) is never waited for, so no request can wait on
-another in a cycle. `PressLocks` holds its own mutex only around its table.
+`PRESS_WAIT` seconds, then (2) the conversation lock without waiting. A turn and a cancel
+take only (2). No path holds (2) while it takes (1), and (2) is never waited for, so no
+request can wait on another in a cycle. `PressLocks` holds its own mutex only around its table.
 """
 
 import threading
@@ -218,7 +218,7 @@ class WebConversation:
         """Steps 3 to 6. Only the pending id reaches the brain: any other id, one shown confirmed
         included, gets a notice (B50); a settled id was replayed before this. The gate's notices
         are the channel's, like the terminal's: they do not enter the transcript and leave
-        `Pending` alone (S6.4, S7.2, S7.3)."""
+        `Pending` alone (S6.4, S7.2, S7.3, S7.6)."""
         if proposal_id != self.pending.proposal_id:
             code = ErrorCode.PROPOSAL_NOT_FOUND
             if proposal_id in self._summaries or proposal_id in self._confirmed:
@@ -237,6 +237,16 @@ class WebConversation:
         if isinstance(outcome, OrderConfirmed | OrderRejected):  # 6: settled for good
             self._settled[proposal_id] = reply
         return reply
+
+    def cancel(self, proposal_id: UUID) -> Reply:
+        """Clears `Pending` when it holds this id, like the terminal's F3. The proposal stays
+        prepared in the database; the gate now answers `proposal_not_pending` (S7.6)."""
+        with self._exclusive() as free:
+            if not free:
+                return self._busy()
+            if proposal_id == self.pending.proposal_id:
+                self.pending.after_press(KeyPress(Key.CANCEL), None)
+            return self._finish([], None)
 
     def _replay(self, reply: Reply) -> Reply:
         """The reply's events byte for byte, each with its own seq, and its status. Its verdict

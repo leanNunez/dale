@@ -94,6 +94,22 @@ def test_the_gate_rejects_any_id_but_the_pending_one(
     assert DONE not in talk.transcript
 
 
+def test_a_proposal_cancelled_on_the_page_cannot_be_confirmed() -> None:  # S7.6
+    backend = offered([DONE])
+    talk = talking(backend)
+
+    cancelled = talk.cancel(PID)
+    reply = talk.press(PID)
+
+    assert (cancelled.status, cancelled.envelope.pending_proposal_id) == (200, None)
+    assert (code(reply), backend.pressed) == (ErrorCode.PROPOSAL_NOT_PENDING, [])
+
+
+def test_cancelling_another_id_keeps_the_pending_one() -> None:
+    talk = talking(offered([]))
+    assert talk.cancel(FOREIGN).envelope.pending_proposal_id == PID
+
+
 def test_an_unknown_outcome_is_not_cached_and_a_later_press_runs() -> None:  # S7.5
     backend = offered([UNKNOWN, DONE])
     talk = talking(backend)
@@ -281,7 +297,7 @@ def test_a_press_waits_only_so_long_for_the_running_one() -> None:  # D16: bound
     assert first.done().status == 200 and len(backend.pressed) == 1
 
 
-def test_a_press_during_a_turn_is_busy_and_releases_its_press_lock() -> None:  # W12
+def test_a_press_or_cancel_during_a_turn_is_busy_and_the_press_lock_is_released() -> None:  # W12
     backend, locks = offered([DONE]), PressLocks()
     talk = talking(backend, presses=locks)
     backend.turns.append(said([HELLO]))
@@ -289,9 +305,14 @@ def test_a_press_during_a_turn_is_busy_and_releases_its_press_lock() -> None:  #
     turn = Running(lambda: talk.turn(CustomerText("¿y?")))
     assert backend.entered.wait(WAIT)
 
-    busy = talk.press(PID)
+    busy, cancel = talk.press(PID), talk.cancel(PID)
 
-    assert (code(busy), backend.pressed, len(locks)) == ("conversation_busy", [], 0)
+    assert (code(busy), code(cancel), backend.pressed, len(locks)) == (
+        "conversation_busy",
+        "conversation_busy",
+        [],
+        0,
+    )
     backend.release.set()
     assert turn.done().status == 200 and talk.pending.proposal_id == PID
 
