@@ -57,6 +57,10 @@ export interface ConversationState {
   inFlight: InFlight;
   error: PageError | null;
   customerLines: number;
+  /** Proposals the host cleared on this page's cancel: none of them can be confirmed again. */
+  cancelledProposalIds: string[];
+  /** The host answered `conversation_not_found`: nothing goes to that id until a create replaces it. */
+  conversationGone: boolean;
 }
 
 export const initialState: ConversationState = {
@@ -69,6 +73,8 @@ export const initialState: ConversationState = {
   inFlight: "none",
   error: null,
   customerLines: 0,
+  cancelledProposalIds: [],
+  conversationGone: false,
 };
 
 export type Action =
@@ -76,6 +82,28 @@ export type Action =
   | { type: "request_started"; kind: "message"; text: string }
   | { type: "envelope_received"; envelope: ResponseEnvelope }
   | { type: "request_failed"; failure: ClientFailure };
+
+export type ProposalStatus = "current" | "confirmed" | "cancelled" | "superseded";
+
+/**
+ * Where one proposal stands, from what this page has seen: an `OrderConfirmed` for its id means
+ * confirmed; a cancel the host answered means cancelled; the host's pending id is the current one
+ * (the one Dale confirms); any other is an older one that no press can reach.
+ */
+export function proposalStatus(
+  facts: Pick<ConversationState, "chat" | "pendingProposalId" | "cancelledProposalIds">,
+  proposalId: string,
+): ProposalStatus {
+  const confirmed = facts.chat.some(
+    (item) =>
+      item.kind === "event" &&
+      item.event.type === "OrderConfirmed" &&
+      item.event.data.proposal_id === proposalId,
+  );
+  if (confirmed) return "confirmed";
+  if (facts.cancelledProposalIds.includes(proposalId)) return "cancelled";
+  return facts.pendingProposalId === proposalId ? "current" : "superseded";
+}
 
 /**
  * The Dale button rule: a press is possible only for a summary the page actually rendered whose
@@ -104,7 +132,7 @@ function canStart(state: ConversationState, action: Extract<Action, { type: "req
     case "create":
       return true;
     case "message":
-      return state.conversationId !== null;
+      return state.conversationId !== null && !state.conversationGone;
     case "press":
       return canPressDale(state);
     case "cancel":
@@ -204,6 +232,7 @@ const usable = (event: unknown, state: ConversationState): event is WebEvent =>
   wellFormed(event) && event.seq > state.lastSeq && event.conversation_id === state.conversationId;
 
 function receive(state: ConversationState, envelope: ResponseEnvelope): ConversationState {
+  const cancelling = state.inFlight === "cancel" ? state.pendingProposalId : null;
   const named = envelope.conversation_id;
   const other = named !== null && state.conversationId !== null && named !== state.conversationId;
   if (other && state.inFlight !== "create") {
@@ -228,7 +257,17 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
     next = { ...next, pendingProposalId: envelope.pending_proposal_id };
   }
   if (next.error?.code === "conversation_not_found") {
-    next = { ...next, pendingProposalId: null }; // a gone conversation has nothing to press
+    // A gone conversation has nothing to press and takes nothing more until a create replaces it.
+    next = { ...next, pendingProposalId: null, conversationGone: true };
+  }
+  if (
+    cancelling !== null &&
+    next.error === null &&
+    named !== null &&
+    next.pendingProposalId === null
+  ) {
+    // The host answered a cancel without error and holds nothing as pending: it cleared this one.
+    next = { ...next, cancelledProposalIds: [...next.cancelledProposalIds, cancelling] };
   }
   return next;
 }

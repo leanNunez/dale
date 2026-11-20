@@ -21,6 +21,7 @@ import {
 import {
   canPressDale,
   initialState,
+  proposalStatus,
   reducer,
   type Action,
   type ConversationState,
@@ -471,5 +472,145 @@ describe("the Dale button rule (S15.4, B66)", () => {
     expect(reducer(initialState, { type: "request_started", kind: "message", text: "hola" })).toBe(
       initialState,
     );
+  });
+});
+
+describe("a cancel the host answered marks that proposal cancelled", () => {
+  const pendingA = run(
+    [received(envelope({ events: [summary(1, PROPOSAL_A)], pending_proposal_id: PROPOSAL_A }))],
+    started,
+  );
+  const cancelling = run([{ type: "request_started", kind: "cancel" }], pendingA);
+  const answer = (patch: Partial<Parameters<typeof envelope>[0]> = {}) =>
+    run([received(envelope({ seq: 1, ...patch }))], cancelling);
+
+  it("records the cancelled id, and nothing can press it afterwards", () => {
+    const after = answer();
+    expect(after.cancelledProposalIds).toEqual([PROPOSAL_A]);
+    expect(after.pendingProposalId).toBeNull();
+    expect(after.inFlight).toBe("none");
+    expect(canPressDale(after)).toBe(false);
+    expect(proposalStatus(after, PROPOSAL_A)).toBe("cancelled");
+  });
+
+  it("records nothing when the host answered with an error, and the proposal stays pending", () => {
+    const busy = run(
+      [received(failure("conversation_busy", { seq: 1, pending_proposal_id: PROPOSAL_A }))],
+      cancelling,
+    );
+    expect(busy.cancelledProposalIds).toEqual([]);
+    expect(canPressDale(busy)).toBe(true);
+  });
+
+  it("records nothing when no answer arrived", () => {
+    const lost = run([{ type: "request_failed", failure: "network" }], cancelling);
+    expect(lost.cancelledProposalIds).toEqual([]);
+    expect(canPressDale(lost)).toBe(true);
+  });
+
+  it("records nothing when the host holds another proposal as pending", () => {
+    const moved = answer({
+      events: [summary(2, PROPOSAL_B)],
+      seq: 2,
+      pending_proposal_id: PROPOSAL_B,
+    });
+    expect(moved.cancelledProposalIds).toEqual([]);
+    expect(moved.pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("records nothing from an answer that is behind what the page has seen", () => {
+    expect(answer({ seq: 0 }).cancelledProposalIds).toEqual([]);
+  });
+
+  it("records nothing for a request that is not a cancel", () => {
+    const pressing = run([{ type: "request_started", kind: "press" }], pendingA);
+    expect(run([received(envelope({ seq: 1 }))], pressing).cancelledProposalIds).toEqual([]);
+  });
+
+  it("starts again from nothing in a new conversation", () => {
+    const fresh = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      answer(),
+    );
+    expect(fresh.cancelledProposalIds).toEqual([]);
+  });
+});
+
+describe("where a proposal stands (S15.5)", () => {
+  const facts = (over: Partial<ConversationState>) => ({ ...initialState, ...over });
+  const shown = run(
+    [
+      received(
+        envelope({
+          events: [summary(1, PROPOSAL_A), summary(2, PROPOSAL_B)],
+          pending_proposal_id: PROPOSAL_B,
+        }),
+      ),
+    ],
+    started,
+  );
+
+  it("is current for the host's pending id and superseded for an older one", () => {
+    expect(proposalStatus(shown, PROPOSAL_B)).toBe("current");
+    expect(proposalStatus(shown, PROPOSAL_A)).toBe("superseded");
+  });
+
+  it("is confirmed once an OrderConfirmed for that id exists, even if it is still pending", () => {
+    const done = run(
+      [
+        received(
+          envelope({ events: [orderConfirmed(3, PROPOSAL_B)], pending_proposal_id: PROPOSAL_B }),
+        ),
+      ],
+      shown,
+    );
+    expect(proposalStatus(done, PROPOSAL_B)).toBe("confirmed");
+    expect(proposalStatus(done, PROPOSAL_A)).toBe("superseded");
+  });
+
+  it("is cancelled for an id the page cancelled, and confirmed wins over cancelled", () => {
+    expect(proposalStatus(facts({ cancelledProposalIds: [PROPOSAL_A] }), PROPOSAL_A)).toBe(
+      "cancelled",
+    );
+    const both = facts({ ...shown, cancelledProposalIds: [PROPOSAL_B] });
+    const confirmed = run([received(envelope({ events: [orderConfirmed(3, PROPOSAL_B)] }))], both);
+    expect(proposalStatus(confirmed, PROPOSAL_B)).toBe("confirmed");
+  });
+});
+
+describe("a retired conversation takes no more messages (B65)", () => {
+  const lost = run(
+    [received(failure("conversation_not_found", { conversation_id: null, seq: 0 }))],
+    started,
+  );
+
+  it("is marked gone, and a message is refused", () => {
+    expect(lost.conversationGone).toBe(true);
+    expect(reducer(lost, { type: "request_started", kind: "message", text: "hola" })).toBe(lost);
+  });
+
+  it("stays gone through a failed create, and a create's answer replaces it", () => {
+    const retry = run(
+      [
+        { type: "request_started", kind: "create" },
+        { type: "request_failed", failure: "network" },
+      ],
+      lost,
+    );
+    expect(retry.conversationGone).toBe(true);
+    const created = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      lost,
+    );
+    expect(created.conversationGone).toBe(false);
+    expect(
+      reducer(created, { type: "request_started", kind: "message", text: "hola" }).inFlight,
+    ).toBe("message");
   });
 });
