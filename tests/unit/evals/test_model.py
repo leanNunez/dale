@@ -236,19 +236,20 @@ def test_replay_never_builds_the_live_model(tmp_path: Path, built: type[Built]) 
     assert built.calls == []
 
 
-def test_live_builds_the_adapter_with_no_arguments_and_writes_nothing(
+def test_live_builds_the_adapter_with_the_settings_only_and_writes_nothing(
     tmp_path: Path, built: type[Built]
 ) -> None:
     model_factory(Mode.LIVE, tmp_path, "a", 1)().complete(REQUEST)
-    assert built.calls == [((), {})] and list(tmp_path.iterdir()) == []
+    assert built.calls == [((), {"settings": MODEL_SETTINGS})] and list(tmp_path.iterdir()) == []
 
 
-def test_record_builds_the_adapter_with_no_arguments_and_writes_the_file(
+def test_record_builds_the_adapter_with_the_settings_only_and_writes_the_file(
     tmp_path: Path, built: type[Built]
 ) -> None:
-    model = model_factory(Mode.RECORD, tmp_path, "a", 1)()
+    other = replace(MODEL_SETTINGS, model="claude-sonnet-5-5")
+    model = model_factory(Mode.RECORD, tmp_path, "a", 1, other)()
     model.complete(REQUEST)
-    assert built.calls == [((), {})] and isinstance(model, RecordingModel)
+    assert built.calls == [((), {"settings": other})] and isinstance(model, RecordingModel)
     model.finish()
     assert json.loads(recording_path(tmp_path, "a", 1).read_text())["message"] == SECOND
 
@@ -285,7 +286,10 @@ def pytest_sessionstart(session):
 """
 
 
-@pytest.mark.parametrize(("flags", "lifted"), [([], False), (["--live"], True)])
+@pytest.mark.parametrize(
+    ("flags", "lifted"),
+    [([], False), (["--model", "claude-sonnet-5-5"], False), (["--live"], True)],
+)
 def test_pytest_socket_reads_the_lifted_option_and_replay_keeps_it_off(
     tmp_path: Path, flags: list[str], lifted: bool
 ) -> None:

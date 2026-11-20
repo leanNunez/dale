@@ -7,6 +7,7 @@ and never be a false confirmation; every other run must pass."""
 import pytest
 from sqlalchemy import Engine
 
+from dale.brain.application.model_port import ModelSettings
 from evals.harness.case import Case, load_cases
 from evals.harness.collect import CASES_DIR, evaluate
 from evals.harness.known_misses import load_known_misses
@@ -23,10 +24,16 @@ KNOWN_MISSES = load_known_misses(RECORDINGS / "known_misses.toml", CASES)
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case.id)
 @pytest.mark.parametrize("run", [1, 2, 3])
 def test_case(
-    case: Case, run: int, engines: dict[str, Engine], mode: Mode, run_sink: RunSink | None
+    case: Case,
+    run: int,
+    engines: dict[str, Engine],
+    mode: Mode,
+    run_sink: RunSink | None,
+    model_settings: ModelSettings,
 ) -> None:
     env = Env(engines["dale_app"], role_url("dale_verifier"))
-    result = evaluate(case, run, env, model_factory(mode, RECORDINGS, case.id, run), run_sink)
+    factory = model_factory(mode, RECORDINGS, case.id, run, model_settings)
+    result = evaluate(case, run, env, factory, run_sink)
     miss = KNOWN_MISSES.get((case.id, run)) if mode is Mode.REPLAY else None
     if miss is None:
         assert result.passed, "; ".join(result.problems)

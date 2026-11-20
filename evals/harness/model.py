@@ -16,7 +16,8 @@ proposal, order or row id (`prepare_order` returns no proposal id) and no timest
 results hold seed ids (uuid5 of the company), catalog text, prices, and dates from the case's
 frozen clock, so the same case and recording give the same messages on every run.
 
-Live builds the adapter with no arguments (nothing here reads credentials) and never writes.
+Live builds the adapter with the model's settings and no client (nothing here reads
+credentials) and never writes.
 Record is live plus the files replay reads, from the adapter's raw message (`evals/conftest.py`).
 A recording replaces the old file only once its run is complete, in one atomic rename.
 
@@ -44,6 +45,7 @@ from dale.brain.application.model_port import (
 from dale.brain.application.prompt import fingerprint, system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
 from dale.erp_sim.infrastructure.seed import el_hornero
+from evals.harness.models import settings_for
 
 FIELDS = {"case", "run", "step", "fingerprint", "messages", "message"}
 RECORDINGS = Path(__file__).parents[1] / "recordings"
@@ -74,6 +76,12 @@ def mode_from_flags(live: bool, record: bool) -> Mode:
     if record and not live:
         raise ValueError("--record needs --live: recording calls the live model")
     return Mode.RECORD if record else Mode.LIVE if live else Mode.REPLAY
+
+
+def recordings_dir(model: str, root: Path = RECORDINGS) -> Path:
+    """Where one model's recordings live: `<root>/<model>/<case>/run-N.jsonl` (S13.8). Only a
+    compared model has a directory, so a model name can never be a path."""
+    return root / settings_for(model).model
 
 
 def recording_path(root: Path, case: str, run: int) -> Path:
@@ -197,12 +205,16 @@ class RecordingModel:
         temporary.replace(self._path)  # atomic: the old file or the new one, never half of it
 
 
-def model_factory(mode: Mode, root: Path, case: str, run: int) -> Callable[[], ModelPort]:
-    """What `compose` calls once the customer is resolved. Replay never builds the adapter."""
+def model_factory(
+    mode: Mode, root: Path, case: str, run: int, settings: ModelSettings = MODEL_SETTINGS
+) -> Callable[[], ModelPort]:
+    """What `compose` calls once the customer is resolved. Replay never builds the adapter.
+    `root` is the model's own directory (`recordings_dir`); `settings` reach the replay's
+    fingerprint check and the live adapter's request alike (D23)."""
     if mode is Mode.REPLAY:
-        return lambda: ReplayModel(root, case, run)
+        return lambda: ReplayModel(root, case, run, settings)
     from dale.brain.infrastructure.anthropic_model import AnthropicModel  # live modes only
 
     if mode is Mode.LIVE:
-        return AnthropicModel  # no arguments: the environment holds the credentials
-    return lambda: RecordingModel(AnthropicModel(), root, case, run)
+        return lambda: AnthropicModel(settings=settings)  # no client: the environment has keys
+    return lambda: RecordingModel(AnthropicModel(settings=settings), root, case, run)

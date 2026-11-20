@@ -13,6 +13,10 @@ import pytest
 import evals.conftest as hooks
 from evals.harness import report_files
 from evals.harness.metrics import RunRecord
+from evals.harness.model import prompt_fingerprint
+from evals.harness.models import DEFAULT_MODEL, SONNET, settings_for
+from evals.harness.pricing import load_pricing
+from evals.harness.report import build_report
 
 pytest_plugins = ["pytester"]
 FIXTURE_CASES = Path(__file__).parents[2] / "fixtures" / "evals" / "cases"
@@ -141,8 +145,13 @@ class Terminal:
         pass
 
 
-def fake(tmp: Path, report: str | None, worker: dict[str, Any] | None = None) -> Any:
-    options = {"--report": report, "--live": False, "--record": False}
+def fake(
+    tmp: Path,
+    report: str | None,
+    worker: dict[str, Any] | None = None,
+    model: str = DEFAULT_MODEL,
+) -> Any:
+    options = {"--report": report, "--live": False, "--record": False, "--model": model}
     config = SimpleNamespace(
         getoption=options.__getitem__,
         cache=SimpleNamespace(mkdir=lambda name: tmp / name),
@@ -193,3 +202,34 @@ def test_a_worker_neither_deletes_a_report_nor_writes_one(tmp_path: Path) -> Non
     hooks.pytest_sessionstart(worker)
     hooks.pytest_sessionfinish(worker)
     assert reports(tmp_path) == ["v9.9.md"]
+
+
+def test_the_report_is_built_for_the_model_the_session_ran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B109: a session for another model never writes a report that names the default one. The
+    prices are stood in for here, since only the shipped model has a table in this file."""
+    written: list[dict[str, Any]] = []
+
+    def build(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return build_report(*args, pricing=replace(load_pricing(), model=SONNET), **kwargs)
+
+    def write(report: dict[str, Any]) -> tuple[Path, Path]:
+        written.append(report)
+        return tmp_path / "a.json", tmp_path / "a.md"
+
+    monkeypatch.setattr(hooks, "build_report", build)
+    monkeypatch.setattr(hooks, "write_report", write)
+    session = fake(tmp_path, "v9.9", model=SONNET)
+    sink = hooks._sink(session.config)
+    assert sink is not None
+    for case, suite in (("fixture-order", "core"), ("fixture-discount", "gauchadas")):
+        for n in (1, 2, 3):
+            sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
+    monkeypatch.setattr(hooks, "CASES_DIR", FIXTURE_CASES)
+    session.config.stash[hooks.COMMIT] = "a" * 40
+    hooks.pytest_sessionfinish(session)
+    assert session.exitstatus == pytest.ExitCode.OK
+    assert [(r["model"], r["prompt"]["fingerprint"]) for r in written] == [
+        (SONNET, prompt_fingerprint(settings_for(SONNET)))
+    ]
