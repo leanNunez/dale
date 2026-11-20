@@ -59,8 +59,10 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 7b3 | `feat(web): add the verdict panel` | `v02-slice-07b3-verdict` | `v02-slice-07b2-trace` | 375 | 7b2 | no | Sonnet high |
 | 7b4 | `feat(web): add the stored order panel` | `v02-slice-07b4-order` | `v02-slice-07b3-verdict` | 267 | 7b3 | no | Sonnet high |
 | 7b5 | `feat(web): wire the three panels and check the page against the contract samples` | `v02-slice-07b5-layout` | `v02-slice-07b4-order` | 306 | 7b4 | no | Sonnet high |
-| 8a | `feat(evals): add the model dimension, per-model recordings and the evals job` | `v02-slice-08a-eval-model` | `v02-slice-07b5-layout` | 300 | 1 | no | Sonnet high |
-| 8b | `feat(evals): add gate counts and the pre-registered comparison rule` | `v02-slice-08b-compare` | `v02-slice-08a-eval-model` | 300 | 8a | yes (rule) | Opus high |
+| 8a1 | `feat(evals): add the model dimension and move the recordings under their model` | `v02-slice-08a1-model` | `v02-slice-07b5-layout` | 387 | 7b5 | no | Sonnet high |
+| 8a2 | `feat(evals): price each model from its own table and name reports per model` | `v02-slice-08a2-pricing` | `v02-slice-08a1-model` | 393 | 8a1 | no | Sonnet high |
+| 8a3 | `ci(evals): replay each model in its own job and refuse paid runs that cannot report` | `v02-slice-08a3-ci` | `v02-slice-08a2-pricing` | 333 | 8a2 | no | Sonnet high |
+| 8b | `feat(evals): add gate counts and the pre-registered comparison rule` | `v02-slice-08b-compare` | `v02-slice-08a3-ci` | 300 | 8a3 | yes (rule) | Opus high |
 | 9 | `feat(evals): add the v0.2 case set, fresh recordings for both models and the comparison` | `v02-slice-09-cases-runs` | `v02-slice-08b-compare` | 300 | 8b, 2 | no | Sonnet high |
 | 10 | `docs: add ADR 0008, release notes and READMEs for v0.2` | `v02-slice-10-release` | `v02-slice-09-cases-runs` | 200 | 9, 7b | no | Sonnet medium |
 
@@ -71,7 +73,7 @@ Parallelism (only one writer at a time; all slices stay stacked in table order):
 | Gate | Task | Why it waits |
 |---|---|---|
 | Branch protection: add `web` as a required check | 6.10 | Repository setting, only after the job has run green once |
-| Branch protection: add `evals (haiku)` | 8a.8 | Repository setting; the old `test` check content changed |
+| Branch protection: add `evals (claude-haiku-5-5)` as a required check on `main` and `dev` | 8a.8 | Repository setting. Add it after the job runs green on the 8a3 PR and BEFORE merging 8a3: 8a3 removes the replay step from the required `test` job, so merging first leaves the eval replay unrequired |
 | Commit ADR 0007 (pre-registered rule) before any Sonnet recording | 8b.8 | Git history is the proof (R16, S16.1) |
 | Live recording run, Haiku (spends API credit) | 9.8 | Credit spend |
 | Live recording run, Sonnet (spends API credit, only after 8b.8 and 9.7) | 9.9 | Credit spend and rule ordering |
@@ -238,15 +240,16 @@ Covers: W4 (S4.3 page side), W5 (S5.3 type test), W15 (S15.1, S15.2, S15.3), W16
 
 Covers: R13 (S13.1, S13.2, S13.4, S13.5, S13.8, S13.9), R14 (S14.1-S14.4), D23, §7, §8. Existing v0.1 tests keep their expectations.
 
-- [ ] 8a.1 RED tests in `tests/unit/evals/`: `--model` defaults to `MODEL_SETTINGS.model`; `COMPARED = {haiku, sonnet}` built with `replace(MODEL_SETTINGS, model=...)` so effort is medium for both; recording path is `evals/recordings/<model>/<case>/run-N.jsonl`; a recording replayed under another model fails the fingerprint check (S13.8).
-- [ ] 8a.2 GREEN: `evals/harness/models.py` and the plumbing through `model_factory`, `ReplayModel`, `RecordingModel` and `AnthropicModel(settings=...)`. Satisfies D23.
-- [ ] 8a.3 `git mv` the 54 v0.1 recordings under `evals/recordings/<haiku-id>/` with content unchanged; per-model `known_misses.toml` with a top-level `model` equal to its directory; test that a known miss names its model and does not excuse the other (S13.9). The v0.1 replay tests still pass (S13.1, S13.2, S13.5 regression).
-- [ ] 8a.4 Per-model tables in `evals/pricing.toml` (`standard`, `long_context`, `source` with url, retrieved date, note); a model without a table fails report generation instead of using another model's prices (S14.4). Report keeps verified/attempted, false confirmations, pass^3, pass^1 and cost per verified order, `n/a` for zero verified (S14.1, S14.2).
-- [ ] 8a.5 Report naming: `--report v0.2 --model X` writes `evals/reports/v0.2-<model>.{json,md}`; test that two compared models yield two named reports (S14.3).
-- [ ] 8a.6 CI: add the `evals` job (Postgres service, matrix `model`, Haiku only for now) and remove the `pytest evals` step from `test`; test CI offline: the suite passes with no network call to the model API (S13.4, `pytest-socket`). Satisfies D23.
-- [ ] 8a.7 Extend `tests/unit/test_ci_workflow.py` for the `evals` job, its matrix and the removed `test` step (S18.2 pattern).
-- [ ] 8a.8 **GATED (user)**: add `evals (<haiku-id>)` as a required check in branch protection after it runs green; remove nothing without the user. Never automated.
-- [ ] 8a.9 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings excluded).
+- [x] 8a.1 RED tests in `tests/unit/evals/`: `--model` defaults to `MODEL_SETTINGS.model`; `COMPARED = {haiku, sonnet}` built with `replace(MODEL_SETTINGS, model=...)` so effort is medium for both; recording path is `evals/recordings/<model>/<case>/run-N.jsonl`; a recording replayed under another model fails the fingerprint check (S13.8).
+- [x] 8a.2 GREEN: `evals/harness/models.py` and the plumbing through `model_factory`, `ReplayModel`, `RecordingModel` and `AnthropicModel(settings=...)`. Satisfies D23.
+- [x] 8a.3 `git mv` the 54 v0.1 recordings under `evals/recordings/<haiku-id>/` with content unchanged; per-model `known_misses.toml` with a top-level `model` equal to its directory; test that a known miss names its model and does not excuse the other (S13.9). The v0.1 replay tests still pass (S13.1, S13.2, S13.5 regression).
+- [x] 8a.4 Per-model tables in `evals/pricing.toml` (`standard`, `long_context`, `source` with url, retrieved date, note); a model without a table fails report generation instead of using another model's prices (S14.4). Report keeps verified/attempted, false confirmations, pass^3, pass^1 and cost per verified order, `n/a` for zero verified (S14.1, S14.2).
+- [x] 8a.5 Report naming: `--report v0.2 --model X` writes `evals/reports/v0.2-<model>.{json,md}`; test that two compared models yield two named reports (S14.3).
+- [x] 8a.6 CI: add the `evals` job (Postgres service, matrix `model`, Haiku only for now) and remove the `pytest evals` step from `test`; test CI offline: the suite passes with no network call to the model API (S13.4, `pytest-socket`). Satisfies D23.
+- [x] 8a.7 Extend `tests/unit/test_ci_workflow.py` for the `evals` job, its matrix and the removed `test` step (S18.2 pattern).
+- [ ] 8a.8 **GATED (user)**: add `evals (claude-haiku-5-5)` as a required check on `main` and `dev` in branch protection after it runs green on the 8a3 PR and BEFORE merging 8a3, because 8a3 removes the replay step from the required `test` job; remove nothing without the user. Never automated.
+- [x] 8a.9 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings excluded).
+  - Done 2026-11-21: blind review (Opus) gave 4 should-fix and 1 nit, fixed (B109-B112): report labelled with the chosen model already in 8a1; paid runs refused before they start for a partial selection, an unreadable commit and maxfail; model-independent prompt content hash in the report; required-check ordering for 8a.8. 1504 pytest, 54 evals replay, 54 recordings renamed at 100%. PR sizes 387, 393, 333 (B113). Known pending: a refused partial selection still deletes that version-model's old report at session start. Push and PR wait for the user.
 
 ## Phase 8b: Gate counts and the comparison rule (slice 8b, ~300 lines) [critical: rule]
 
