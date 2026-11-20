@@ -1,13 +1,15 @@
-"""The press (D15, W6, W7, W12, W13; design §4.3): the gate on the server's pending id and
-the verdict after every press."""
+"""The press (D15, W6, W7, W12, W13; design §4.3): the gate on the server's pending id, the
+press lock with its bounded wait, the settled-response replay and the verdict after every
+press."""
 
+import threading
 from typing import Any
 from uuid import UUID
 
 import pytest
 
 from dale.channels.web.contract import VerdictIssued
-from dale.channels.web.conversations import Reply, WebConversation
+from dale.channels.web.conversations import PressLocks, Reply, WebConversation
 from dale.shared.customer_input import CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode, message_for
 from dale.shared.shown_events import OrderRejected, ShownEvent, SystemNotice
@@ -36,8 +38,10 @@ def offered(confirms: list[ShownEvent | BaseException], *more: ShownEvent) -> Fa
     return FakeBackend([said([HELLO, SUMMARY]), *(said([e]) for e in more)], confirms)
 
 
-def talking(backend: FakeBackend, turns: int = 1) -> WebConversation:
-    talk = WebConversation(UUID(int=100), backend)
+def talking(
+    backend: FakeBackend, turns: int = 1, presses: PressLocks | None = None
+) -> WebConversation:
+    talk = WebConversation(UUID(int=100), backend, presses)
     for _ in range(turns):
         talk.turn(CustomerText("quiero yerba"))
     return talk
@@ -123,6 +127,38 @@ def test_a_raised_press_shows_nothing_and_keeps_the_pending_id() -> None:  # ste
     assert (retried.status, len(backend.pressed)) == (200, 2)
 
 
+@pytest.mark.parametrize("outcome", [DONE, REJECTED])
+def test_a_settled_response_is_replayed_byte_for_byte(outcome: ShownEvent) -> None:
+    backend = offered([outcome])
+    talk = talking(backend)
+
+    first = talk.press(PID)
+    verified = len(backend.verified)
+    again = talk.press(PID)
+
+    assert (len(backend.pressed), len(backend.verified)) == (1, verified)  # no new verdict
+    assert again.envelope.model_dump_json() == first.envelope.model_dump_json()
+    assert again.status == first.status
+
+
+def test_a_late_replay_keeps_its_events_and_carries_the_current_pending_and_seq() -> None:  # B52
+    backend = offered([DONE], NEWER)
+    talk = talking(backend)
+    first = talk.press(PID)
+    newer = talk.turn(CustomerText("y otra"))  # NEWER is pending now
+
+    again = talk.press(PID)
+
+    assert again.envelope.model_dump_json(include={"events"}) == first.envelope.model_dump_json(
+        include={"events"}
+    )  # the same events, each with its own seq, the old verdict included
+    assert (again.envelope.seq, again.envelope.pending_proposal_id) == (
+        newer.envelope.seq,
+        OTHER,
+    )
+    assert (again.status, len(backend.pressed), talk.pending.proposal_id) == (200, 1, OTHER)
+
+
 def test_a_rejected_press_carries_its_catalog_code_and_a_verdict() -> None:  # S13.2
     reply = talking(offered([REJECTED])).press(PID)
     assert (reply.status, code(reply), types(reply)) == (
@@ -159,9 +195,95 @@ def test_a_failed_verifier_after_a_press_is_unverifiable() -> None:  # S13.3
     assert (shown.verdict, shown.reason) == ("unverifiable", "verifier_error")
 
 
-def test_a_press_during_a_turn_is_busy() -> None:  # W12
+class Watched(PressLocks):
+    """Signals `contended` once a second press reaches the lock of an id."""
+
+    def __init__(self, wait: float = WAIT) -> None:
+        super().__init__(wait)
+        self.calls, self.contended = 0, threading.Event()
+
+    def _acquire(self, lock: threading.Lock) -> bool:
+        self.calls += 1
+        if self.calls == 2:
+            self.contended.set()
+        return super()._acquire(lock)
+
+
+def test_concurrent_presses_of_one_id_confirm_once_with_identical_bodies() -> None:  # S7.1
+    backend, locks = offered([DONE]), Watched()
+    talk = talking(backend, presses=locks)
+    backend.hold = True
+    first = Running(lambda: talk.press(PID))
+    assert backend.entered.wait(WAIT)
+    second = Running(lambda: talk.press(PID))
+    assert locks.contended.wait(WAIT)
+
+    backend.release.set()
+    a, b = first.done(), second.done()
+
+    assert a.envelope.model_dump_json() == b.envelope.model_dump_json()
+    assert (a.status, b.status, len(backend.pressed)) == (200, 200, 1)
+    assert len(locks) == 0  # nothing is left behind
+
+
+def test_a_press_that_waited_gets_the_unknown_outcome_and_a_later_one_runs() -> None:  # B51
+    backend, locks = offered([UNKNOWN, DONE]), Watched()
+    talk = talking(backend, presses=locks)
+    backend.hold = True
+    first = Running(lambda: talk.press(PID))
+    assert backend.entered.wait(WAIT)
+    second = Running(lambda: talk.press(PID))
+    assert locks.contended.wait(WAIT)
+
+    backend.release.set()
+    a, b = first.done(), second.done()
+    later = talk.press(PID)  # arrived after the running press finished: not cached (S7.5)
+
+    assert a.envelope.model_dump_json() == b.envelope.model_dump_json()
+    assert (a.status, code(a), b.status) == (503, ErrorCode.RULES_UNAVAILABLE, 503)
+    assert (later.status, types(later), len(backend.pressed)) == (
+        200,
+        ["OrderConfirmed", "VerdictIssued"],
+        2,
+    )
+
+
+def test_a_second_waiter_for_one_id_is_busy_at_once() -> None:  # one waiter per id
+    backend, locks = offered([DONE]), Watched()
+    talk = talking(backend, presses=locks)
+    backend.hold = True
+    first = Running(lambda: talk.press(PID))
+    assert backend.entered.wait(WAIT)
+    second = Running(lambda: talk.press(PID))
+    assert locks.contended.wait(WAIT)
+
+    third = talk.press(PID)
+
+    assert (third.status, code(third), third.envelope.events) == (409, "conversation_busy", ())
+    assert locks.calls == 2  # the third press never waited for the lock
+    backend.release.set()
+    a, b = first.done(), second.done()
+    assert a.envelope.model_dump_json() == b.envelope.model_dump_json()
+    assert (len(backend.pressed), len(locks)) == (1, 0)
+
+
+def test_a_press_waits_only_so_long_for_the_running_one() -> None:  # D16: bounded wait
     backend = offered([DONE])
-    talk = talking(backend)
+    talk = talking(backend, presses=PressLocks(wait=0.05))
+    backend.hold = True
+    first = Running(lambda: talk.press(PID))
+    assert backend.entered.wait(WAIT)
+
+    late = talk.press(PID)
+
+    assert (late.status, code(late), late.envelope.events) == (409, "conversation_busy", ())
+    backend.release.set()
+    assert first.done().status == 200 and len(backend.pressed) == 1
+
+
+def test_a_press_during_a_turn_is_busy_and_releases_its_press_lock() -> None:  # W12
+    backend, locks = offered([DONE]), PressLocks()
+    talk = talking(backend, presses=locks)
     backend.turns.append(said([HELLO]))
     backend.hold = True
     turn = Running(lambda: talk.turn(CustomerText("¿y?")))
@@ -169,7 +291,7 @@ def test_a_press_during_a_turn_is_busy() -> None:  # W12
 
     busy = talk.press(PID)
 
-    assert (code(busy), backend.pressed) == ("conversation_busy", [])
+    assert (code(busy), backend.pressed, len(locks)) == ("conversation_busy", [], 0)
     backend.release.set()
     assert turn.done().status == 200 and talk.pending.proposal_id == PID
 
@@ -187,3 +309,10 @@ def test_a_turn_during_a_press_is_busy() -> None:  # W12
     backend.release.set()
     assert press.done().status == 200
     assert [s.text for s in backend.said] == ["quiero yerba"]
+
+
+def test_the_press_lock_is_dropped_even_when_the_press_raises() -> None:
+    locks = PressLocks()
+    with pytest.raises(RuntimeError), locks.held(PID):
+        raise RuntimeError
+    assert len(locks) == 0
