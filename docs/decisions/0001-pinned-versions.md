@@ -21,6 +21,9 @@ locked in `uv.lock`; `pyproject.toml` pins them with `==`.
 | alembic | 1.20.1 |
 | psycopg[binary] | 3.3.9 |
 | pydantic | 2.14.3 |
+| fastapi (added 2026-11-19, v0.2) | 0.165.0 |
+| starlette (imported directly by the web channel; added 2026-11-19, v0.2) | 1.10.0 |
+| uvicorn, no extras (added 2026-11-19, v0.2) | 0.54.0 |
 | pyyaml | 6.0.3 |
 | prompt-toolkit | 3.0.53 |
 | pytest | 9.2.0 |
@@ -29,6 +32,7 @@ locked in `uv.lock`; `pyproject.toml` pins them with `==`.
 | ruff | 0.17.4 |
 | mypy | 2.4.1 |
 | import-linter | 2.16 |
+| httpx2 (dev, the transport of Starlette's `TestClient`, which imports `httpx2` first; added 2026-11-19, v0.2) | 2.16.0 |
 | types-pyyaml (typing stubs) | 6.0.12.20261111 |
 | PostgreSQL service image | `postgres:17` (major tag; CI and local) |
 
@@ -40,6 +44,11 @@ locked in `uv.lock`; `pyproject.toml` pins them with `==`.
   `messages.create(output_config={"effort": "medium"})`. `OutputConfigParam.effort` takes
   `low`, `medium`, `high`, `xhigh` or `max`; there is no top-level `effort` argument. A unit
   test pins the field, so an SDK upgrade that moves it fails CI.
+
+- v0.2 adds `fastapi`, `uvicorn` and dev `httpx` (design D12, D22). They are the current stable
+  releases on 2026-11-19 and resolve with the existing pins unchanged. `uvicorn` is pinned
+  without extras, so no `uvloop` or `httptools`. `uv.lock` pins their transitive packages
+  (for example `starlette` 1.10.0); `uv sync --locked` fails on any drift.
 
 ## Consequences
 
