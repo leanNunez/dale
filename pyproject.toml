@@ -65,7 +65,10 @@ markers = [
 script_location = "%(here)s/migrations"
 
 [tool.importlinter]
-root_packages = ["dale", "evals", "sqlalchemy", "pydantic", "anthropic"]
+root_packages = [
+    "dale", "evals", "sqlalchemy", "pydantic", "anthropic", "fastapi", "starlette", "uvicorn",
+    "prompt_toolkit",
+]
 include_external_packages = true
 
 # 1. Layers inside each module: infrastructure -> application -> domain.
@@ -114,10 +117,10 @@ type = "forbidden"
 source_modules = ["dale.verifier", "dale.apps.verifier", "dale.apps.verifier_runner"]
 forbidden_modules = ["dale.erp_sim", "dale.brain", "dale.channels"]
 
-# 5. The terminal channel talks to the brain only through its application layer.
+# 5. Every channel talks to the brain only through its application layer.
 [[tool.importlinter.contracts]]
 id = "5"
-name = "channels import no erp_sim, brain.domain or brain.infrastructure"
+name = "channels (common, terminal, web) import no erp_sim, brain.domain or brain.infrastructure"
 type = "forbidden"
 source_modules = ["dale.channels"]
 forbidden_modules = ["dale.erp_sim", "dale.brain.domain", "dale.brain.infrastructure"]
@@ -158,3 +161,71 @@ type = "forbidden"
 source_modules = ["evals"]
 forbidden_modules = ["anthropic"]
 allow_indirect_imports = true
+
+# 9. The HTTP stack is a web-channel detail: only the web channel and its composition root
+#    import it.
+[[tool.importlinter.contracts]]
+id = "9"
+name = "fastapi, starlette and uvicorn (and their submodules) are imported only by channels.web and apps.web"
+type = "forbidden"
+source_modules = ["dale", "evals"]
+forbidden_modules = ["fastapi", "starlette", "uvicorn"]
+ignore_imports = [
+    "dale.channels.web.** -> fastapi",
+    "dale.channels.web.** -> fastapi.**",
+    "dale.channels.web.** -> starlette",
+    "dale.channels.web.** -> starlette.**",
+    "dale.channels.web.** -> uvicorn",
+    "dale.channels.web.** -> uvicorn.**",
+    "dale.apps.web -> fastapi",
+    "dale.apps.web -> fastapi.**",
+    "dale.apps.web -> starlette",
+    "dale.apps.web -> starlette.**",
+    "dale.apps.web -> uvicorn",
+    "dale.apps.web -> uvicorn.**",
+    "dale.apps.web.** -> fastapi",
+    "dale.apps.web.** -> fastapi.**",
+    "dale.apps.web.** -> starlette",
+    "dale.apps.web.** -> starlette.**",
+    "dale.apps.web.** -> uvicorn",
+    "dale.apps.web.** -> uvicorn.**",
+]
+unmatched_ignore_imports_alerting = "none"
+
+# 10. Channels are independent: terminal and web share code only through channels.common,
+#     which knows neither (the tool expresses the two halves as separate contracts).
+[[tool.importlinter.contracts]]
+id = "10a"
+name = "terminal and web channels are independent"
+type = "independence"
+modules = ["dale.channels.terminal", "dale.channels.web"]
+
+[[tool.importlinter.contracts]]
+id = "10b"
+name = "channels.common imports neither terminal nor web"
+type = "forbidden"
+source_modules = ["dale.channels.common"]
+forbidden_modules = ["dale.channels.terminal", "dale.channels.web"]
+
+# 11. A channel never reaches a composition root or the verifier; apps maps verdicts to the
+#     channel's own types.
+[[tool.importlinter.contracts]]
+id = "11"
+name = "channels import no apps or verifier"
+type = "forbidden"
+source_modules = ["dale.channels"]
+forbidden_modules = ["dale.apps", "dale.verifier"]
+
+# 12. The terminal UI library stays in the terminal channel, so the web host never loads it and
+#     channels.common stays channel-neutral (an allow-list: every other module is forbidden).
+[[tool.importlinter.contracts]]
+id = "12"
+name = "prompt_toolkit is imported only by channels.terminal"
+type = "forbidden"
+source_modules = ["dale", "evals"]
+forbidden_modules = ["prompt_toolkit"]
+ignore_imports = [
+    "dale.channels.terminal.** -> prompt_toolkit",
+    "dale.channels.terminal.** -> prompt_toolkit.**",
+]
+unmatched_ignore_imports_alerting = "none"

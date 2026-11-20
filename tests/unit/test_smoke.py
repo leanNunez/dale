@@ -14,6 +14,7 @@ PACKAGES = [
     "dale.channels",
     "dale.channels.common",
     "dale.channels.terminal",
+    "dale.channels.web",
     "dale.apps",
 ]
 
