@@ -1,4 +1,4 @@
-"""Conversation state of the web channel (D16, W3, W12, W17; design §4.3).
+"""Conversation state of the web channel (D16, W3, W12, W13, W17; design §4.3).
 
 A `WebConversation` holds one brain conversation (its backend), the transcript the verifier
 judges, the `Pending` proposal and the seq counter. Every request runs under the conversation
@@ -78,6 +78,21 @@ class Reply:
     status: int
 
 
+def failed_verdict(subject: UUID | None) -> VerdictIssued:
+    """The verdict when the verifier call itself fails (the channel's `VerifierFailed`): never
+    verified. Its reason `verifier_failed` is outside the closed set, so it is the catch-all
+    `verifier_error` (B37)."""
+    return VerdictIssued(
+        subject_proposal_id=subject,
+        verdict="unverifiable",
+        reason="verifier_error",
+        false_confirmations=0,
+        unexpected_writes=0,
+        findings=(),
+        stored_orders=(),
+    )
+
+
 class WebConversation:
     def __init__(self, conversation_id: UUID, backend: WebBackend) -> None:
         self.id, self._backend = conversation_id, backend
@@ -88,8 +103,8 @@ class WebConversation:
         self._lock = threading.Lock()
 
     def turn(self, said: CustomerText) -> Reply:
-        """Tool calls in call order, then the shown events. A raised turn shows nothing and
-        keeps `Pending`: what it may have shown is unknown."""
+        """Tool calls in call order, then the shown events, then the verdict when an
+        `OrderConfirmed` was shown (W13). A raised turn shows nothing and keeps `Pending`."""
         with self._exclusive() as free:
             if not free:
                 return self._busy()
@@ -102,6 +117,8 @@ class WebConversation:
             ]
             events += self._show(result.shown)
             self.pending.after_turn(result.shown)
+            if done := [e.proposal_id for e in result.shown if isinstance(e, OrderConfirmed)]:
+                events.append(self._verify(done[-1]))
             return self._finish(events, result.failure)
 
     @contextmanager
@@ -113,6 +130,11 @@ class WebConversation:
         finally:
             if free:
                 self._lock.release()
+
+    def _verify(self, subject: UUID | None) -> WebEvent:
+        """Its verdict is always returned; a raised or failed call is `unverifiable` (S13.3)."""
+        verdict = step("verify", lambda: self._backend.verify(tuple(self.transcript), subject))
+        return self._event(verdict or failed_verdict(subject))
 
     def _show(self, shown: Sequence[ShownEvent]) -> list[WebEvent]:
         self.transcript.extend(shown)

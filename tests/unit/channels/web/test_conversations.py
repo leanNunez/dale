@@ -1,9 +1,10 @@
-"""Web conversation state: the registry port, the conversation lock and the seq counter (D16,
-W3, W12, W17)."""
+"""Web conversation state: the registry port, the conversation lock, the seq counter and the
+verify step (D16, W3, W12, W13, W17)."""
 
 import threading
 from collections.abc import Callable, Sequence
 from datetime import date
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -19,14 +20,15 @@ from dale.channels.web.conversations import (
 )
 from dale.shared.customer_input import CustomerText, KeyPress
 from dale.shared.errors import HTTP_STATUS, ErrorCode
-from dale.shared.ids import ProposalId
+from dale.shared.ids import OrderId, ProposalId
 from dale.shared.money import Money
-from dale.shared.shown_events import AssistantText, ProposalSummary, ShownEvent
+from dale.shared.shown_events import AssistantText, OrderConfirmed, ProposalSummary, ShownEvent
 
 WAIT = 5.0  # seconds: the bound on every wait in these tests; none is reached when they pass
 PID, OTHER = ProposalId(UUID(int=1)), ProposalId(UUID(int=2))
 SUMMARY = ProposalSummary(PID, (), Money(4_900_000), date(2026, 11, 20))
 NEWER = ProposalSummary(OTHER, (), Money(5_000_000), date(2026, 11, 20))
+DONE = OrderConfirmed(OrderId(UUID(int=9)), PID, (), Money(4_900_000), SUMMARY.delivery_date, "Ok")
 HELLO = AssistantText("Hola")
 TRACE = ToolCallTrace("check_prices", '{"product":"yerba"}', True, None)
 type Step[T] = T | BaseException
@@ -232,3 +234,47 @@ def test_a_busy_reply_reports_the_last_finished_request() -> None:
     assert (busy.envelope.seq, busy.envelope.pending_proposal_id) == (1, PID)
     backend.release.set()
     assert running.done().envelope.pending_proposal_id == OTHER
+
+
+def test_a_turn_that_shows_a_confirmation_is_verified() -> None:  # W13
+    backend = FakeBackend([said([DONE], TRACE)])
+    reply = conversation(backend).turn(CustomerText("¿quedó?"))
+
+    assert types(reply) == ["ToolCalled", "OrderConfirmed", "VerdictIssued"]
+    assert backend.verified == [((DONE,), PID)]  # only shown events reach the verifier (S3.3)
+
+
+def test_a_turn_with_no_confirmation_is_not_verified() -> None:
+    backend = FakeBackend([said([HELLO, SUMMARY])])
+    conversation(backend).turn(CustomerText("quiero yerba"))
+    assert backend.verified == []
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("crash"), TimeoutError()])
+def test_a_failed_verifier_is_unverifiable_never_verified(failure: Exception) -> None:  # S13.3
+    def broken(subject: UUID | None) -> Any:
+        raise failure
+
+    reply = conversation(FakeBackend([said([DONE])], verdicts=broken)).turn(CustomerText("¿y?"))
+
+    shown = reply.envelope.events[-1].data
+    assert isinstance(shown, VerdictIssued)
+    assert (shown.verdict, shown.reason, shown.subject_proposal_id) == (
+        "unverifiable",
+        "verifier_error",
+        PID,
+    )
+    assert (shown.findings, shown.stored_orders) == ((), ())
+
+
+def test_a_verifier_timeout_stays_unverifiable() -> None:  # S13.3: the runner's own timeout
+    def timed_out(subject: UUID | None) -> VerdictIssued:
+        return verdict(subject).model_copy(update={"verdict": "unverifiable", "reason": "timeout"})
+
+    reply = conversation(FakeBackend([said([DONE])], verdicts=timed_out)).turn(CustomerText("¿y?"))
+
+    shown = reply.envelope.events[-1].data
+    assert isinstance(shown, VerdictIssued) and (shown.verdict, shown.reason) == (
+        "unverifiable",
+        "timeout",
+    )
