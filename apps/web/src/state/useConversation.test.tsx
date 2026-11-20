@@ -1,8 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { ClientError, type Api } from "../api/client";
-import type { ResponseEnvelope } from "../contract";
+import { ClientError } from "../api/client";
 import {
   CONVERSATION,
   OTHER_CONVERSATION,
@@ -11,36 +10,15 @@ import {
   envelope,
   summary,
 } from "../test/factories";
+import { fakeApi } from "../test/fakeApi";
 import { useConversation } from "./useConversation";
-
-/** An API whose replies the test releases by hand, so a request can be held in flight. */
-function fakeApi() {
-  const waiting: ((reply: ResponseEnvelope | Error) => void)[] = [];
-  const hold = () =>
-    new Promise<ResponseEnvelope>((resolve, reject) => {
-      waiting.push((reply) => (reply instanceof Error ? reject(reply) : resolve(reply)));
-    });
-  const api = {
-    createConversation: vi.fn<Api["createConversation"]>(hold),
-    sendMessage: vi.fn<Api["sendMessage"]>(hold),
-    press: vi.fn<Api["press"]>(hold),
-    cancel: vi.fn<Api["cancel"]>(hold),
-  } satisfies Api;
-  const release = async (reply: ResponseEnvelope | Error) => {
-    await act(async () => {
-      waiting.shift()?.(reply);
-      await Promise.resolve();
-    });
-  };
-  return { api, release };
-}
 
 async function withSummaryShown() {
   const fake = fakeApi();
   const hook = renderHook(() => useConversation(fake.api));
   act(() => hook.result.current.start());
   await fake.release(envelope());
-  act(() => hook.result.current.send("dos bolsas de harina"));
+  act(() => void hook.result.current.send("dos bolsas de harina"));
   await fake.release(
     envelope({ events: [assistantText(1), summary(2)], pending_proposal_id: PROPOSAL_A }),
   );
@@ -80,8 +58,8 @@ describe("useConversation", () => {
     await release(envelope());
 
     act(() => {
-      result.current.send("hola");
-      result.current.send("hola otra vez");
+      void result.current.send("hola");
+      void result.current.send("hola otra vez");
     });
     expect(api.sendMessage).toHaveBeenCalledTimes(1);
     expect(api.sendMessage).toHaveBeenCalledWith(CONVERSATION, "hola");
@@ -93,7 +71,7 @@ describe("useConversation", () => {
   it("creates the conversation first when a message is sent before one exists", async () => {
     const { api, release } = fakeApi();
     const { result } = renderHook(() => useConversation(api));
-    act(() => result.current.send("hola"));
+    act(() => void result.current.send("hola"));
     expect(api.createConversation).toHaveBeenCalledTimes(1);
     expect(api.sendMessage).not.toHaveBeenCalled();
 
@@ -108,7 +86,7 @@ describe("useConversation", () => {
   it("stops after a failed create and sends no message", async () => {
     const { api, release } = fakeApi();
     const { result } = renderHook(() => useConversation(api));
-    act(() => result.current.send("hola"));
+    act(() => void result.current.send("hola"));
     await release(new ClientError("network", null));
     expect(api.sendMessage).not.toHaveBeenCalled();
     expect(result.current.state.inFlight).toBe("none");
