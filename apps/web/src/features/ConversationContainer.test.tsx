@@ -369,6 +369,94 @@ describe("a summary says where its proposal stands (S15.5)", () => {
   });
 });
 
+describe("the cancel control (S15.5)", () => {
+  const cancelButton = () => screen.getByRole("button", { name: es.cancel.label });
+
+  it("is disabled before there is any proposal, with the reason said in words", () => {
+    render(<ConversationContainer api={fakeApi().api} />);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    expect(screen.getByText(es.cancel.disabledHint)).toBeTruthy();
+  });
+
+  it("is enabled only for a rendered current summary with nothing in flight", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    await say(fake, envelope({ events: [assistantText(1)], pending_proposal_id: PROPOSAL_A }));
+    expect(cancelButton()).toHaveProperty("disabled", true); // pending, but never shown as a summary
+  });
+
+  it("is enabled for the current summary, and disabled while a request runs", async () => {
+    const fake = await withProposalShown();
+    expect(cancelButton()).toHaveProperty("disabled", false);
+    expect(screen.getByText(es.cancel.enabledHint)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    await fake.release(envelope({ events: [assistantText(3)], pending_proposal_id: PROPOSAL_A }));
+    expect(cancelButton()).toHaveProperty("disabled", false);
+  });
+
+  it("asks the host to cancel the pending proposal once, however often it is clicked", async () => {
+    const fake = await withProposalShown();
+    cancelButton().focus();
+    fireEvent.click(cancelButton());
+    fireEvent.click(cancelButton());
+    expect(fake.api.cancel).toHaveBeenCalledExactlyOnceWith(CONVERSATION, PROPOSAL_A);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    expect(dale()).toHaveProperty("disabled", true);
+    expect(screen.getByRole("status").textContent).toContain(es.pending.cancel);
+  });
+
+  it("marks the summary cancelled once the host answered, and Dale cannot press it", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(envelope({ seq: 2, pending_proposal_id: null }));
+    const card = screen.getByRole("article", { name: es.summary.title });
+    expect(within(card).getByText(es.summary.status.cancelled)).toBeTruthy();
+    expect(screen.queryByText(es.summary.status.current)).toBeNull();
+    expect(screen.queryByText(es.summary.notConfirmed)).toBeNull();
+    expect(dale()).toHaveProperty("disabled", true);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    fireEvent.click(dale());
+    fireEvent.click(cancelButton());
+    expect(fake.api.press).not.toHaveBeenCalled();
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps a proposal pressable when the host's answer is an error or never arrived", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(failure("conversation_busy", { seq: 2, pending_proposal_id: PROPOSAL_A }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText(es.summary.status.current)).toBeTruthy();
+    expect(dale()).toHaveProperty("disabled", false);
+    expect(cancelButton()).toHaveProperty("disabled", false);
+    fireEvent.click(cancelButton());
+    await fake.release(new ClientError("network", null));
+    expect(screen.getByText(es.summary.status.current)).toBeTruthy();
+    expect(dale()).toHaveProperty("disabled", false);
+  });
+
+  it("leaves a later proposal for Dale after an earlier one was cancelled", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(envelope({ seq: 2, pending_proposal_id: null }));
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    await fake.release(
+      envelope({ events: [summary(3, PROPOSAL_B)], pending_proposal_id: PROPOSAL_B }),
+    );
+    const cards = screen.getAllByRole("article", { name: es.summary.title });
+    expect(
+      cards.map((card) => within(card).queryByText(es.summary.status.cancelled) !== null),
+    ).toEqual([true, false]);
+    expect(dale()).toHaveProperty("disabled", false);
+    fireEvent.click(dale());
+    expect(fake.api.press).toHaveBeenCalledExactlyOnceWith(CONVERSATION, PROPOSAL_B);
+  });
+});
+
 describe("model text never becomes markup (S10.2)", () => {
   it("shows assistant text with an image tag as characters and creates no element", async () => {
     const fake = fakeApi();
