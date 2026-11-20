@@ -9,7 +9,10 @@ extra allowed names in `DALE_WEB_ALLOWED_HOSTS` and `DALE_WEB_ALLOWED_ORIGINS` (
 the loopback names on the port are always allowed). The company and the customer are resolved
 through `erp_sim.public` at start, so a wrong one stops the host (exit 2) before it serves.
 `DALE_VERIFIER_DATABASE_URL` is not read yet: the verifier call arrives with the press route
-(slice 5), which makes it required."""
+(slice 5), which makes it required.
+
+`web_verdict` maps the runner's verdict onto the channel's own `VerdictIssued`, which the web
+channel cannot build itself because it never imports `dale.apps` (import contract 11)."""
 
 import argparse
 import logging
@@ -18,18 +21,25 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, cast, get_args
+from uuid import UUID
 
 import sqlalchemy as sa
 import uvicorn
 from starlette.types import ASGIApp
 
+from dale.apps.verifier_runner import StoredOrder, VerifierVerdict
+from dale.channels.web import contract
 from dale.channels.web.app import Ready, create_app
+from dale.channels.web.contract import VerdictIssued, VerdictReason
 from dale.channels.web.guard import AllowList
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.public import ErpFacade
 from dale.shared.clock import SystemClock
 from dale.shared.errors import ErrorCode, Failure, message_for
+from dale.shared.ids import ProductId
+from dale.shared.money import Money
+from dale.shared.shown_events import ShownLine
 
 HOST: Final = "127.0.0.1"
 PORT_VARIABLE, DEFAULT_PORT = "DALE_WEB_PORT", 8000
@@ -39,6 +49,7 @@ HOSTS_VARIABLE, ORIGINS_VARIABLE = "DALE_WEB_ALLOWED_HOSTS", "DALE_WEB_ALLOWED_O
 REQUIRED = (COMPANY_VARIABLE, URL_VARIABLE)
 CONNECT_TIMEOUT: Final = 3  # seconds: a black-holed database fails the health probe fast
 PAGE = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"  # in a source checkout
+REASONS: Final = frozenset(get_args(VerdictReason))
 
 
 class SettingsError(ValueError):
@@ -84,6 +95,54 @@ def startup_error(erp: ErpFacade, config: WebSettings) -> tuple[int, str] | None
 
 def sql_erp(engine: sa.Engine) -> ErpFacade:
     return SqlErpFacade(engine, SystemClock())
+
+
+# Slice 5a's press route is the caller: it maps the verifier's verdict for the page.
+def web_verdict(verdict: VerifierVerdict, subject: UUID | None) -> VerdictIssued:
+    """Cents become `Money`; a reason outside the closed set (`exit_<n>`, an exception class
+    name) becomes `verifier_error`. A verdict the web type cannot carry is `unverifiable`."""
+    reason = verdict.reason if verdict.reason in REASONS else "verifier_error"
+    try:
+        return VerdictIssued(
+            subject_proposal_id=subject,
+            verdict=verdict.verdict,
+            reason=cast(VerdictReason, reason),
+            false_confirmations=verdict.false_confirmations,
+            unexpected_writes=verdict.unexpected_writes,
+            findings=tuple(contract.Finding(**f.model_dump()) for f in verdict.findings),
+            stored_orders=tuple(_stored(order) for order in verdict.stored_orders),
+        )
+    except (ValueError, TypeError):  # a naive `received_at`, negative cents
+        logging.getLogger(__name__).warning("verdict not shown as received", exc_info=True)
+        counts = {"false_confirmations": 0, "unexpected_writes": 0}
+        return VerdictIssued(
+            subject_proposal_id=subject,
+            verdict="unverifiable",
+            reason="malformed_output",
+            findings=(),
+            stored_orders=(),
+            **counts,
+        )
+
+
+def _stored(order: StoredOrder) -> contract.StoredOrder:
+    lines = tuple(
+        ShownLine(
+            ProductId(line.product_id),
+            line.quantity,
+            Money(line.unit_price_cents),
+            Money(line.line_total_cents),
+        )
+        for line in order.lines
+    )
+    return contract.StoredOrder(
+        order_id=order.id,
+        proposal_id=order.proposal_id,
+        lines=lines,
+        total=Money(order.total_cents),
+        delivery_date=order.delivery_date,
+        received_at=order.received_at,
+    )
 
 
 def database_engine(url: str) -> sa.Engine:

@@ -1,7 +1,9 @@
 """The web composition root (D12, D17, W1): loopback only, one worker, no request timeout, the
-settings and the start-up check of the customer."""
+settings, the start-up check of the customer, and the mapping of the runner's verdict onto the
+web verdict."""
 
 import inspect
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import ClassVar, cast
 from uuid import UUID
@@ -12,15 +14,24 @@ import uvicorn
 from starlette.testclient import TestClient
 
 from dale.apps import web
+from dale.apps.verifier_runner import (
+    Finding,
+    StoredLine,
+    StoredOrder,
+    VerifierVerdict,
+    unverifiable,
+)
 from dale.channels.web.app import create_app
 from dale.erp_sim.public import ErpFacade, SessionCustomer
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId
+from dale.shared.money import Money
 
 REQUIRED = {
     "DALE_WEB_COMPANY": "el-hornero",
     "DALE_APP_DATABASE_URL": "postgresql+psycopg://app:s3cr3t@127.0.0.1/dale",
 }
+P, ORDER, C, ITEM = (UUID(int=n) for n in (1, 2, 3, 4))
 
 
 def test_the_bind_host_is_loopback_and_nothing_changes_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,3 +170,64 @@ def test_no_route_sends_a_cors_header(tmp_path: Path) -> None:
         responses.append(client.options("/health", headers=headers))
     assert [r.status_code for r in responses] == [200, 200, 200, 404, 403, 403]
     assert not [h for r in responses for h in r.headers if h.lower().startswith("access-control")]
+
+
+def stored(received: datetime, cents: int = 245_000) -> StoredOrder:
+    line = StoredLine(
+        product_id=ITEM, quantity=2, unit_price_cents=cents, line_total_cents=cents * 2
+    )
+    return StoredOrder(
+        id=ORDER,
+        proposal_id=P,
+        customer_id=C,
+        lines=(line,),
+        total_cents=cents * 2,
+        delivery_date=date(2026, 11, 20),
+        received_at=received,
+    )
+
+
+def verified(order: StoredOrder) -> VerifierVerdict:
+    found = Finding(kind="verified", proposal_id=P, order_id=ORDER, fields=())
+    return VerifierVerdict(
+        verdict="verified",
+        reason="",
+        findings=(found,),
+        false_confirmations=0,
+        unexpected_writes=0,
+        stored_orders=(order,),
+    )
+
+
+def test_a_verified_verdict_carries_its_stored_order_in_money() -> None:
+    """B17: `*_cents` become `Money`; the customer id is not carried."""
+    shown = web.web_verdict(verified(stored(datetime(2026, 11, 19, 12, tzinfo=UTC))), P)
+    assert (shown.verdict, shown.reason, shown.subject_proposal_id) == ("verified", "", P)
+    [order] = shown.stored_orders
+    assert (order.order_id, order.proposal_id, order.total) == (ORDER, P, Money(490_000))
+    [line] = order.lines
+    assert (line.product_id, line.quantity) == (ITEM, 2)
+    assert (line.unit_price, line.line_total) == (Money(245_000), Money(490_000))
+    assert shown.findings[0].kind == "verified" and shown.findings[0].order_id == ORDER
+
+
+@pytest.mark.parametrize(
+    ("reason", "shown"),
+    [
+        ("timeout", "timeout"),
+        ("malformed_output", "malformed_output"),
+        ("exit_3", "verifier_error"),
+        ("OperationalError", "verifier_error"),
+        ("verifier_failed", "verifier_error"),
+    ],
+)
+def test_a_reason_outside_the_closed_set_becomes_verifier_error(reason: str, shown: str) -> None:
+    """B25: the page can switch over every reason it can receive."""
+    issued = web.web_verdict(unverifiable(reason), None)
+    assert (issued.verdict, issued.reason, issued.stored_orders) == ("unverifiable", shown, ())
+
+
+def test_a_verdict_the_web_type_cannot_carry_is_unverifiable() -> None:
+    """Fail closed: a naive `received_at` is never shown as verified."""
+    shown = web.web_verdict(verified(stored(datetime(2026, 11, 19, 12))), P)
+    assert (shown.verdict, shown.reason, shown.findings) == ("unverifiable", "malformed_output", ())
