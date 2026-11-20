@@ -1,10 +1,12 @@
-"""Conversation state of the web channel (D16, W3, W12, W13, W17; design §4.3).
+"""Conversation state of the web channel and the press (D15, D16, W3, W7, W12, W13, W17;
+design §4.3).
 
 A `WebConversation` holds one brain conversation (its backend), the transcript the verifier
-judges, the `Pending` proposal and the seq counter. Every request runs under the conversation
-lock, taken without waiting: a second one while one runs gets 409 `conversation_busy`, so
-`TakeTurn`, which is not thread-safe, never runs twice at once. The lock is released in
-`finally`, so a failed request frees it (S12.2).
+judges, the `Pending` proposal, the ids shown in summaries and confirmations and the seq
+counter. Every request, a press included, runs under the conversation lock, taken without
+waiting: a second one while one runs gets 409 `conversation_busy`, so `TakeTurn`, which is not
+thread-safe, never runs twice at once. The lock is released in `finally`, so a failed request
+frees it (S12.2).
 """
 
 import threading
@@ -33,8 +35,9 @@ from dale.channels.web.contract import (
     WebEvent,
 )
 from dale.channels.web.errors import WebErrorCode, message_for, status_for
-from dale.shared.customer_input import CustomerText, KeyPress
+from dale.shared.customer_input import CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode
+from dale.shared.ids import ProposalId
 from dale.shared.shown_events import (
     AssistantText,
     HandoffNotice,
@@ -98,6 +101,8 @@ class WebConversation:
         self.id, self._backend = conversation_id, backend
         self.transcript: list[ShownEvent] = []  # only shown events: what the verifier judges
         self.pending = Pending()
+        self._summaries: set[UUID] = set()  # ids shown in a ProposalSummary
+        self._confirmed: set[UUID] = set()  # ids shown in an OrderConfirmed
         self._seq = 0  # the last event's seq; events count from 1 (W3)
         self._published: tuple[int, UUID | None] = (0, None)  # seq and pending, last request
         self._lock = threading.Lock()
@@ -121,6 +126,31 @@ class WebConversation:
                 events.append(self._verify(done[-1]))
             return self._finish(events, result.failure)
 
+    def press(self, proposal_id: UUID) -> Reply:
+        """The press, under the conversation lock like a turn (W12)."""
+        with self._exclusive() as free:
+            return self._press(proposal_id) if free else self._busy()
+
+    def _press(self, proposal_id: UUID) -> Reply:
+        """Steps 3 to 5. Only the pending id reaches the brain: any other id, one shown confirmed
+        included, gets a notice (B50). The gate's notices are the channel's, like the terminal's:
+        they do not enter the transcript and leave `Pending` alone (S6.4, S7.2, S7.3)."""
+        if proposal_id != self.pending.proposal_id:
+            code = ErrorCode.PROPOSAL_NOT_FOUND
+            if proposal_id in self._summaries or proposal_id in self._confirmed:
+                code = ErrorCode.PROPOSAL_NOT_PENDING
+            notice = self._event(SystemNotice(code, message_for(code)))
+            return self._finish([notice, self._verify(None)], code)
+        press = KeyPress(Key.DALE, ProposalId(proposal_id))
+        outcome = step("confirm", lambda: self._backend.confirm(press))
+        if outcome is None:  # 4: unknown, so nothing shown and the pending id kept (B53)
+            return self._finish([self._verify(proposal_id)], WebErrorCode.CONFIRM_OUTCOME_UNKNOWN)
+        events = self._show([outcome])
+        self.pending.after_press(press, outcome)
+        events.append(self._verify(proposal_id))  # 5
+        failed = outcome.code if isinstance(outcome, OrderRejected | SystemNotice) else None
+        return self._finish(events, failed)
+
     @contextmanager
     def _exclusive(self) -> Iterator[bool]:
         """The conversation lock, never waited for (W12)."""
@@ -138,6 +168,11 @@ class WebConversation:
 
     def _show(self, shown: Sequence[ShownEvent]) -> list[WebEvent]:
         self.transcript.extend(shown)
+        for event in shown:
+            if isinstance(event, ProposalSummary):
+                self._summaries.add(event.proposal_id)
+            elif isinstance(event, OrderConfirmed):
+                self._confirmed.add(event.proposal_id)
         return [self._event(event) for event in shown]
 
     def _event(self, data: Payload) -> WebEvent:
