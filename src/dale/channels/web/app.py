@@ -1,9 +1,9 @@
 """The web host's application (D12, D14, D25; design §4.2). `create_app` wraps the routes in the
 request guard, which sees every request first.
 
-Conversation routes answer with one `ResponseEnvelope`; the metadata routes answer with their
-documented bodies: `/v1/contract` with `{v, events, commands}` and `/health` with an empty
-envelope. Every error, on any path, is one `ResponseEnvelope`. The exception handlers replace
+Conversation routes (`routes.py`) answer with one `ResponseEnvelope`; the metadata routes answer
+with their documented bodies: `/v1/contract` with `{v, events, commands}` and `/health` with an
+empty envelope. Every error, on any path, is one `ResponseEnvelope`. The exception handlers replace
 FastAPI's default bodies (its validation body echoes the input): an unknown path or method, an
 invalid body and an unexpected exception each answer with their catalog code and fixed message,
 never with the exception text, which goes only to the log. `/docs`, `/redoc` and `/openapi.json`
@@ -13,7 +13,7 @@ directory exists; until it is built, `/` answers `not_found` like any unknown pa
 """
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -22,25 +22,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
 from dale.channels.web.contract import COMMANDS, COMPONENTS, VERSION, ResponseEnvelope
-from dale.channels.web.errors import WebErrorCode, status_for
-from dale.channels.web.guard import AllowList, RequestGuard, error_envelope
+from dale.channels.web.conversations import ConversationRegistry
+from dale.channels.web.errors import WebErrorCode
+from dale.channels.web.guard import AllowList, RequestGuard
+from dale.channels.web.routes import add_routes, envelope_response, error_response
 from dale.shared.errors import ErrorCode
 
 log = logging.getLogger(__name__)
 type Ready = Callable[[], bool]  # can the rules be read? (`SELECT 1` on the app database)
-
-
-def envelope_response(
-    envelope: ResponseEnvelope, status: int, headers: Mapping[str, str] | None = None
-) -> Response:
-    body = envelope.model_dump_json()
-    return Response(body, status_code=status, media_type="application/json", headers=headers)
-
-
-def error_response(
-    code: WebErrorCode | ErrorCode, headers: Mapping[str, str] | None = None
-) -> Response:
-    return envelope_response(error_envelope(code), status_for(code), headers)
 
 
 async def _http_error(request: Request, error: HTTPException) -> Response:
@@ -63,7 +52,7 @@ async def _unexpected(request: Request, error: Exception) -> Response:
     return error_response(WebErrorCode.INTERNAL_ERROR)
 
 
-def build_api(ready: Ready, page: Path | None) -> FastAPI:
+def build_api(ready: Ready, page: Path | None, registry: ConversationRegistry) -> FastAPI:
     """The routes and handlers without the guard (`create_app` adds it)."""
     api = FastAPI(
         docs_url=None,
@@ -96,6 +85,7 @@ def build_api(ready: Ready, page: Path | None) -> FastAPI:
         )
         return envelope_response(empty, 200)
 
+    add_routes(api, registry)
     # The mount is the last thing done here: it matches every path, so every route, those of
     # later slices included, must be registered above it.
     if page is not None and page.is_dir():
@@ -103,5 +93,7 @@ def build_api(ready: Ready, page: Path | None) -> FastAPI:
     return api
 
 
-def create_app(allow: AllowList, ready: Ready, page: Path | None) -> RequestGuard:
-    return RequestGuard(build_api(ready, page), allow)
+def create_app(
+    allow: AllowList, ready: Ready, page: Path | None, registry: ConversationRegistry
+) -> RequestGuard:
+    return RequestGuard(build_api(ready, page, registry), allow)

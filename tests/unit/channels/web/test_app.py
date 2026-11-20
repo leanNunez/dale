@@ -11,9 +11,11 @@ from starlette.testclient import TestClient
 
 from dale.channels.web.app import Ready, build_api
 from dale.channels.web.contract import COMMANDS, COMPONENTS, ResponseEnvelope, SendMessage
+from dale.channels.web.conversations import InMemoryRegistry
 from dale.channels.web.errors import WebErrorCode
 from dale.channels.web.guard import AllowList, RequestGuard
 from dale.shared.errors import ErrorCode
+from tests.unit.channels.web.test_conversations import FakeBackend
 
 PORT = 8000
 JSON = {"content-type": "application/json", "origin": f"http://127.0.0.1:{PORT}"}
@@ -22,7 +24,7 @@ SECRET = "hunter2-in-the-exception"
 
 def probe_api(ready: Ready = lambda: True, page: Path | None = None) -> FastAPI:
     """The real routes and handlers plus two probes: a command body and a handler bug."""
-    api = build_api(ready, page)
+    api = build_api(ready, page, InMemoryRegistry(FakeBackend))
 
     @api.post("/v1/probe")
     def probe(command: SendMessage) -> dict[str, str]:
@@ -183,7 +185,7 @@ def test_the_built_page_is_served_from_the_same_origin(tmp_path: Path) -> None:
 def test_the_routes_win_over_the_page_mount(tmp_path: Path) -> None:
     """The mount matches every path, so `build_api` registers it after every route."""
     (tmp_path / "index.html").write_text("<!doctype html>", encoding="utf-8")
-    with client_for(build_api(lambda: True, tmp_path)) as c:
+    with client_for(build_api(lambda: True, tmp_path, InMemoryRegistry(FakeBackend))) as c:
         health, contract, unknown = c.get("/health"), c.get("/v1/contract"), c.get("/v1/x")
     assert health.status_code == 200 and ResponseEnvelope.model_validate_json(health.text)
     assert contract.json()["v"] == 1

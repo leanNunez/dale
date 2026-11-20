@@ -10,8 +10,9 @@ frees it (S12.2).
 
 Lock order, fixed: a press takes (1) the press lock of its proposal id, waiting at most
 `PRESS_WAIT` seconds, then (2) the conversation lock without waiting. A turn and a cancel
-take only (2). No path holds (2) while it takes (1), and (2) is never waited for, so no
-request can wait on another in a cycle. `PressLocks` holds its own mutex only around its table.
+take only (2). No path holds (2) while it takes (1), and no request waits for (2), so no
+request can wait on another in a cycle; `withdraw` waits for (2) holding nothing else (B66).
+`PressLocks` holds its own mutex only around its table.
 """
 
 import threading
@@ -255,6 +256,14 @@ class WebConversation:
             if proposal_id == self.pending.proposal_id:
                 self.pending.after_press(KeyPress(Key.CANCEL), None)
             return self._finish([], None)
+
+    def withdraw(self, proposal_id: UUID | None) -> None:
+        """Clears `Pending` when it still holds this id: the reply that showed it never reached
+        the page, so no press may reach a summary the customer was not sent (B66)."""
+        with self._lock:
+            if proposal_id is not None and proposal_id == self.pending.proposal_id:
+                self.pending.after_press(KeyPress(Key.CANCEL), None)
+                self._published = (self._published[0], None)
 
     def _replay(self, reply: Reply) -> Reply:
         """The reply's events byte for byte, each with its own seq, and its status. Its verdict
