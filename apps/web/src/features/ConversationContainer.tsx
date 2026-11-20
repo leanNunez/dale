@@ -53,7 +53,7 @@ export function ConversationContainer({ api }: { api?: Api }) {
         )}
         {error !== null && (
           <Notice kind="error" message={error}>
-            {state.error?.code === "conversation_not_found" && (
+            {state.conversationGone && (
               <button
                 type="button"
                 disabled={waiting}
@@ -65,8 +65,13 @@ export function ConversationContainer({ api }: { api?: Api }) {
             )}
           </Notice>
         )}
-        <Composer disabled={waiting} onSend={send} />
-        <DaleButton enabled={canPress} busy={waiting} onPress={press} />
+        {/* A retired conversation takes nothing more: only "start a new one" leaves this state. */}
+        <Composer disabled={waiting || state.conversationGone} onSend={send} />
+        <DaleButton
+          enabled={canPress}
+          busy={waiting && state.pendingProposalId !== null}
+          onPress={press}
+        />
       </div>
     </section>
   );
