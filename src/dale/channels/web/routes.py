@@ -5,7 +5,7 @@ status of the error code it carries. A command is validated by its contract mode
 handler runs, so a body with a missing, wrong or unknown field (a client total, a customer or
 company id) executes nothing. The customer is the one the host was started for: no route takes
 it from the page. `SendMessage` becomes only `CustomerText`, so typed text, "dale" included,
-reaches the model and never a confirm (S6.2).
+reaches the model and never a confirm (S6.2); only `/confirm` presses.
 """
 
 import logging
@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import FastAPI, Response
 from pydantic_core import PydanticSerializationError
 
-from dale.channels.web.contract import ResponseEnvelope, SendMessage
+from dale.channels.web.contract import CancelProposal, PressDale, ResponseEnvelope, SendMessage
 from dale.channels.web.conversations import (
     BackendUnavailableError,
     ConversationRegistry,
@@ -64,6 +64,18 @@ def add_routes(api: FastAPI, registry: ConversationRegistry) -> None:
     def message(conversation_id: UUID, command: SendMessage) -> Response:
         said = CustomerText(command.text)
         return _answer(registry, conversation_id, lambda talk: talk.turn(said))
+
+    @api.post(f"{CONVERSATION}/confirm")
+    def confirm(conversation_id: UUID, command: PressDale) -> Response:
+        """The Dale button, and the only route that can reach `ConfirmProposal` (S2.1): the press
+        carries only the id, the gate confirms only the pending one, and the order is built from
+        the stored proposal (S7.4)."""
+        return _answer(registry, conversation_id, lambda talk: talk.press(command.proposal_id))
+
+    @api.post(f"{CONVERSATION}/cancel")
+    def cancel(conversation_id: UUID, command: CancelProposal) -> Response:
+        """Clears the pending proposal only; the database is not touched (S7.6)."""
+        return _answer(registry, conversation_id, lambda talk: talk.cancel(command.proposal_id))
 
 
 def _answer(
