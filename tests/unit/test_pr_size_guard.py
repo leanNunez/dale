@@ -23,6 +23,19 @@ def test_counts_additions_and_deletions_but_not_excluded_paths_or_binaries() -> 
     assert guard.count_changed_lines(rows) == 18
 
 
+def test_generated_contract_files_are_excluded_but_samples_and_lookalikes_count() -> None:
+    rows = numstat(
+        ("500", "0", "contracts/v1/send_message.schema.json"),
+        ("500", "0", "contracts/v2/nested/x.schema.json"),
+        ("500", "0", "contracts/v1/components.json"),
+        ("4", "0", "contracts/v1/samples/send_message.json"),
+        ("3", "0", "contracts/v1/samples/odd.schema.json"),  # a sample is authored, never generated
+        ("2", "0", "contracts/v2/components.json"),  # only v1's components map is generated
+        ("1", "0", "docs/contracts/x.schema.json"),  # not under the top-level contracts/
+    )
+    assert guard.count_changed_lines(rows) == 10
+
+
 @pytest.mark.parametrize("line", ["garbage", "1\t2", "x\t2\tsrc/a.py", "-\t2\tsrc/a.py"])
 def test_malformed_numstat_line_fails_closed(line: str) -> None:
     with pytest.raises(ValueError, match="malformed"):
