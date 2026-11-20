@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "gen:contract": "node scripts/gen-contract.mjs",
     "lint": "eslint .",
     "test": "vitest --run"
   },

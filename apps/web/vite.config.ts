@@ -11,6 +11,6 @@ export default defineConfig({
   server: { allowedHosts: DEV_HOSTS, proxy: apiProxy(`http://127.0.0.1:${hostPort}`) },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.{ts,tsx}", "*.test.ts", "lint/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "*.test.ts", "lint/*.test.ts", "scripts/*.test.ts"],
   },
 });
