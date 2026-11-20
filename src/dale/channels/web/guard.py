@@ -73,7 +73,7 @@ def error_envelope(code: WebErrorCode | ErrorCode) -> ResponseEnvelope:
 
 
 def is_api(path: str) -> bool:
-    return path in ("/v1", "/health") or path.startswith("/v1/")
+    return path in ("/v1", "/health") or path.startswith(("/v1/", "/health/"))
 
 
 class RequestGuard:
