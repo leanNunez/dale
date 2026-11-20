@@ -102,10 +102,10 @@ uv run pytest evals --live --record   # also writes the recordings
 uv run pytest evals --live --record --report v0.1-run5
 ```
 
-The recordings in `evals/recordings/` come from the release run `v0.1-run4` (2026-11-16,
+The recordings in `evals/recordings/claude-haiku-5-5/` come from the release run `v0.1-run4` (2026-11-16,
 `claude-haiku-5-5`). Each release run re-records the whole suite; the transcripts of the
 earlier runs are in the git history. A run that fails is committed as recorded, not
-re-run until it passes: `evals/recordings/known_misses.toml` lists it with its reason
+re-run until it passes: `evals/recordings/claude-haiku-5-5/known_misses.toml` lists it with its reason
 and the sha256 of its recording, and replay checks that it still fails the same way and
 never confirms anything.
 

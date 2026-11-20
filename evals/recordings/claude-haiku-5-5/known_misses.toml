@@ -1,6 +1,9 @@
-# Runs recorded live that fail honestly (see evals/harness/known_misses.py). Replay checks that
-# each one still fails with exactly these problems and is never a false confirmation; the unit
+# Runs recorded live that fail honestly (see evals/harness/known_misses.py). This list applies to
+# the model it names, which is also the name of its directory: it never excuses another model's
+# runs. Replay checks that each one still fails with exactly these problems and is never a false confirmation; the unit
 # suite checks that each recording still has this sha256, so a re-recorded run shows up here.
+
+model = "claude-haiku-5-5"
 
 [[miss]]
 case = "order-cola-ok"
