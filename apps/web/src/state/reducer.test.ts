@@ -15,6 +15,7 @@ import {
   verdict,
 } from "../test/factories";
 import {
+  canPressDale,
   initialState,
   reducer,
   type Action,
@@ -308,5 +309,84 @@ describe("errors and failures", () => {
       pending,
     );
     expect(after.pendingProposalId).toBe(PROPOSAL_A);
+    expect(canPressDale(after)).toBe(true);
+  });
+});
+
+describe("the Dale button rule (S15.4, B66)", () => {
+  const pendingA = run(
+    [received(envelope({ events: [summary(1, PROPOSAL_A)], pending_proposal_id: PROPOSAL_A }))],
+    started,
+  );
+
+  it("is enabled only for a rendered summary whose id is the pending id, with nothing in flight", () => {
+    expect(canPressDale(pendingA)).toBe(true);
+  });
+
+  it("is disabled with no pending proposal", () => {
+    expect(canPressDale(started)).toBe(false);
+    expect(
+      canPressDale(
+        run([received(envelope({ events: [summary(1)], pending_proposal_id: null }))], started),
+      ),
+    ).toBe(false);
+  });
+
+  it("is disabled while any request is in flight", () => {
+    for (const kind of ["message", "cancel"] as const) {
+      const flying = reducer(
+        pendingA,
+        kind === "message"
+          ? { type: "request_started", kind, text: "hola" }
+          : { type: "request_started", kind },
+      );
+      expect(canPressDale(flying)).toBe(false);
+    }
+    expect(canPressDale(reducer(pendingA, { type: "request_started", kind: "press" }))).toBe(false);
+  });
+
+  it("is disabled when the pending id was never rendered as a summary (a lost response)", () => {
+    const unseen = run(
+      [
+        received(
+          envelope({ events: [summary(1, PROPOSAL_A)], seq: 2, pending_proposal_id: PROPOSAL_B }),
+        ),
+      ],
+      started,
+    );
+    expect(unseen.pendingProposalId).toBe(PROPOSAL_B);
+    expect(canPressDale(unseen)).toBe(false);
+  });
+
+  it("starts a press or a cancel only when the rule allows it", () => {
+    expect(reducer(started, { type: "request_started", kind: "press" })).toBe(started);
+    expect(reducer(started, { type: "request_started", kind: "cancel" })).toBe(started);
+    expect(reducer(pendingA, { type: "request_started", kind: "press" }).inFlight).toBe("press");
+    expect(reducer(pendingA, { type: "request_started", kind: "cancel" }).inFlight).toBe("cancel");
+  });
+
+  it("never throws on what the reducer stored, and a malformed summary enables nothing", () => {
+    const broken = { ...summary(1), data: undefined } as unknown as WebEvent;
+    const state = run(
+      [
+        received(
+          envelope({
+            events: [broken, null as unknown as WebEvent],
+            seq: 1,
+            pending_proposal_id: PROPOSAL_A,
+          }),
+        ),
+      ],
+      started,
+    );
+    expect(state.chat).toEqual([]);
+    expect(() => canPressDale(state)).not.toThrow();
+    expect(canPressDale(state)).toBe(false);
+  });
+
+  it("does not start a message before a conversation exists", () => {
+    expect(reducer(initialState, { type: "request_started", kind: "message", text: "hola" })).toBe(
+      initialState,
+    );
   });
 });

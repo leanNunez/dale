@@ -77,6 +77,27 @@ export type Action =
   | { type: "envelope_received"; envelope: ResponseEnvelope }
   | { type: "request_failed"; failure: ClientFailure };
 
+/**
+ * The Dale button rule: a press is possible only for a summary the page actually rendered whose
+ * id is the host's pending id, with nothing in flight. A lost or failed response never enables a
+ * press (B66), and a replayed body can never change this (it carries no event the page has not
+ * seen and its pending id is applied only when current).
+ */
+export function canPressDale(state: ConversationState): boolean {
+  const pending = state.pendingProposalId;
+  return (
+    pending !== null &&
+    state.conversationId !== null &&
+    state.inFlight === "none" &&
+    state.chat.some(
+      (item) =>
+        item.kind === "event" &&
+        item.event.type === "ProposalSummary" &&
+        item.event.data.proposal_id === pending,
+    )
+  );
+}
+
 function canStart(state: ConversationState, action: Extract<Action, { type: "request_started" }>) {
   if (state.inFlight !== "none") return false;
   switch (action.kind) {
@@ -85,6 +106,7 @@ function canStart(state: ConversationState, action: Extract<Action, { type: "req
     case "message":
       return state.conversationId !== null;
     case "press":
+      return canPressDale(state);
     case "cancel":
       return state.conversationId !== null && state.pendingProposalId !== null;
   }
