@@ -142,31 +142,62 @@ function applyEvent(state: ConversationState, event: WebEvent): ConversationStat
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A summary drives the Dale button, so it must carry what the page reads from it. */
-function summaryData(data: Record<string, unknown>): boolean {
-  const total = data["total"];
-  return (
-    typeof data["proposal_id"] === "string" &&
-    typeof data["delivery_date"] === "string" &&
-    isObject(total) &&
-    Number.isInteger(total["cents"]) &&
-    Array.isArray(data["lines"]) &&
-    data["lines"].every(isObject)
-  );
-}
+const isString = (value: unknown): value is string => typeof value === "string";
+/** Whole numbers a script can add and compare without rounding: nothing past 2^53 is a price. */
+const isSafeCount = (value: unknown, least: number): boolean =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= least;
+const isMoney = (value: unknown) => isObject(value) && isSafeCount(value["cents"], 0);
+const isLine = (value: unknown, named: boolean) =>
+  isObject(value) &&
+  isString(value["product_id"]) &&
+  (!named || isString(value["name"])) &&
+  isSafeCount(value["quantity"], 1) &&
+  isMoney(value["unit_price"]) &&
+  isMoney(value["line_total"]);
+const allStrings = (data: Record<string, unknown>, keys: string[]) =>
+  keys.every((key) => isString(data[key]));
+const linesOf = (data: Record<string, unknown>, named: boolean) =>
+  Array.isArray(data["lines"]) && data["lines"].every((line) => isLine(line, named));
+
+/**
+ * What each chat component reads from its event's data. A summary also drives the Dale button.
+ * Types the chat does not render (the panels' events) are checked where their slice renders them.
+ */
+const dataChecks: Record<string, (data: Record<string, unknown>) => boolean> = {
+  AssistantText: (data) => isString(data["text"]),
+  ProposalSummary: (data) =>
+    allStrings(data, ["proposal_id", "delivery_date"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, true),
+  OrderConfirmed: (data) =>
+    allStrings(data, ["order_id", "proposal_id", "delivery_date", "message"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, false),
+  OrderRejected: (data) => allStrings(data, ["code", "proposal_id", "message"]),
+  HandoffNotice: (data) => allStrings(data, ["message"]),
+  SystemNotice: (data) => allStrings(data, ["code", "message"]),
+};
 
 /**
  * The boundary check for one event: the client passes events through unchecked (v1 is
  * additive), so anything that is not an object with an integer `seq`, a string `type` and an
- * object `data` is dropped here, never thrown on and never stored.
+ * object `data`, or whose data lacks what its component reads, is dropped here, never thrown on
+ * and never stored.
  */
 function wellFormed(event: unknown): event is WebEvent {
   if (!isObject(event)) return false;
   const data = event["data"];
-  if (!Number.isInteger(event["seq"]) || typeof event["type"] !== "string" || !isObject(data)) {
-    return false;
-  }
-  return event["type"] !== "ProposalSummary" || summaryData(data);
+  const type = event["type"];
+  if (!Number.isInteger(event["seq"]) || !isString(type) || !isObject(data)) return false;
+  return Object.hasOwn(dataChecks, type) ? (dataChecks[type]?.(data) ?? false) : true;
+}
+
+/** An error body the page can show: a string code and message, or the page's own error. */
+function shownError(error: ResponseEnvelope["error"]): PageError | null {
+  if (error === null) return null;
+  const body: unknown = error;
+  if (isObject(body) && isString(body["code"]) && isString(body["message"])) return error;
+  return { code: "malformed_response", message: null };
 }
 
 const usable = (event: unknown, state: ConversationState): event is WebEvent =>
@@ -186,7 +217,7 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
     ...from,
     conversationId: from.conversationId ?? named,
     inFlight: "none",
-    error: envelope.error,
+    error: shownError(envelope.error),
   };
   for (const event of envelope.events as unknown[]) {
     if (usable(event, next)) {
@@ -196,7 +227,7 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
   if (named !== null && envelope.seq >= next.lastSeq) {
     next = { ...next, pendingProposalId: envelope.pending_proposal_id };
   }
-  if (envelope.error?.code === "conversation_not_found") {
+  if (next.error?.code === "conversation_not_found") {
     next = { ...next, pendingProposalId: null }; // a gone conversation has nothing to press
   }
   return next;

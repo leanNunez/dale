@@ -10,7 +10,11 @@ import {
   envelope,
   failure,
   futureEvent,
+  handoffNotice,
+  orderConfirmed,
+  orderRejected,
   summary,
+  systemNotice,
   toolCalled,
   verdict,
 } from "../test/factories";
@@ -119,6 +123,85 @@ describe("malformed events are dropped at the boundary, never thrown on or store
   it("takes an envelope whose only event is null as one that brought nothing", () => {
     const nothing = envelope({ events: [null as unknown as WebEvent], seq: 0 });
     expect(run([received(nothing)], started)).toEqual(started);
+  });
+});
+
+describe("an event the chat renders must carry the fields its component reads (W10)", () => {
+  const patched = (event: WebEvent, patch: Record<string, unknown>) => {
+    const good = event as unknown as { data: Record<string, unknown> };
+    return { ...good, data: { ...good.data, ...patch } };
+  };
+  const brokenLine = (patch: Record<string, unknown>) => {
+    const good = summary(1) as unknown as { data: { lines: Record<string, unknown>[] } };
+    return patched(summary(1), { lines: [{ ...good.data.lines[0], ...patch }] });
+  };
+
+  const confirmedLine = () => {
+    const good = orderConfirmed(1) as unknown as { data: { lines: Record<string, unknown>[] } };
+    return good.data.lines[0] ?? {};
+  };
+
+  it.each<[string, unknown]>([
+    ["assistant text that is not a string", patched(assistantText(1), { text: { html: "<b>" } })],
+    ["a summary line with no name", brokenLine({ name: undefined })],
+    ["a summary line whose quantity is text", brokenLine({ quantity: "2" })],
+    ["a summary line whose unit price is a number", brokenLine({ unit_price: 1850 })],
+    ["a summary line that is null", patched(summary(1), { lines: [null] })],
+    ["a summary with a negative total", patched(summary(1), { total: { cents: -1 } })],
+    [
+      "a summary with a total past the safe integers",
+      patched(summary(1), { total: { cents: 2 ** 53 } }),
+    ],
+    ["a summary with a fractional total", patched(summary(1), { total: { cents: 1.5 } })],
+    ["a summary line with a zero quantity", brokenLine({ quantity: 0 })],
+    ["a summary line with a negative quantity", brokenLine({ quantity: -2 })],
+    ["a summary line with an unsafe quantity", brokenLine({ quantity: 2 ** 53 })],
+    ["a summary line with a fractional quantity", brokenLine({ quantity: 1.5 })],
+    ["a summary line with unsafe cents", brokenLine({ line_total: { cents: 2 ** 53 + 2 } })],
+    [
+      "a confirmation line with a zero quantity",
+      patched(orderConfirmed(1), { lines: [{ ...confirmedLine(), quantity: 0 }] }),
+    ],
+    [
+      "a confirmation line with a negative price",
+      patched(orderConfirmed(1), { lines: [{ ...confirmedLine(), unit_price: { cents: -5 } }] }),
+    ],
+    ["a confirmation with no message", patched(orderConfirmed(1), { message: 7 })],
+    ["a confirmation with no order id", patched(orderConfirmed(1), { order_id: null })],
+    ["a confirmation whose lines are text", patched(orderConfirmed(1), { lines: "x" })],
+    ["a rejection with no code", patched(orderRejected(1), { code: undefined })],
+    ["a rejection with a list as its message", patched(orderRejected(1), { message: ["a"] })],
+    ["a handoff notice with no message", patched(handoffNotice(1), { message: undefined })],
+    ["a system notice with no code", patched(systemNotice(1), { code: 3 })],
+  ])("drops %s and applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, assistantText(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(["AssistantText"]);
+  });
+
+  it("keeps a well-formed event of every type the chat renders", () => {
+    const events = [
+      assistantText(1),
+      summary(2),
+      orderConfirmed(3),
+      orderRejected(4),
+      handoffNotice(5),
+      systemNotice(6),
+    ];
+    const state = run([received(envelope({ events, seq: 6 }))], started);
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(
+      events.map((e) => e.type),
+    );
+  });
+
+  it.each<[string, unknown]>([
+    ["no message", { code: "turn_failed" }],
+    ["a message that is not text", { code: "turn_failed", message: { html: "<b>" } }],
+    ["no code", { message: "x" }],
+  ])("replaces an error body with %s by the page's own error", (_name, bad) => {
+    const next = run([received(envelope({ error: bad as never }))], started);
+    expect(next.error).toEqual({ code: "malformed_response", message: null });
   });
 });
 
