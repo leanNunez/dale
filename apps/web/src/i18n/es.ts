@@ -1,3 +1,5 @@
+import type { ErrorCode } from "../contract";
+
 /** Every label the page shows, in Spanish (W16). Components import from here, never inline. */
 export const es = {
   appTitle: "Dale",
@@ -57,6 +59,35 @@ export const es = {
     conversation_not_found:
       "Esta conversación ya no está disponible: se abrió otra más reciente o el servidor se reinició.",
     fallback: "No se pudo completar la acción.",
+  },
+  panels: {
+    trace: {
+      title: "Herramientas usadas",
+      empty: "Todavía no se usó ninguna herramienta.",
+      ok: "Correcto",
+      error: "Error",
+      // The shared error codes a tool can fail with: a new one fails the typecheck until it has
+      // a label. A code outside this list is shown as the host sent it.
+      codes: {
+        customer_not_found: "Cliente no encontrado",
+        product_not_found: "Producto no encontrado",
+        price_not_available: "Sin precio disponible",
+        invalid_quantity: "Cantidad no válida",
+        below_minimum_amount: "Por debajo del mínimo",
+        no_delivery_slot: "Sin día de entrega",
+        ungrounded_product: "Producto sin búsqueda previa",
+        proposal_not_found: "Propuesta no encontrada",
+        proposal_not_pending: "Propuesta no vigente",
+        price_changed: "Cambió el precio",
+        delivery_date_changed: "Cambió el día de entrega",
+        rules_unavailable: "Reglas no disponibles",
+        turn_limit_reached: "Límite de vueltas alcanzado",
+        model_refusal: "El modelo se negó",
+        model_unavailable: "Modelo no disponible",
+        unknown_tool: "Herramienta desconocida",
+        invalid_tool_input: "Datos de la herramienta no válidos",
+      } satisfies Record<ErrorCode, string>,
+    },
   },
   newConversation: "Empezar una conversación nueva",
 } as const;

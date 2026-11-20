@@ -19,6 +19,7 @@ import {
   toolCalled,
   verdict,
 } from "../test/factories";
+import { sampleEvent } from "../test/samples";
 import {
   SURFACE,
   canPressDale,
@@ -699,20 +700,10 @@ describe("the tool and verdict events are checked at the boundary too (W15)", ()
 });
 
 describe("every component the contract names has a place on the page (S4.3, S5.3)", () => {
-  const samples = import.meta.glob<WebEvent>("../../../../contracts/v1/samples/event_*.json", {
-    eager: true,
-    import: "default",
-  });
-  const eventOf = (type: string): WebEvent => {
-    const found = Object.values(samples).find((sample) => sample.type === type);
-    if (found === undefined) throw new Error(`no sample for the ${type} event`);
-    return found;
-  };
-
   it.each(Object.keys(COMPONENTS))(
     "puts a %s sample where SURFACE says its component shows",
     (type) => {
-      const event = eventOf(type);
+      const event = sampleEvent(type as WebEvent["type"]);
       const state = run([received(envelope({ events: [event], seq: event.seq }))], {
         ...started,
         conversationId: event.conversation_id,
