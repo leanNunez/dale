@@ -130,7 +130,7 @@ def test_an_unknown_tool_is_denied_and_nothing_runs(name: str) -> None:
     [result] = chat.results(1)  # S9.1
     assert result["is_error"] and json.loads(result["content"])["code"] == "unknown_tool"
     assert chat.erp.calls == [] and chat.proposals.saved == [] and chat.handoffs.written == []
-    assert done == TurnResult((AssistantText("No pude hacer eso."),), None, done.usage)
+    assert (done.shown, done.failure) == ((AssistantText("No pude hacer eso."),), None)
 
 
 def test_a_model_that_always_calls_tools_stops_at_six_calls() -> None:

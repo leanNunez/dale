@@ -5,6 +5,7 @@ that completed (B75): every tool call in the history has its result, so every re
 formed. Typed text reaches only the model: this class has no path to management's confirm
 (S4.2)."""
 
+import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -18,10 +19,11 @@ from dale.brain.application.model_port import (
     ModelRequest,
     ModelResponse,
     ModelUnavailableError,
+    ToolCall,
     Usage,
 )
 from dale.brain.application.ports import ConversationPort, HandoffPort, ProposalRepository
-from dale.brain.application.tools import HANDOFF_NOTICE, TOOL_SCHEMAS, Tools
+from dale.brain.application.tools import HANDOFF_NOTICE, TOOL_SCHEMAS, ToolOutcome, Tools
 from dale.brain.domain.handoff import HandoffReason
 from dale.brain.domain.session import SessionContext
 from dale.shared.customer_input import CustomerText
@@ -36,6 +38,18 @@ from dale.shared.shown_events import (
 
 logger = logging.getLogger(__name__)
 MAX_MODEL_CALLS, MAX_TURNS = 6, 8  # model calls per turn; customer turns the model sees
+MAX_TRACE_NAME, MAX_TRACE_SUMMARY = 64, 200
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallTrace:
+    """One tool call that ran (D18). Name and summary are model-controlled data: never shown
+    as markup, never sent back to the model."""
+
+    name: str  # cut to MAX_TRACE_NAME characters
+    summary: str  # canonical JSON of the input, cut to MAX_TRACE_SUMMARY characters
+    ok: bool
+    code: ErrorCode | None  # the error code, when the tool answered with an error
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +57,7 @@ class TurnResult:
     shown: tuple[ShownEvent, ...]
     failure: ErrorCode | None  # None when the model answered; refusals count apart (D10)
     usage: tuple[Usage, ...]  # one per model call
+    trace: tuple[ToolCallTrace, ...] = ()  # every tool call that ran, in call order
 
 
 class TakeTurn:
@@ -66,43 +81,50 @@ class TakeTurn:
     def __call__(self, said: CustomerText) -> TurnResult:
         if not isinstance(said, CustomerText):  # a KeyPress goes to ConfirmProposal only
             raise TypeError("only customer text reaches the model")
-        shown, usage = list[ShownEvent](), list[Usage]()
+        shown, usage, trace = list[ShownEvent](), list[Usage](), list[ToolCallTrace]()
         messages = _bounded(_joined(self._history, customer_message(said.text)))
         if not self._opened:  # B61: the row proposals and handoffs need, before any tool runs
             try:
                 self._conversations.open(self._session)
             except (OperationalError, InterfaceError) as error:  # retried on the next turn
                 why = type(error).__name__
-                return self._failed(ErrorCode.RULES_UNAVAILABLE, messages, shown, usage, why)
+                return self._failed(ErrorCode.RULES_UNAVAILABLE, messages, shown, usage, why, trace)
             self._opened = True
         while len(usage) < MAX_MODEL_CALLS:
             request = ModelRequest(self._system, TOOL_SCHEMAS, tuple(messages))
             try:
                 reply = self._model.complete(request)
             except ModelUnavailableError as error:
-                return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, str(error))
+                why = str(error)
+                return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, why, trace)
             usage.append(reply.usage)
             if reply.stop_reason == "end_turn" and reply.text.strip():
                 said_only = [b for b in reply.content if b["type"] != "tool_use"]  # never run
                 self._history = [*messages, {"role": "assistant", "content": said_only}]
-                return TurnResult((*shown, AssistantText(reply.text)), None, tuple(usage))
+                answer = (*shown, AssistantText(reply.text))
+                return TurnResult(answer, None, tuple(usage), tuple(trace))
             if reply.stop_reason == "refusal":
-                return self._refused(shown, usage)
+                return self._refused(shown, usage, trace)
             if reply.stop_reason != "tool_use" or not reply.tool_calls:  # empty, max_tokens, ...
                 why = reply.stop_reason
-                return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, why)
+                return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, why, trace)
             if len(usage) == MAX_MODEL_CALLS:
                 break  # S9.2: the last reply's tools never run, so it is not kept
             messages += [{"role": "assistant", "content": list(reply.content)}]
-            messages += [self._run(reply, shown)]
-        return self._failed(ErrorCode.TURN_LIMIT_REACHED, messages, shown, usage, "turn limit")
+            messages += [self._run(reply, shown, trace)]
+        why = "turn limit"
+        return self._failed(ErrorCode.TURN_LIMIT_REACHED, messages, shown, usage, why, trace)
 
-    def _run(self, reply: ModelResponse, shown: list[ShownEvent]) -> Json:
-        """Each call through the closed registry: an unknown name runs nothing (S9.1)."""
+    def _run(
+        self, reply: ModelResponse, shown: list[ShownEvent], trace: list[ToolCallTrace]
+    ) -> Json:
+        """Each call through the closed registry: an unknown name runs nothing (S9.1). The trace
+        is read after the call ran and goes nowhere near the messages (D18)."""
         results = []
         for call in reply.tool_calls:
             outcome = self._tools.run(call.name, call.input)
             shown.extend(outcome.shown)
+            trace.append(_traced(call, outcome))
             result = {"type": "tool_result", "tool_use_id": call.id, "content": outcome.content}
             results.append(result | {"is_error": outcome.is_error})
         return {"role": "user", "content": results}
@@ -114,13 +136,16 @@ class TakeTurn:
         shown: list[ShownEvent],
         usage: list[Usage],
         why: str,
+        trace: list[ToolCallTrace],
     ) -> TurnResult:
         """B75: what completed stays, ending in a user message the next customer text joins."""
         self._history = messages
         logger.warning("turn failed for company %s: %s", self._session.company_id, why or "none")
-        return TurnResult((*shown, _notice(code)), code, tuple(usage))
+        return TurnResult((*shown, _notice(code)), code, tuple(usage), tuple(trace))
 
-    def _refused(self, shown: list[ShownEvent], usage: list[Usage]) -> TurnResult:
+    def _refused(
+        self, shown: list[ShownEvent], usage: list[Usage], trace: list[ToolCallTrace]
+    ) -> TurnResult:
         """D10: a fixed message and a handoff written by code. A refused turn offers nothing to
         confirm (S10.1), only a written handoff promises a person (B31, S7.4), and the history
         stays as it was before the turn."""
@@ -140,7 +165,13 @@ class TakeTurn:
             logger.error("agent_refusal handoff failed for company %s: %s", company, kind)
         else:
             kept.append(HandoffNotice(HANDOFF_NOTICE))
-        return TurnResult(tuple(kept), code, tuple(usage))
+        return TurnResult(tuple(kept), code, tuple(usage), tuple(trace))
+
+
+def _traced(call: ToolCall, outcome: ToolOutcome) -> ToolCallTrace:
+    summary = json.dumps(call.input, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    name, cut = call.name[:MAX_TRACE_NAME], summary[:MAX_TRACE_SUMMARY]
+    return ToolCallTrace(name, cut, not outcome.is_error, outcome.code)
 
 
 def _notice(code: ErrorCode) -> SystemNotice:
