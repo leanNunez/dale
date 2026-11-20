@@ -1,4 +1,4 @@
-"""Conversation state of the web channel (D16, W3, W12; design §4.3).
+"""Conversation state of the web channel (D16, W3, W12, W17; design §4.3).
 
 A `WebConversation` holds one brain conversation (its backend), the transcript the verifier
 judges, the `Pending` proposal and the seq counter. Every request runs under the conversation
@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from dale.brain.application.take_turn import TurnResult
 from dale.channels.common.backend import step
@@ -149,3 +149,37 @@ def _reply(
         error=error,
     )
     return Reply(envelope, 200 if code is None else status_for(code))
+
+
+class ConversationRegistry(Protocol):
+    """Where conversations live (W17): in memory in v0.2; v0.3 puts a persistent store, the
+    cookie and the limits behind this port.
+
+    It returns the live in-process `WebConversation`, which owns the locks and the backend. A
+    persistent store must therefore keep exactly one live object per conversation id in the
+    process (for example an in-memory map over a write-through store) and persist the pending
+    id, the seq, the transcript and the settled replies whenever they change. Restoring a
+    conversation after a restart is v0.3 work (B54)."""
+
+    def create(self) -> WebConversation: ...
+
+    def get(self, conversation_id: UUID) -> WebConversation | None: ...
+
+
+class InMemoryRegistry:
+    """Lost on restart (W17). It has no cap yet: that cap is Known pending."""
+
+    def __init__(self, backend: Callable[[], WebBackend], ids: Callable[[], UUID] = uuid4) -> None:
+        self._backend, self._ids = backend, ids
+        self._conversations: dict[UUID, WebConversation] = {}
+        self._mutex = threading.Lock()  # guards the table only; never held while building
+
+    def create(self) -> WebConversation:
+        conversation = WebConversation(self._ids(), self._backend())
+        with self._mutex:
+            self._conversations[conversation.id] = conversation
+        return conversation
+
+    def get(self, conversation_id: UUID) -> WebConversation | None:
+        with self._mutex:
+            return self._conversations.get(conversation_id)

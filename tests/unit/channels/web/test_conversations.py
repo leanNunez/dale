@@ -1,4 +1,5 @@
-"""Web conversation state: the conversation lock and the seq counter (D16, W3, W12)."""
+"""Web conversation state: the registry port, the conversation lock and the seq counter (D16,
+W3, W12, W17)."""
 
 import threading
 from collections.abc import Callable, Sequence
@@ -9,7 +10,13 @@ import pytest
 
 from dale.brain.application.take_turn import ToolCallTrace, TurnResult
 from dale.channels.web.contract import VerdictIssued
-from dale.channels.web.conversations import Reply, WebConversation
+from dale.channels.web.conversations import (
+    ConversationRegistry,
+    InMemoryRegistry,
+    Reply,
+    WebBackend,
+    WebConversation,
+)
 from dale.shared.customer_input import CustomerText, KeyPress
 from dale.shared.errors import HTTP_STATUS, ErrorCode
 from dale.shared.ids import ProposalId
@@ -146,6 +153,54 @@ def test_a_failed_turn_keeps_its_events_and_the_catalog_status() -> None:
         "model_unavailable",
     )
     assert types(reply) == ["AssistantText"]
+
+
+def test_two_conversations_do_not_block_each_other() -> None:  # S12.3
+    slow, quick = FakeBackend([said([HELLO])]), FakeBackend([said([HELLO])])
+    registry = InMemoryRegistry(iter([slow, quick]).__next__)
+    a, b = registry.create(), registry.create()
+    slow.hold = True
+    running = Running(lambda: a.turn(CustomerText("hola")))
+    assert slow.entered.wait(WAIT)
+
+    assert b.turn(CustomerText("hola")).status == 200
+    slow.release.set()
+    assert running.done().status == 200
+    assert a.id != b.id
+
+
+class DictRegistry:
+    """A test registry implementing the port: what v0.3 swaps in (S17.1)."""
+
+    def __init__(self, backend: WebBackend) -> None:
+        self.backend, self.made = backend, dict[UUID, WebConversation]()
+
+    def create(self) -> WebConversation:
+        made = WebConversation(UUID(int=len(self.made) + 1), self.backend)
+        self.made[made.id] = made
+        return made
+
+    def get(self, conversation_id: UUID) -> WebConversation | None:
+        return self.made.get(conversation_id)
+
+
+def _talk(registry: ConversationRegistry) -> Reply | None:
+    created = registry.create()
+    found = registry.get(created.id)
+    return None if found is None else found.turn(CustomerText("hola"))
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_any_registry_implementing_the_port_works_unchanged(swap: bool) -> None:  # S17.1
+    backend = FakeBackend([said([HELLO])])
+    registry: ConversationRegistry = (
+        DictRegistry(backend) if swap else InMemoryRegistry(lambda: backend)
+    )
+
+    reply = _talk(registry)
+
+    assert reply is not None and reply.status == 200
+    assert registry.get(UUID(int=999)) is None
 
 
 def test_seq_increases_by_one_per_event_from_one() -> None:  # W3, S3.2
