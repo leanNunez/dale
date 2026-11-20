@@ -71,10 +71,11 @@ Parallelism (only one writer at a time; all slices stay stacked in table order):
 
 Covers: proposal Known pending (stale `context`/`testing` blocks), design §14. Branch `v02-web-planning` already exists and holds the untracked change folder.
 
-- [ ] 0.1 Confirm the integration branch `dev` exists and equals `main` after the v0.1 archive merge (create or fast-forward it locally if not). No push without the user's usual approval. Test: `git rev-parse dev main` shows the same commit.
-- [ ] 0.2 Commit `openspec/changes/v02-web/` (proposal, both spec deltas, design, tasks, exploration if present) as `docs(openspec): add the v02-web change`. Excluded from the size guard.
-- [ ] 0.3 Refresh `openspec/config.yaml`: `context` states that v0.1 shipped (Python 3.13, FastAPI/React planned for v0.2, hexagonal modules in place, ADRs 0001-0002); `testing` block becomes real (runner pytest against real PostgreSQL, 1094 tests, Hypothesis, ruff, ruff format, mypy strict, import-linter, 8 CI jobs; e2e not planned until the web page exists, Vitest added in slice 6); `apply.test_command` and `verify.test_command` set to `uv run pytest`, `verify.build_command` set to `uv run lint-imports`; record the `strict_tdd` decision (keep `false` as in v0.1, every behavior task still names its test) and update the stale "v0.1" rule wording. Test: the YAML parses (command in the work-unit table).
-- [ ] 0.4 Closing: blind review of the diff, PR body with "Known pending items" (the proposal's list), commit `docs(openspec): refresh the config context after v0.1`, check the PR size guard output.
+- [x] 0.1 Confirm the integration branch `dev` exists and equals `main` after the v0.1 archive merge (create or fast-forward it locally if not). No push without the user's usual approval. Test: `git rev-parse dev main` shows the same commit.
+- [x] 0.2 Commit `openspec/changes/v02-web/` (proposal, both spec deltas, design, tasks, exploration if present) as `docs(openspec): add the v02-web change`. Excluded from the size guard.
+- [x] 0.3 Refresh `openspec/config.yaml`: `context` states that v0.1 shipped (Python 3.13, FastAPI/React planned for v0.2, hexagonal modules in place, ADRs 0001-0002); `testing` block becomes real (runner pytest against real PostgreSQL, 1094 tests, Hypothesis, ruff, ruff format, mypy strict, import-linter, 8 CI jobs; e2e not planned until the web page exists, Vitest added in slice 6); `apply.test_command` and `verify.test_command` set to `uv run pytest`, `verify.build_command` set to `uv run lint-imports`; record the `strict_tdd` decision (keep `false` as in v0.1, every behavior task still names its test) and update the stale "v0.1" rule wording. Test: the YAML parses (command in the work-unit table).
+- [x] 0.4 Closing: blind review of the diff, PR body with "Known pending items" (the proposal's list), commit `docs(openspec): refresh the config context after v0.1`, check the PR size guard output.
+  - Done 2026-11-19: passive docs and config only, so structural readback (YAML parses, size guard 0/400) replaced the blind review.
 
 ## Phase 1: Shared channel logic and import contracts (slice 1, ~300 lines)
 
