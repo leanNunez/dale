@@ -5,6 +5,7 @@ import {
   CONVERSATION,
   OTHER_CONVERSATION,
   PROPOSAL_A,
+  PROPOSAL_B,
   assistantText,
   envelope,
   failure,
@@ -139,6 +140,7 @@ describe("events are applied once, in seq order (D21)", () => {
     expect(state.trace.map((e) => e.data.name)).toEqual(["search_products"]);
     expect(state.verdicts).toHaveLength(1);
     expect(state.lastSeq).toBe(4);
+    expect(state.pendingProposalId).toBe(PROPOSAL_A);
   });
 
   it("drops events with seq at or below lastSeq, so a repeated body changes nothing", () => {
@@ -197,6 +199,78 @@ describe("events are applied once, in seq order (D21)", () => {
   });
 });
 
+describe("pending_proposal_id is applied only from an envelope that is not behind (D21)", () => {
+  const at7 = run(
+    [
+      received(
+        envelope({
+          events: [
+            assistantText(1),
+            summary(2, PROPOSAL_A),
+            assistantText(3),
+            assistantText(4),
+            assistantText(5),
+            summary(6, PROPOSAL_B),
+            assistantText(7),
+          ],
+          pending_proposal_id: PROPOSAL_B,
+        }),
+      ),
+    ],
+    started,
+  );
+
+  it("takes the pending id of an envelope at or ahead of what the page has", () => {
+    expect(at7.pendingProposalId).toBe(PROPOSAL_B);
+    const ahead = run(
+      [received(envelope({ events: [assistantText(8)], pending_proposal_id: null }))],
+      at7,
+    );
+    expect(ahead.pendingProposalId).toBeNull();
+  });
+
+  it("ignores the pending id of an envelope behind the page", () => {
+    const stale = envelope({ seq: 4, events: [], pending_proposal_id: PROPOSAL_A });
+    expect(run([received(stale)], at7).pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("leaves the button alone when a settled press is replayed (B52)", () => {
+    const replay = envelope({
+      events: [assistantText(3), assistantText(4)],
+      seq: 7,
+      pending_proposal_id: PROPOSAL_B,
+    });
+    const after = run([{ type: "request_started", kind: "press" }, received(replay)], at7);
+    expect(after.chat).toEqual(at7.chat);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.inFlight).toBe("none");
+  });
+
+  it("does not let an old replay body bring back a pending id the page already moved past", () => {
+    const old = envelope({ events: [assistantText(3)], seq: 3, pending_proposal_id: PROPOSAL_A });
+    expect(run([received(old)], at7).pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("takes the current pair from an error envelope that carries no events (B48)", () => {
+    const busy = failure("conversation_busy", { seq: 7, pending_proposal_id: PROPOSAL_B });
+    const after = run([received(busy)], at7);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.error?.code).toBe("conversation_busy");
+  });
+
+  it("never touches pending from an envelope that names no conversation", () => {
+    const guard = failure("invalid_host", { conversation_id: null, seq: 0 });
+    const after = run([received(guard)], at7);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.error?.code).toBe("invalid_host");
+  });
+
+  it("clears pending when the host no longer knows the conversation, so nothing can be pressed", () => {
+    const lost = failure("conversation_not_found", { conversation_id: null, seq: 0 });
+    expect(run([received(lost)], at7).pendingProposalId).toBeNull();
+  });
+});
+
 describe("errors and failures", () => {
   it("keeps the host's error and clears it when the next request starts or succeeds", () => {
     const failed = run([received(failure("turn_failed"))], started);
@@ -219,5 +293,20 @@ describe("errors and failures", () => {
     expect(state.error).toEqual({ code: "network_error", message: null });
     const bad = run([{ type: "request_failed", failure: "malformed_response" }], started);
     expect(bad.error?.code).toBe("malformed_response");
+  });
+
+  it("keeps a pending proposal through a failed press, since the outcome is unknown", () => {
+    const pending = run(
+      [received(envelope({ events: [summary(1)], pending_proposal_id: PROPOSAL_A }))],
+      started,
+    );
+    const after = run(
+      [
+        { type: "request_started", kind: "press" },
+        { type: "request_failed", failure: "network" },
+      ],
+      pending,
+    );
+    expect(after.pendingProposalId).toBe(PROPOSAL_A);
   });
 });

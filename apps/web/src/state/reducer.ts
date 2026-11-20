@@ -86,7 +86,7 @@ function canStart(state: ConversationState, action: Extract<Action, { type: "req
       return state.conversationId !== null;
     case "press":
     case "cancel":
-      return state.conversationId !== null;
+      return state.conversationId !== null && state.pendingProposalId !== null;
   }
 }
 
@@ -170,6 +170,12 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
     if (usable(event, next)) {
       next = { ...applyEvent(next, event), lastSeq: event.seq };
     }
+  }
+  if (named !== null && envelope.seq >= next.lastSeq) {
+    next = { ...next, pendingProposalId: envelope.pending_proposal_id };
+  }
+  if (envelope.error?.code === "conversation_not_found") {
+    next = { ...next, pendingProposalId: null }; // a gone conversation has nothing to press
   }
   return next;
 }
