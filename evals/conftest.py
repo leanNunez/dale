@@ -10,13 +10,14 @@ own `pytest_configure` stores its settings, this one (tryfirst) sets `--force-en
 and pytest-socket checks that first in every test's setup, enabling sockets and returning
 before it applies the allowed hosts (pytest_socket 0.8.1, `pytest_runtest_setup`).
 
-`--report <version>` writes `evals/reports/<version>.json` and `.md` when the session ends, in
-any mode, from the record of every run (`evals/harness/report.py`). Without it nothing is
-written, so a normal replay run never rewrites a committed report. Only the process that owns
-the session (not an xdist worker) touches the reports:
-- at session start it deletes the files of that version (git keeps the old ones), and reads the
-  commit and its dirty flag, so a report that is not written can never leave a stale one in place
-  and a recording the session writes cannot make the commit dirty (B91);
+`--report <version>` writes `evals/reports/<version>-<model>.json` and `.md` when the session
+ends, in any mode, for the model `--model` names (S14.3), from the record of every run
+(`evals/harness/report.py`). Without it nothing is written, so a normal replay run never rewrites
+a committed report. A model with no pricing table is a usage error at session start, before any
+run (S14.4). Only the process that owns the session (not an xdist worker) touches the reports:
+- at session start it deletes the files of that version and model (git keeps the old ones), and
+  reads the commit and its dirty flag, so a report that is not written can never leave a stale
+  one in place and a recording the session writes cannot make the commit dirty (B91);
 - each session has its own id and its own sink directory under pytest's cache directory; the
   controller hands the id to its workers (`workerinput`), and a record from any other session,
   mode or prompt is refused;
@@ -40,6 +41,7 @@ from evals.harness.case import load_cases
 from evals.harness.collect import CASES_DIR
 from evals.harness.model import Mode, mode_from_flags
 from evals.harness.models import COMPARED, DEFAULT_MODEL, settings_for
+from evals.harness.pricing import PricingError, load_pricing
 from evals.harness.report import VERSION, ReportError, build_report
 from evals.harness.report_files import commit_label, report_paths, write_report
 from evals.harness.sink import RunSink, SinkSession
@@ -80,6 +82,10 @@ def pytest_configure(config: pytest.Config) -> None:
         return
     if not VERSION.fullmatch(version):
         raise pytest.UsageError(f"--report: {version!r} is not a version name")
+    try:  # a model with no prices fails before any run, not after a paid one (S14.4)
+        load_pricing(config.getoption("--model"))
+    except PricingError as error:
+        raise pytest.UsageError(f"--report: {error}") from error
     if config.pluginmanager.is_blocked("cacheprovider"):
         raise pytest.UsageError("--report needs pytest's cache provider (not -p no:cacheprovider)")
 
@@ -129,7 +135,7 @@ def _sink(config: pytest.Config) -> RunSink | None:
 def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
     if (version := config.getoption("--report")) and not _is_worker(config):
-        for path in report_paths(version):
+        for path in report_paths(version, config.getoption("--model")):
             path.unlink(missing_ok=True)
         with contextlib.suppress(OSError, subprocess.CalledProcessError):
             config.stash[COMMIT] = commit_label(config.rootpath)  # else: no report at the end

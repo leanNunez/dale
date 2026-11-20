@@ -1,12 +1,18 @@
-# Model prices for the cost per verified order (design §10, task 13.3, B89).
+# Model prices for the cost per verified order (design §7 and §10, tasks 8a.4 and 13.3, B89).
 # US dollars per million tokens (MTok); the cost formula is in evals/harness/pricing.py.
-# A request whose prompt (input + cache writes + cache reads) is over the threshold uses
-# [long_context]; every other request uses [standard].
+# One table per compared model, each with its own source, retrieval date and note: a model with
+# no table here has no cost, and its report is refused instead of borrowing another model's
+# prices (S14.4). A request whose prompt (input + cache writes + cache reads) is over the
+# threshold uses [long_context]; every other request uses [standard].
+#
+# No table for claude-sonnet-5-5 yet, on purpose: its prices have not been read from the live
+# pricing page, and a number copied from memory would become the cost the comparison uses
+# (R16). Add the table, with the page's date, before the Sonnet run (task 9.4).
 
-model = "claude-haiku-5-5"
+[models."claude-haiku-5-5"]
 long_context_threshold_tokens = 100_000
 
-[source]
+[models."claude-haiku-5-5".source]
 url = "https://platform.claude.com/docs/en/about-claude/pricing"
 retrieved = "2026-11-16"
 # Printed in every report.
@@ -15,13 +21,13 @@ note = """Checked against the live page on 2026-11-16: the eight Haiku 5.5 price
 cache write all match. The recordings use only 5-minute cache writes, so no 1-hour price is \
 needed. Check again before any later release run."""
 
-[standard]  # prompts of 100,000 tokens or fewer
+[models."claude-haiku-5-5".standard]  # prompts of 100,000 tokens or fewer
 input = 0.10
 output = 0.50
 cache_write_5m = 0.125
 cache_read = 0.01
 
-[long_context]  # prompts of more than 100,000 tokens
+[models."claude-haiku-5-5".long_context]  # prompts of more than 100,000 tokens
 input = 0.50
 output = 2.50
 cache_write_5m = 0.625

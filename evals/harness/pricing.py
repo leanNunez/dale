@@ -1,6 +1,8 @@
 """Model prices and what a request costs (design §10, task 13.3, B89).
 
-`evals/pricing.toml` holds the prices in US dollars per MTok, the source and the retrieval date.
+`evals/pricing.toml` holds, for each compared model, the prices in US dollars per MTok, the
+source and the retrieval date. A model with no table has no prices: `load_pricing` raises
+instead of returning another model's (S14.4).
 A request costs `input*p_in + cache_creation*p_cw + cache_read*p_cr + output*p_out`, at the
 long-context tier when that request's prompt tokens (input + cache writes + cache reads) exceed
 the threshold. Money is `Decimal`, never a float.
@@ -24,6 +26,10 @@ PER_MTOK: Final = Decimal(1_000_000)
 MONEY_PLACES: Final = Decimal("1e-9")
 
 
+class PricingError(ValueError):
+    """The model has no prices, or the file is malformed."""
+
+
 @dataclass(frozen=True, slots=True)
 class Tier:
     """US dollars per MTok."""
@@ -45,19 +51,24 @@ class Pricing:
     note: str
 
 
-def load_pricing(path: Path = PRICING_FILE) -> Pricing:
-    """Raises on a missing key or a malformed file; a float is read through its text, so 0.125
-    is exactly 0.125."""
-    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+def load_pricing(model: str, path: Path | None = None) -> Pricing:
+    """The prices of one model. Raises `PricingError` when the file has no table for it, and on
+    a missing key or a malformed file; a float is read through its text, so 0.125 is exactly
+    0.125. `path` defaults to `PRICING_FILE`, read at call time."""
+    raw = tomllib.loads((path or PRICING_FILE).read_text(encoding="utf-8"))
+    tables = raw.get("models", {})
+    if model not in tables:
+        raise PricingError(f"no pricing table for {model} in pricing.toml (add it with its source)")
+    prices = tables[model]
 
     def tier(name: str) -> Tier:
-        table = raw[name]
+        table = prices[name]
         return Tier(*(Decimal(str(table[key])) for key in Tier.__slots__))
 
-    source = raw["source"]
+    source = prices["source"]
     return Pricing(
-        raw["model"],
-        raw["long_context_threshold_tokens"],
+        model,
+        prices["long_context_threshold_tokens"],
         tier("standard"),
         tier("long_context"),
         source["url"],

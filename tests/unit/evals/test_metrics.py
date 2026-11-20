@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from dale.brain.application.model_port import Usage
+from dale.brain.application.model_port import MODEL_SETTINGS, Usage
 from evals.harness.metrics import NOT_AVAILABLE, Metrics, RunRecord, compute
 from evals.harness.pricing import load_pricing
 
-PRICING = load_pricing()
+PRICING = load_pricing(MODEL_SETTINGS.model)
 
 
 def run(case: str = "a", n: int = 1, **changes: Any) -> RunRecord:

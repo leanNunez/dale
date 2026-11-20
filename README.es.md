@@ -97,11 +97,11 @@ base llamada `dale_test`; la base `dale` de arriba no se toca.
 
 ```bash
 # replay (modelo grabado, sin red, sin clave); requiere Postgres; CI lo corre en cada PR
-uv run pytest evals
+uv run pytest evals                   # --model <id> elige el modelo; por defecto, el que se entrega
 uv run pytest evals --live            # llama al modelo en vivo, gasta dinero
 uv run pytest evals --live --record   # además escribe las grabaciones
 # corrida del release (tras `ant auth login`), como se hizo v0.1-run4: vuelve a grabar toda la
-# suite y escribe evals/reports/<nombre>.{json,md}; repetir un nombre pisa ese reporte commiteado
+# suite y escribe evals/reports/<nombre>-<modelo>.{json,md}; repetir un nombre pisa ese reporte
 uv run pytest evals --live --record --report v0.1-run5
 ```
 
