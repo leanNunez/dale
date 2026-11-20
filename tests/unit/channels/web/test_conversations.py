@@ -157,18 +157,20 @@ def test_a_failed_turn_keeps_its_events_and_the_catalog_status() -> None:
     assert types(reply) == ["AssistantText"]
 
 
-def test_two_conversations_do_not_block_each_other() -> None:  # S12.3
+def test_two_conversations_do_not_block_each_other() -> None:  # S12.3, B65
+    """A new conversation retires the earlier one, whose running turn still finishes."""
     slow, quick = FakeBackend([said([HELLO])]), FakeBackend([said([HELLO])])
     registry = InMemoryRegistry(iter([slow, quick]).__next__)
-    a, b = registry.create(), registry.create()
+    a = registry.create()
     slow.hold = True
     running = Running(lambda: a.turn(CustomerText("hola")))
     assert slow.entered.wait(WAIT)
+    b = registry.create()
 
     assert b.turn(CustomerText("hola")).status == 200
     slow.release.set()
     assert running.done().status == 200
-    assert a.id != b.id
+    assert (registry.get(a.id), registry.get(b.id)) == (None, b) and a.id != b.id
 
 
 class DictRegistry:

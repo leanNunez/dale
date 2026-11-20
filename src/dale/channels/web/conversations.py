@@ -80,6 +80,14 @@ class WebBackend(Protocol):
     def verify(self, shown: Sequence[ShownEvent], subject: UUID | None) -> VerdictIssued: ...
 
 
+class BackendUnavailableError(Exception):
+    """A new conversation's backend could not be built; `code` is the catalog reason."""
+
+    def __init__(self, code: ErrorCode) -> None:
+        super().__init__(code.value)
+        self.code = code
+
+
 @dataclass(frozen=True)
 class Reply:
     """One response: the envelope and its status (200, or the error code's status)."""
@@ -315,8 +323,8 @@ def _reply(
 
 
 class ConversationRegistry(Protocol):
-    """Where conversations live (W17): in memory in v0.2; v0.3 puts a persistent store, the
-    cookie and the limits behind this port.
+    """Where conversations live (W17): in memory in v0.2, at most one live per host (B65); v0.3
+    puts a persistent store, the cookie, the limits and a customer per visitor behind this port.
 
     It returns the live in-process `WebConversation`, which owns the locks and the backend. A
     persistent store must therefore keep exactly one live object per conversation id in the
@@ -330,7 +338,13 @@ class ConversationRegistry(Protocol):
 
 
 class InMemoryRegistry:
-    """Lost on restart (W17). It has no cap yet: that cap is Known pending."""
+    """Lost on restart (W17). It keeps at most one live conversation (B65): v0.2 serves one
+    operator, and every conversation is composed for the host's one customer, while the verifier
+    judges that customer's orders received since the conversation started, so two live
+    conversations would see each other's orders. `create` retires every earlier conversation:
+    its id is then not found on every route, and a turn or press already running on it finishes
+    normally, since retiring only removes it from the table. v0.3 gives each visitor its own
+    customer."""
 
     def __init__(
         self,
@@ -345,7 +359,7 @@ class InMemoryRegistry:
     def create(self) -> WebConversation:
         conversation = WebConversation(self._ids(), self._backend(), PressLocks(self._wait))
         with self._mutex:
-            self._conversations[conversation.id] = conversation
+            self._conversations = {conversation.id: conversation}  # earlier ones retired
         return conversation
 
     def get(self, conversation_id: UUID) -> WebConversation | None:

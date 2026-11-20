@@ -15,6 +15,7 @@ from starlette.testclient import TestClient
 
 from dale.apps import web
 from dale.apps.verifier_runner import (
+    TIMEOUT_SECONDS,
     Finding,
     StoredLine,
     StoredOrder,
@@ -22,6 +23,7 @@ from dale.apps.verifier_runner import (
     unverifiable,
 )
 from dale.channels.web.app import create_app
+from dale.channels.web.conversations import PRESS_WAIT
 from dale.erp_sim.public import ErpFacade, SessionCustomer
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId
@@ -231,3 +233,9 @@ def test_a_verdict_the_web_type_cannot_carry_is_unverifiable() -> None:
     """Fail closed: a naive `received_at` is never shown as verified."""
     shown = web.web_verdict(verified(stored(datetime(2026, 11, 19, 12))), P)
     assert (shown.verdict, shown.reason, shown.findings) == ("unverifiable", "malformed_output", ())
+
+
+def test_a_waiting_press_outlives_the_verifier_timeout() -> None:
+    """B55: a press of the same id waits `PRESS_WAIT` for the running press, whose verifier
+    gives up after its own timeout, so a slow verifier ends that press before the wait does."""
+    assert TIMEOUT_SECONDS == 30 and PRESS_WAIT == 60 and TIMEOUT_SECONDS < PRESS_WAIT
