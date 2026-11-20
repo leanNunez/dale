@@ -14,6 +14,7 @@ export type {
   OrderRejectedEvent,
   ProposalSummaryEvent,
   ResponseEnvelope,
+  StoredOrder,
   SystemNoticeEvent,
   ToolCalledEvent,
   VerdictIssuedEvent,

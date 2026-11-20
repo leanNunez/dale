@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { proposalStatus, type ChatEvent, type ChatItem } from "../state/reducer";
+import { nameFinder, proposalStatus, type ChatEvent, type ChatItem } from "../state/reducer";
 import { es } from "../i18n/es";
 import { ChatText } from "./ChatText";
 import { HandoffNotice } from "./HandoffNotice";
@@ -14,19 +14,6 @@ interface Props {
   pendingProposalId: string | null;
   /** Proposals this page cancelled and the host cleared. */
   cancelledProposalIds: string[];
-}
-
-/** A product's name from the summary the page showed for that proposal, if it showed one. */
-function nameFinder(chat: ChatItem[], proposalId: string) {
-  return (productId: string): string | null => {
-    for (const item of chat) {
-      if (item.kind !== "event" || item.event.type !== "ProposalSummary") continue;
-      if (item.event.data.proposal_id !== proposalId) continue;
-      const line = item.event.data.lines.find((candidate) => candidate.product_id === productId);
-      if (line) return line.name;
-    }
-    return null;
-  };
 }
 
 function EventView({

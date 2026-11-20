@@ -3,6 +3,7 @@
 import type { ClientFailure } from "../api/client";
 import type {
   AssistantTextEvent,
+  ComponentName,
   ErrorCodeName,
   HandoffNoticeEvent,
   OrderConfirmedEvent,
@@ -25,6 +26,20 @@ export type ChatEvent =
   | OrderRejectedEvent
   | HandoffNoticeEvent
   | SystemNoticeEvent;
+
+/**
+ * Where each component's events show on the page. A record over every component name, so a
+ * component added to the contract fails the typecheck here until the page says where it goes.
+ */
+export const SURFACE: Record<ComponentName, "chat" | "trace" | "verdict"> = {
+  ChatText: "chat",
+  HandoffNotice: "chat",
+  OrderConfirmation: "chat",
+  Notice: "chat",
+  OrderSummary: "chat",
+  ToolTrace: "trace",
+  Verdict: "verdict",
+};
 
 export interface CustomerLine {
   kind: "customer";
@@ -161,10 +176,28 @@ function applyEvent(state: ConversationState, event: WebEvent): ConversationStat
     case "HandoffNotice":
     case "SystemNotice":
       return { ...state, chat: [...state.chat, { kind: "event", event }] };
-    default:
-      // A type added after this page was built (v1 is additive): not shown, never an error.
+    default: {
+      // Typecheck: a type added to the contract and not handled above is `event`'s type here, and
+      // `never` rejects it. At run time a type added after this page was built (v1 is additive)
+      // is not shown and never an error.
+      const unknownType: never = event;
+      void unknownType;
       return state;
+    }
   }
+}
+
+/** A product's name from the summary the page showed for that proposal, if it showed one. */
+export function nameFinder(chat: ChatItem[], proposalId: string) {
+  return (productId: string): string | null => {
+    for (const item of chat) {
+      if (item.kind !== "event" || item.event.type !== "ProposalSummary") continue;
+      if (item.event.data.proposal_id !== proposalId) continue;
+      const line = item.event.data.lines.find((candidate) => candidate.product_id === productId);
+      if (line) return line.name;
+    }
+    return null;
+  };
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -182,16 +215,34 @@ const isLine = (value: unknown, named: boolean) =>
   isSafeCount(value["quantity"], 1) &&
   isMoney(value["unit_price"]) &&
   isMoney(value["line_total"]);
+const eachOf = (list: unknown, check: (item: unknown) => boolean): boolean =>
+  Array.isArray(list) && list.every(check);
 const allStrings = (data: Record<string, unknown>, keys: string[]) =>
   keys.every((key) => isString(data[key]));
 const linesOf = (data: Record<string, unknown>, named: boolean) =>
-  Array.isArray(data["lines"]) && data["lines"].every((line) => isLine(line, named));
+  eachOf(data["lines"], (line) => isLine(line, named));
+const isFinding = (value: unknown) =>
+  isObject(value) &&
+  isString(value["kind"]) &&
+  (value["proposal_id"] === null || isString(value["proposal_id"])) &&
+  (value["order_id"] === null || isString(value["order_id"])) &&
+  eachOf(value["fields"], isString);
+const isStoredOrder = (value: unknown) =>
+  isObject(value) &&
+  allStrings(value, ["order_id", "proposal_id", "delivery_date", "received_at"]) &&
+  isMoney(value["total"]) &&
+  linesOf(value, false);
+
+/** Every event type the page renders: the contract's, so a type added to it appears here. */
+type RenderedEventType = WebEvent["type"];
 
 /**
- * What each chat component reads from its event's data. A summary also drives the Dale button.
- * Types the chat does not render (the panels' events) are checked where their slice renders them.
+ * What each component reads from its event's data: the chat's and the panels'. A summary also
+ * drives the Dale button, and a verdict's stored order is what the order panel shows. A record
+ * over every rendered type, so a type added to the contract fails the typecheck here until it
+ * has a data check (an unlisted type is still passed through at run time: v1 is additive).
  */
-const dataChecks: Record<string, (data: Record<string, unknown>) => boolean> = {
+const dataChecks: Record<RenderedEventType, (data: Record<string, unknown>) => boolean> = {
   AssistantText: (data) => isString(data["text"]),
   ProposalSummary: (data) =>
     allStrings(data, ["proposal_id", "delivery_date"]) &&
@@ -204,6 +255,18 @@ const dataChecks: Record<string, (data: Record<string, unknown>) => boolean> = {
   OrderRejected: (data) => allStrings(data, ["code", "proposal_id", "message"]),
   HandoffNotice: (data) => allStrings(data, ["message"]),
   SystemNotice: (data) => allStrings(data, ["code", "message"]),
+  ToolCalled: (data) =>
+    allStrings(data, ["name", "summary"]) &&
+    typeof data["ok"] === "boolean" &&
+    (data["code"] === null || isString(data["code"])),
+  // A verdict word or reason this page does not know is shown as not verified, never dropped.
+  VerdictIssued: (data) =>
+    allStrings(data, ["verdict", "reason"]) &&
+    (data["subject_proposal_id"] === null || isString(data["subject_proposal_id"])) &&
+    isSafeCount(data["false_confirmations"], 0) &&
+    isSafeCount(data["unexpected_writes"], 0) &&
+    eachOf(data["findings"], isFinding) &&
+    eachOf(data["stored_orders"], isStoredOrder),
 };
 
 /**
@@ -217,7 +280,8 @@ function wellFormed(event: unknown): event is WebEvent {
   const data = event["data"];
   const type = event["type"];
   if (!Number.isInteger(event["seq"]) || !isString(type) || !isObject(data)) return false;
-  return Object.hasOwn(dataChecks, type) ? (dataChecks[type]?.(data) ?? false) : true;
+  const check = Object.hasOwn(dataChecks, type) ? dataChecks[type as RenderedEventType] : undefined;
+  return check === undefined ? true : check(data);
 }
 
 /** An error body the page can show: a string code and message, or the page's own error. */

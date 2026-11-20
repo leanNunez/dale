@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { WebEvent } from "../contract";
+import { COMPONENTS, type WebEvent } from "../contract";
 import {
   CONVERSATION,
   OTHER_CONVERSATION,
@@ -13,14 +13,17 @@ import {
   handoffNotice,
   orderConfirmed,
   orderRejected,
+  storedOrder,
   summary,
   systemNotice,
   toolCalled,
   verdict,
 } from "../test/factories";
 import {
+  SURFACE,
   canPressDale,
   initialState,
+  nameFinder,
   proposalStatus,
   reducer,
   type Action,
@@ -612,5 +615,124 @@ describe("a retired conversation takes no more messages (B65)", () => {
     expect(
       reducer(created, { type: "request_started", kind: "message", text: "hola" }).inFlight,
     ).toBe("message");
+  });
+});
+
+describe("the tool and verdict events are checked at the boundary too (W15)", () => {
+  const patched = (event: WebEvent, patch: Record<string, unknown>) => {
+    const good = event as unknown as { data: Record<string, unknown> };
+    return { ...good, data: { ...good.data, ...patch } };
+  };
+  const brokenOrder = (patch: Record<string, unknown>) =>
+    patched(verdict(1), { stored_orders: [{ ...storedOrder(), ...patch }] });
+  const brokenOrderLine = (patch: Record<string, unknown>) =>
+    brokenOrder({ lines: [{ ...storedOrder().lines[0], ...patch }] });
+  const kinds = (state: ConversationState) => ({
+    trace: state.trace.length,
+    verdicts: state.verdicts.length,
+    chat: state.chat.length,
+  });
+
+  it.each<[string, unknown]>([
+    ["a tool name that is not text", patched(toolCalled(1), { name: 7 })],
+    ["a tool with no summary", patched(toolCalled(1), { summary: undefined })],
+    ["a tool whose ok is text", patched(toolCalled(1), { ok: "true" })],
+    ["a tool with no ok", patched(toolCalled(1), { ok: undefined })],
+    ["a tool whose code is a number", patched(toolCalled(1), { code: 4 })],
+    ["a tool with no code field", patched(toolCalled(1), { code: undefined })],
+  ])("drops %s and applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, toolCalled(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(kinds(state)).toEqual({ trace: 1, verdicts: 0, chat: 0 });
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it.each<[string, unknown]>([
+    ["a verdict word that is not text", patched(verdict(1), { verdict: 3 })],
+    ["a reason that is not text", patched(verdict(1), { reason: null })],
+    ["a subject that is not an id", patched(verdict(1), { subject_proposal_id: 5 })],
+    ["negative false confirmations", patched(verdict(1), { false_confirmations: -1 })],
+    ["fractional unexpected writes", patched(verdict(1), { unexpected_writes: 0.5 })],
+    ["findings that are not a list", patched(verdict(1), { findings: {} })],
+    ["a finding that is null", patched(verdict(1), { findings: [null] })],
+    [
+      "a finding whose fields are not text",
+      patched(verdict(1), {
+        findings: [{ kind: "mismatch", proposal_id: null, order_id: null, fields: [1] }],
+      }),
+    ],
+    ["stored orders that are not a list", patched(verdict(1), { stored_orders: "none" })],
+    ["a stored order that is null", patched(verdict(1), { stored_orders: [null] })],
+    ["a stored order with no order id", brokenOrder({ order_id: undefined })],
+    ["a stored order with no delivery date", brokenOrder({ delivery_date: 20261124 })],
+    ["a stored order with a negative total", brokenOrder({ total: { cents: -1 } })],
+    ["a stored order with an unsafe total", brokenOrder({ total: { cents: 2 ** 53 } })],
+    ["a stored order with a fractional total", brokenOrder({ total: { cents: 0.5 } })],
+    ["a stored order whose lines are not a list", brokenOrder({ lines: null })],
+    ["a stored line with a zero quantity", brokenOrderLine({ quantity: 0 })],
+    ["a stored line with a fractional quantity", brokenOrderLine({ quantity: 1.5 })],
+    ["a stored line with a negative price", brokenOrderLine({ unit_price: { cents: -5 } })],
+    ["a stored line with unsafe cents", brokenOrderLine({ line_total: { cents: 2 ** 53 } })],
+  ])("drops %s and applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, verdict(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(kinds(state)).toEqual({ trace: 0, verdicts: 1, chat: 0 });
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("keeps a verdict word or reason it does not know, to show it as not verified", () => {
+    const odd = patched(verdict(1), { verdict: "something_new", reason: "exit_3" }) as unknown;
+    const state = run([received(envelope({ events: [odd as WebEvent], seq: 1 }))], started);
+    expect(kinds(state)).toEqual({ trace: 0, verdicts: 1, chat: 0 });
+  });
+
+  it("keeps a verdict with its stored order, and a failed tool with its code", () => {
+    const events = [
+      toolCalled(1, "confirm", { ok: false, code: "price_changed" }),
+      verdict(2, PROPOSAL_A, { verdict: "verified", stored_orders: [storedOrder()] }),
+    ];
+    const state = run([received(envelope({ events, seq: 2 }))], started);
+    expect(kinds(state)).toEqual({ trace: 1, verdicts: 1, chat: 0 });
+  });
+});
+
+describe("every component the contract names has a place on the page (S4.3, S5.3)", () => {
+  const samples = import.meta.glob<WebEvent>("../../../../contracts/v1/samples/event_*.json", {
+    eager: true,
+    import: "default",
+  });
+  const eventOf = (type: string): WebEvent => {
+    const found = Object.values(samples).find((sample) => sample.type === type);
+    if (found === undefined) throw new Error(`no sample for the ${type} event`);
+    return found;
+  };
+
+  it.each(Object.keys(COMPONENTS))(
+    "puts a %s sample where SURFACE says its component shows",
+    (type) => {
+      const event = eventOf(type);
+      const state = run([received(envelope({ events: [event], seq: event.seq }))], {
+        ...started,
+        conversationId: event.conversation_id,
+      });
+      const surface = SURFACE[COMPONENTS[type as keyof typeof COMPONENTS]];
+      expect(state.lastSeq).toBe(event.seq);
+      expect({ chat: state.chat.length, trace: state.trace.length, verdict: state.verdicts.length })
+        .toEqual({
+          chat: surface === "chat" ? 1 : 0,
+          trace: surface === "trace" ? 1 : 0,
+          verdict: surface === "verdict" ? 1 : 0,
+        });
+    },
+  );
+
+  it("finds a product's name only in the summary for that proposal, else null", () => {
+    const state = run([received(envelope({ events: [summary(1)], seq: 1 }))], started);
+    const product = "00000000-0000-4000-8000-000000000003";
+    expect(nameFinder(state.chat, PROPOSAL_A)(product)).toBe("Harina 000 x 25 kg");
+    expect(nameFinder(state.chat, PROPOSAL_B)(product)).toBeNull();
+    expect(nameFinder(state.chat, PROPOSAL_A)("other")).toBeNull();
   });
 });
