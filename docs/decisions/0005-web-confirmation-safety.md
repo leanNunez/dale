@@ -39,8 +39,9 @@ summarized here.
 
 ## Consequences
 
-- The Vite dev server proxies to the host from another port, so during development its names
-  must be added to the allow-list or the proxy must rewrite `Host` and `Origin` (slice 6).
+- The Vite dev server proxies to the host from another port. Its proxy presents the host's own
+  `Host` and, for a page the dev server served itself only, the host's own `Origin` (0006), so
+  the allow-list is unchanged; a request from another site keeps its `Origin` and is rejected.
 - A turn or press may run for minutes and no request timeout cuts it (0004); the press lock
   waits at most 60 s for a running press of the same id.
 - v0.3 (public demo) adds a deployed host behind its own name; the allow-list is configuration,
