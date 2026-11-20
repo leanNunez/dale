@@ -21,8 +21,11 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 0 | `docs(openspec): add the v02-web change and refresh the config context` | `v02-web-planning` (exists) | `dev` | 30 | none | no | Sonnet medium |
 | 1 | `refactor(channels): move shared channel logic to channels.common and add web import contracts` | `v02-slice-01-common` | `v02-web-planning` | 300 | 0 | no | Sonnet high |
 | 2 | `feat(brain): add the tool trace and the stored order to the verdict` | `v02-slice-02-trace-verdict` | `v02-slice-01-common` | 300 | 1 | yes (fingerprint, verifier) | Opus high |
-| 3 | `feat(web): add contract v1 types, error catalog and schema generation` | `v02-slice-03-contract` | `v02-slice-02-trace-verdict` | 380 | 2 | no | Sonnet high |
-| 4 | `feat(web): add the FastAPI app with the request guard and composition root` | `v02-slice-04-host` | `v02-slice-03-contract` | 380 | 3 | yes (guard) | Opus high |
+| 3a | `feat(web): add the web error catalog` (with the size-guard exclusion) | `v02-slice-03a-errors` | `v02-slice-02-trace-verdict` | 127 | 2 | no | Sonnet high |
+| 3b1 | `feat(web): add contract v1 event types and samples` | `v02-slice-03b1-events` | `v02-slice-03a-errors` | 318 | 3a | no | Sonnet high |
+| 3b2 | `feat(web): add contract v1 commands, error body, envelope and components` | `v02-slice-03b2-envelope` | `v02-slice-03b1-events` | 223 | 3b1 | no | Sonnet high |
+| 3c | `feat(web): generate the contract v1 schemas and add ADR 0006` | `v02-slice-03c-schema-gen` | `v02-slice-03b2-envelope` | 225 | 3b2 | no | Sonnet high |
+| 4 | `feat(web): add the FastAPI app with the request guard and composition root` | `v02-slice-04-host` | `v02-slice-03c-schema-gen` | 380 | 3 | yes (guard) | Opus high |
 | 5a | `feat(web): add the conversation registry, lock and press gate` | `v02-slice-05a-conversation` | `v02-slice-04-host` | 230 | 4 | yes (press safety) | Opus high |
 | 5b | `feat(web): add message, confirm and cancel routes with safety tests` | `v02-slice-05b-routes` | `v02-slice-05a-conversation` | 220 | 5a | yes (confirmation) | Opus high |
 | 6 | `feat(web): scaffold the React app with codegen, state and the web CI job` | `v02-slice-06-frontend` | `v02-slice-05b-routes` | 350 | 3 | no | Sonnet high |
@@ -106,15 +109,17 @@ Covers: R11 (S11.1-S11.5), W3 (S3.3, S3.4 source data), D18, D19, design §5. Mo
 
 Covers: W3, W4, W5, W11 (S11.1), W16 (S16.2), D14 (catalog), D20, §4.1, §8 size exclusions. Tight against 400: if it slips, move 3.7 into its own tiny commit on the same branch and report.
 
-- [ ] 3.1 RED tests in `tests/unit/channels/web/test_contract.py`: every event type from `contracts/v1/samples/*.json` serializes and parses back equal (S3.1); `seq` rules and envelope fields; commands are strict (`extra="forbid"`, text 1-2000 chars, uuid ids) so unknown fields, client totals and customer or company ids are rejected (S4.1, S4.2, S7.4 type level, S14.2 type level).
-- [ ] 3.2 GREEN: create `channels/web/contract.py` (`WebEvent`, shown `data` forms, `ToolCalled`, `VerdictIssued` with `stored_orders`, `SendMessage`, `PressDale`, `CancelProposal`, `ResponseEnvelope`). `ToolCalled` and `VerdictIssued` are outside `ShownEvent`. Satisfies D14, D20, W3, W4.
-- [ ] 3.3 RED then GREEN: `channels/web/errors.py` with `WebErrorCode`, one fixed status and one Spanish message per code; test that `WebErrorCode` and `ErrorCode` are disjoint and every code of both has a status and a message (S11.1). Satisfies D14.
-- [ ] 3.4 RED then GREEN: the components map (event type → `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice`, `ToolTrace`, `Verdict`, `AssistantText` → chat text) as one Python dict; test that every event type maps and no untyped payload exists (S4.3). Satisfies W4.
-- [ ] 3.5 GREEN: `channels/web/schema_gen.py` (`python -m dale.channels.web.schema_gen`) writes `contracts/v1/*.schema.json` and `components.json` (sorted keys, 2-space indent, `additionalProperties: false` on every object). Tests: goldens equal regeneration (S5.2); removing or renaming a field in a Python type changes the output (S5.4); schemas contain no Spanish identifiers (S16.2). Satisfies D20.
-- [ ] 3.6 Author `contracts/v1/samples/*.json` (one per event type, plus a command and a response envelope sample), used by 3.1 and by the TS type test in 7b.
-- [ ] 3.7 Update `scripts/check_pr_size.py` to exclude `contracts/**/*.schema.json` and `contracts/v1/components.json`, with cases in its unit test (excluded, still-counted samples). Satisfies §8.
-- [ ] 3.8 Write `docs/decisions/0006-frontend-contract-node.md` with the contract and generation section (D20); the frontend and Node appendix lands in slice 6. Test: structural readback.
-- [ ] 3.9 Closing: blind review, PR body with "Known pending items" (JS-safe `Money` bounds), commit with the slice title, check the PR size guard output.
+- [x] 3.1 RED tests in `tests/unit/channels/web/test_contract.py`: every event type from `contracts/v1/samples/*.json` serializes and parses back equal (S3.1); `seq` rules and envelope fields; commands are strict (`extra="forbid"`, text 1-2000 chars, uuid ids) so unknown fields, client totals and customer or company ids are rejected (S4.1, S4.2, S7.4 type level, S14.2 type level).
+- [x] 3.2 GREEN: create `channels/web/contract.py` (`WebEvent`, shown `data` forms, `ToolCalled`, `VerdictIssued` with `stored_orders`, `SendMessage`, `PressDale`, `CancelProposal`, `ResponseEnvelope`). `ToolCalled` and `VerdictIssued` are outside `ShownEvent`. Satisfies D14, D20, W3, W4.
+- [x] 3.3 RED then GREEN: `channels/web/errors.py` with `WebErrorCode`, one fixed status and one Spanish message per code; test that `WebErrorCode` and `ErrorCode` are disjoint and every code of both has a status and a message (S11.1). Satisfies D14.
+- [x] 3.4 RED then GREEN: the components map (event type → `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice`, `ToolTrace`, `Verdict`, `AssistantText` → chat text) as one Python dict; test that every event type maps and no untyped payload exists (S4.3). Satisfies W4.
+- [x] 3.5 GREEN: `channels/web/schema_gen.py` (`python -m dale.channels.web.schema_gen`) writes `contracts/v1/*.schema.json` and `components.json` (sorted keys, 2-space indent, `additionalProperties: false` on every object). Tests: goldens equal regeneration (S5.2); removing or renaming a field in a Python type changes the output (S5.4); schemas contain no Spanish identifiers (S16.2). Satisfies D20.
+- [x] 3.6 Author `contracts/v1/samples/*.json` (one per event type, plus a command and a response envelope sample), used by 3.1 and by the TS type test in 7b.
+- [x] 3.7 Update `scripts/check_pr_size.py` to exclude `contracts/**/*.schema.json` and `contracts/v1/components.json`, with cases in its unit test (excluded, still-counted samples). Satisfies §8.
+- [x] 3.8 Write `docs/decisions/0006-frontend-contract-node.md` with the contract and generation section (D20); the frontend and Node appendix lands in slice 6. Test: structural readback.
+  - Done 2026-11-19 (3.1-3.8): commits ee8631a (3.7, 27 lines), 9e234fe (3.3, 100), 18400f6 (3.1, 3.2, 3.4, 3.6, 334), d01fec6 (3.5, 3.8, 187). The slice counts 648 / 400, so it needs a split before the PR (see B18). 1198 tests, 54 evals replay.
+- [x] 3.9 Closing: blind review, PR body with "Known pending items" (JS-safe `Money` bounds), commit with the slice title, check the PR size guard output.
+  - Done 2026-11-19: split into 3a/3b1/3b2/3c (B18, B19, B28). Blind review (Opus) gave 6 should-fix and 7 nits, fixed in the commits that introduced them (B20-B26); B27 is Known pending. 1234 tests, 54 evals, schemas regenerate clean; sizes 127, 318, 223, 225. PR body Known pending: JS-safe Money bounds, minimum on cents/quantity (B27), trace text rendered as text (B15). Push and PR wait for the user.
 
 ## Phase 4: FastAPI host, guard and composition root (slice 4, ~380 lines) [critical: guard]
 
