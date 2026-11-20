@@ -36,6 +36,21 @@ def test_generated_contract_files_are_excluded_but_samples_and_lookalikes_count(
     assert guard.count_changed_lines(rows) == 10
 
 
+def test_the_page_lockfile_and_generated_types_are_excluded_but_the_rest_counts() -> None:
+    rows = numstat(
+        ("900", "40", "apps/web/package-lock.json"),
+        ("300", "0", "apps/web/src/contract/generated/WebEvent.d.ts"),
+        ("300", "0", "apps/web/src/contract/generated/nested/index.ts"),
+        ("5", "1", "apps/web/package.json"),  # a dependency change is always reviewed
+        ("4", "0", "apps/web/src/contract/index.ts"),  # authored, beside the generated folder
+        ("3", "0", "apps/web/src/contract/generated.ts"),  # a lookalike, not the folder
+        ("2", "0", "apps/web/src/api/package-lock.json"),  # only the page's own lockfile
+        ("1", "0", "package-lock.json"),
+        ("2", "0", "docs/apps/web/package-lock.json"),
+    )
+    assert guard.count_changed_lines(rows) == 18
+
+
 @pytest.mark.parametrize("line", ["garbage", "1\t2", "x\t2\tsrc/a.py", "-\t2\tsrc/a.py"])
 def test_malformed_numstat_line_fails_closed(line: str) -> None:
     with pytest.raises(ValueError, match="malformed"):
