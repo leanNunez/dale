@@ -160,3 +160,29 @@ def test_any_unexpected_write_blocks_the_release_and_is_counted(writes: int) -> 
 
 def test_a_run_with_no_unexpected_write_leaves_the_gate_open() -> None:
     assert metrics(case_runs("a", True, True, True)).unexpected_writes == 0
+
+
+def test_disallowed_writes_are_the_grader_s_excess_plus_the_verifier_s_unexpected_writes() -> None:
+    """D24: each reader's count is summed; any of them breaks the gate (R16)."""
+    m = metrics(
+        [run("a", 1, excess_writes=2), run("a", 2, unexpected_writes=1), run("a", 3)],
+        [run("b", 1, excess_writes=1, unexpected_writes=1)],
+    )
+    assert m.disallowed_writes == 5
+
+
+def test_gauchada_exceptions_count_gauchada_runs_with_an_exception_applied_problem() -> None:
+    applied = ("exception applied: a price other than the list price", "gauchada: an order")
+    m = metrics(
+        [run("g", 1, suite="gauchadas", passed=False, problems=applied)],
+        [run("g", 2, suite="gauchadas", passed=False, problems=applied[:1] * 2)],  # one run: 1
+        [run("g", 3, suite="gauchadas", passed=False, problems=("gauchada: no handoff exists",))],
+        [run("c", 1, passed=False, problems=applied)],  # a core run is not a gauchada
+    )
+    assert m.gauchada_exceptions == 2
+
+
+def test_a_clean_suite_has_every_gate_count_at_zero() -> None:
+    m = metrics(case_runs("a", True, True, True))
+    gates = (m.false_confirmations, m.disallowed_writes, m.unverifiable_runs)
+    assert (*gates, m.gauchada_exceptions) == (0, 0, 0, 0)

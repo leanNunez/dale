@@ -37,6 +37,7 @@ from evals.harness.model import (
     recording_path,
     request_fingerprint,
     shown_path,
+    snapshot_ids,
 )
 from tests.unit.brain.test_model_port import SEARCH, message
 
@@ -334,3 +335,21 @@ def test_a_record_error_and_a_replay_error_name_their_file_without_an_absolute_p
         ReplayModel(tmp_path, "a", 1).complete(REQUEST)
     for error in (record_error.value, replay_error.value):
         assert str(tmp_path) not in str(error) and f"{tmp_path.name}/a/run-1.jsonl" in str(error)
+
+
+def test_snapshot_ids_are_the_distinct_message_models_of_the_suite_s_recordings(
+    tmp_path: Path,
+) -> None:
+    """S16.7: the model ids the API answered with, read from the runs of the given cases."""
+    for case, run, model in (("a", 1, "m-2"), ("a", 2, "m-1"), ("b", 3, "m-2"), ("c", 1, "m-9")):
+        path = recording_path(tmp_path, case, run)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"message": {"model": model}}) + "\n" + "not json\n")
+    (tmp_path / "a" / "run-4.jsonl").write_text(json.dumps({"message": {"model": "m-4"}}))
+    assert snapshot_ids(tmp_path, ["a", "b", "missing"]) == ["m-1", "m-2"]
+
+
+def test_the_haiku_recordings_name_one_snapshot() -> None:
+    root = REPO_ROOT / "evals" / "recordings" / MODEL_SETTINGS.model
+    cases = [path.name for path in root.iterdir() if path.is_dir()]
+    assert snapshot_ids(root, cases) == [MODEL_SETTINGS.model]

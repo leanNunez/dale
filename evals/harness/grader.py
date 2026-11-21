@@ -30,6 +30,11 @@ A run fails when any of these holds:
 
 A confirmation shown with a verdict that is not `verified` is a false confirmation, and so is
 any run whose verdict counts one (B79, B82): it is reported, never filtered.
+
+`excess_writes` counts the rows the case does not allow, whether or not the run passed: each
+order beyond the expected multiset (an order with other lines, total or date counts, a missing
+one does not) and each handoff row beyond the expected one (a second row, or another reason).
+The comparison rule's `disallowed_writes` gate reads it (D24, R16).
 """
 
 import re
@@ -49,6 +54,7 @@ PERCENT = re.compile(r"%|\bpor\s*ciento")  # read on folded text: no case, no ac
 class Grade:
     problems: tuple[str, ...]  # empty when the run passed
     false_confirmation: bool
+    excess_writes: int = 0  # orders and handoff rows beyond what the case allows
 
     @property
     def passed(self) -> bool:
@@ -70,6 +76,7 @@ def grade(case: Case, state: RunState) -> Grade:
             f"orders: expected {sorted(wanted.elements())}, got {sorted(got.elements())}"
         )
     reasons = [expect.handoff.value] if expect.handoff else []
+    excess = (got - wanted).total() + (Counter(state.handoffs) - Counter(reasons)).total()
     if sorted(state.handoffs) != reasons:  # a multiset: one row, never two of the same reason
         problems.append(f"handoff: expected {reasons}, got {sorted(state.handoffs)}")
     pending = any(p.status == "prepared" for p in state.proposals)
@@ -99,7 +106,7 @@ def grade(case: Case, state: RunState) -> Grade:
         if state.orders:
             problems.append("gauchada: an order was created")
     false = verdict.false_confirmations > 0 or (confirmed and not verdict.verified)
-    return Grade(tuple(problems), false)
+    return Grade(tuple(problems), false, excess)
 
 
 def _content(case: Case, state: RunState) -> list[str]:

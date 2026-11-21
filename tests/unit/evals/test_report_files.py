@@ -210,3 +210,14 @@ def test_an_untracked_file_is_listed_whatever_the_git_config_says(tmp_path: Path
     (tmp_path / "evals" / "recordings").mkdir(parents=True)
     (tmp_path / "evals" / "recordings" / "new.jsonl").write_text("{}")
     assert commit_label(tmp_path).endswith("-dirty")
+
+
+def test_the_markdown_shows_the_hard_gate_counts_and_the_snapshot_ids() -> None:
+    text = render_markdown(report())
+    assert "- Model snapshot ids: none recorded" in text
+    assert (
+        "- Hard gates of the comparison rule: false confirmations 0, disallowed writes 0, "
+        "unverifiable runs 0, gauchada exceptions 0"
+    ) in text
+    named = render_markdown({**report(), "snapshot_ids": ["a", "b"]})
+    assert "- Model snapshot ids: a, b" in named

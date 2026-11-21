@@ -3,7 +3,8 @@
 
 `render_markdown` says under its title, in bold, that false confirmations were found whenever
 the count is not zero, and shows the release gate, every metric, each case's runs and the
-pricing source with its source note. A false-confirmation count of zero is printed too.
+pricing source with its source note. A false-confirmation count of zero is printed too, and so
+are the comparison rule's hard-gate counts and the model snapshot ids.
 
 `write_report` writes both files to temporary files in the report's own directory and renames
 them only when both were written, so a failed write leaves neither temporary nor a half pair.
@@ -47,7 +48,7 @@ def commit_label(root: Path) -> str:
 
 def render_markdown(report: Mapping[str, Any]) -> str:
     m, gate, price = report["metrics"], report["release_gate"], report["pricing"]
-    p1, p3, prompt = m["pass_1"], m["pass_3"], report["prompt"]
+    p1, p3, prompt, gates = m["pass_1"], m["pass_3"], report["prompt"], report["gates"]
     lines = [f"# Dale eval report {report['version']}", ""]
     if m["false_confirmations"]:
         lines += [f"**FALSE CONFIRMATIONS: {m['false_confirmations']}. Do not release.**", ""]
@@ -61,6 +62,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- Prompt content, system blocks and tools: `{prompt['content_sha256']}`",
         f"- Claim phrase list: {report['claim_phrases']}",
         f"- Commit: `{report['commit']}`, generated {report['generated']}",
+        f"- Model snapshot ids: {', '.join(report['snapshot_ids']) or 'none recorded'}",
+        "- Hard gates of the comparison rule: "
+        + ", ".join(f"{name.replace('_', ' ')} {count}" for name, count in gates.items()),
         "",
         "| Metric | Value |",
         "| --- | --- |",

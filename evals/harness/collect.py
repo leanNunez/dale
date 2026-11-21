@@ -54,6 +54,7 @@ def record_of(case: Case, run: int, state: RunState, result: Grade) -> RunRecord
         problems=problems,
         error=describe(failed) if failed is not None else None,
         unexpected_writes=state.verdict.unexpected_writes,
+        excess_writes=result.excess_writes,
     )
 
 

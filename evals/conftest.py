@@ -12,9 +12,11 @@ before it applies the allowed hosts (pytest_socket 0.8.1, `pytest_runtest_setup`
 
 `--report <version>` writes `evals/reports/<version>-<model>.json` and `.md` when the session
 ends, in any mode, for the model `--model` names (S14.3), from the record of every run
-(`evals/harness/report.py`). Without it nothing is written, so a normal replay run never rewrites
-a committed report. A model with no pricing table is a usage error at session start, before any
-run (S14.4). Only the process that owns the session (not an xdist worker) touches the reports:
+(`evals/harness/report.py`), with the snapshot ids its recordings name (none in `--live`
+alone, which writes no recording). Without it nothing is written, so a normal replay run never
+rewrites a committed report. A model with no pricing table is a usage error at session start,
+before any run (S14.4). Only the process that owns the session (not an xdist worker) touches
+the reports:
 - at session start it reads the commit and its dirty flag, then deletes the files of that version
   and model (git keeps the old ones), so a report that is not written can never leave a stale
   one in place and a recording the session writes cannot make the commit dirty (B91);
@@ -47,7 +49,7 @@ from dale.brain.application.model_port import ModelSettings
 from evals.harness.case import load_cases
 from evals.harness.collect import CASES_DIR
 from evals.harness.metrics import RUNS_PER_CASE
-from evals.harness.model import Mode, mode_from_flags
+from evals.harness.model import Mode, mode_from_flags, recordings_dir, snapshot_ids
 from evals.harness.models import COMPARED, DEFAULT_MODEL, settings_for
 from evals.harness.pricing import PricingError, load_pricing
 from evals.harness.report import VERSION, ReportError, build_report
@@ -207,6 +209,10 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
         if COMMIT not in config.stash:
             raise ReportError("the commit could not be read at the start of the session")
         suite = {case.id: case.suite for case in load_cases(CASES_DIR)}
+        model = config.getoption("--model")
+        snapshots = (  # B114: a live run writes no recording, so it names no snapshot
+            () if _mode(config) is Mode.LIVE else snapshot_ids(recordings_dir(model), suite)
+        )
         report = build_report(
             sink.read(),
             suite,
@@ -214,7 +220,8 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
             mode=_session(config).mode,
             commit=config.stash[COMMIT],
             generated=datetime.now(UTC),
-            settings=settings_for(config.getoption("--model")),
+            settings=settings_for(model),
+            snapshot_ids=snapshots,
         )
         message = "report written: " + ", ".join(str(p) for p in write_report(report))
     except (ValueError, KeyError, TypeError, OSError) as error:
