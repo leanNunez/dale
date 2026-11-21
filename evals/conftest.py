@@ -15,8 +15,8 @@ ends, in any mode, for the model `--model` names (S14.3), from the record of eve
 (`evals/harness/report.py`). Without it nothing is written, so a normal replay run never rewrites
 a committed report. A model with no pricing table is a usage error at session start, before any
 run (S14.4). Only the process that owns the session (not an xdist worker) touches the reports:
-- at session start it deletes the files of that version and model (git keeps the old ones), and
-  reads the commit and its dirty flag, so a report that is not written can never leave a stale
+- at session start it reads the commit and its dirty flag, then deletes the files of that version
+  and model (git keeps the old ones), so a report that is not written can never leave a stale
   one in place and a recording the session writes cannot make the commit dirty (B91);
 - each session has its own id and its own sink directory under pytest's cache directory; the
   controller hands the id to its workers (`workerinput`), and a record from any other session,
@@ -24,9 +24,16 @@ run (S14.4). Only the process that owns the session (not an xdist worker) touche
 - at session end it builds the report from that sink and removes the directory. If a run has no
   record (a deselected case, an interrupted session) or anything else is wrong, no report is
   written and the session fails.
+
+A paid run (`--live`, with or without `--record`) with `--report` is refused before any run when
+its report could not be written afterwards (B110), each as a usage error:
+- `-x` or `--maxfail`: a stop after a failure leaves runs without a record (at configure time);
+- a commit that cannot be read at session start (the report names the commit it measured);
+- a selection that is not the whole suite, every case for every run, whatever narrowed it
+  (`-k`, `-m`, `--deselect`, `--lf`, node ids), checked when collection finishes.
+Replay spends nothing, so it keeps running and then fails without a report.
 """
 
-import contextlib
 import shutil
 import subprocess
 from dataclasses import asdict
@@ -39,6 +46,7 @@ import pytest
 from dale.brain.application.model_port import ModelSettings
 from evals.harness.case import load_cases
 from evals.harness.collect import CASES_DIR
+from evals.harness.metrics import RUNS_PER_CASE
 from evals.harness.model import Mode, mode_from_flags
 from evals.harness.models import COMPARED, DEFAULT_MODEL, settings_for
 from evals.harness.pricing import PricingError, load_pricing
@@ -86,6 +94,11 @@ def pytest_configure(config: pytest.Config) -> None:
         load_pricing(config.getoption("--model"))
     except PricingError as error:
         raise pytest.UsageError(f"--report: {error}") from error
+    if lifts_host_restriction(mode) and config.getoption("maxfail"):  # -x is maxfail=1
+        raise pytest.UsageError(
+            "--report with --live: -x/--maxfail stops the session after a failure, and the "
+            "report could not be written after paying for the runs"
+        )
     if config.pluginmanager.is_blocked("cacheprovider"):
         raise pytest.UsageError("--report needs pytest's cache provider (not -p no:cacheprovider)")
 
@@ -101,6 +114,7 @@ def model_settings(request: pytest.FixtureRequest) -> ModelSettings:
     return settings_for(request.config.getoption("--model"))
 
 
+_RUNS = range(1, RUNS_PER_CASE + 1)
 SESSION = pytest.StashKey[SinkSession]()
 COMMIT = pytest.StashKey[str]()
 WORKER_KEY = "dale_eval_session"
@@ -135,10 +149,44 @@ def _sink(config: pytest.Config) -> RunSink | None:
 def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
     if (version := config.getoption("--report")) and not _is_worker(config):
+        try:
+            config.stash[COMMIT] = commit_label(config.rootpath)
+        except (OSError, subprocess.CalledProcessError) as error:
+            if lifts_host_restriction(_mode(config)):  # B110: never pay for a report to lose
+                raise pytest.UsageError(
+                    f"--report with --live: the commit cannot be read, so the report could not "
+                    f"be written after paying for the runs ({type(error).__name__})"
+                ) from error
+            # replay: no commit in the stash, so no report at the end
         for path in report_paths(version, config.getoption("--model")):
             path.unlink(missing_ok=True)
-        with contextlib.suppress(OSError, subprocess.CalledProcessError):
-            config.stash[COMMIT] = commit_label(config.rootpath)  # else: no report at the end
+
+
+def _run_key(item: pytest.Item) -> tuple[str, int]:
+    """Which run an eval item is: its case id and run number, from the parameters of
+    `evals/test_cases.py::test_case`. An eval item without them is keyed by its node id, which
+    is never a run of the suite."""
+    params = getattr(getattr(item, "callspec", None), "params", {})
+    if "case" not in params or "run" not in params:
+        return item.nodeid, 0
+    case = params["case"]
+    return getattr(case, "id", case), params["run"]  # a Case, or its id
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """B110: a paid run with `--report` must select the whole suite, exactly once per run,
+    because the report is refused for any other selection (`build_report`)."""
+    config = session.config
+    if not config.getoption("--report") or not lifts_host_restriction(_mode(config)):
+        return
+    selected = sorted(_run_key(item) for item in session.items if item.get_closest_marker("eval"))
+    whole = sorted((case.id, run) for case in load_cases(CASES_DIR) for run in _RUNS)
+    if selected != whole:
+        raise pytest.UsageError(
+            f"--report with --live: the selection is {len(selected)} eval runs, the report needs "
+            f"the whole suite ({len(whole)}), so it could not be written after paying for them; "
+            "drop -k, -m, --deselect, --lf and node ids"
+        )
 
 
 @pytest.fixture(scope="session")
@@ -151,6 +199,8 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     config = session.config
     if not (version := config.getoption("--report")) or _is_worker(config):
         return  # no report asked for, or an xdist worker: the controller writes it
+    if session.exitstatus == pytest.ExitCode.USAGE_ERROR:
+        return  # refused before any run: nothing ran, so there is nothing to report or clean up
     sink = _sink(config)
     try:
         assert sink is not None
