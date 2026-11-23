@@ -10,7 +10,9 @@ are the comparison rule's hard-gate counts and the model snapshot ids.
 them only when both were written, so a failed write leaves neither temporary nor a half pair.
 
 `commit_label` names the commit a report is made from; the session reads it before its first
-test, so what a run writes itself (a recording) cannot make it dirty.
+test, so what a run writes itself (a recording) cannot make it dirty. A record run also leaves
+`evals/recordings` out of its dirty check: the recordings are a record run's own output, so the
+second model records on the same clean commit after the first one rewrote its recordings.
 """
 
 import json
@@ -22,9 +24,10 @@ from typing import Any
 REPORTS_DIR = Path(__file__).parents[1] / "reports"
 
 
-def commit_label(root: Path) -> str:
-    """`git rev-parse HEAD`, plus "-dirty" when the tree has changes outside the reports, the
-    untracked files in every directory included whatever the user's git config says."""
+def commit_label(root: Path, *, recording: bool = False) -> str:
+    """`git rev-parse HEAD`, plus "-dirty" when the tree has changes outside the reports (and,
+    for a record run, outside the recordings), the untracked files in every directory included
+    whatever the user's git config says."""
     sha = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -37,6 +40,7 @@ def commit_label(root: Path) -> str:
             "--",
             ".",
             ":(exclude)evals/reports",
+            *([":(exclude)evals/recordings"] if recording else []),
         ],
         cwd=root,
         capture_output=True,

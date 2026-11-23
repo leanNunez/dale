@@ -201,6 +201,40 @@ def test_the_commit_is_marked_dirty_only_for_changes_outside_the_reports(tmp_pat
     assert commit_label(tmp_path) == f"{sha}-dirty"
 
 
+def committed_recording(root: Path) -> str:
+    """A repository with one committed recording, as task 9.8 leaves it; returns HEAD."""
+    git(root, "init", "-q")
+    recording = root / "evals" / "recordings" / "claude-haiku-5-5" / "case" / "run-1.jsonl"
+    recording.parent.mkdir(parents=True)
+    recording.write_text("{}")
+    git(root, "add", ".")
+    git(root, "commit", "-q", "-m", "x")
+    return commit_label(root)
+
+
+def test_a_record_run_ignores_the_recordings_so_both_models_record_on_one_commit(
+    tmp_path: Path,
+) -> None:
+    """Haiku's record run rewrites its tracked recordings; Sonnet's record run on the same
+    commit still names that clean commit, since the recordings are a record run's own output."""
+    sha = committed_recording(tmp_path)
+    recordings = tmp_path / "evals" / "recordings"
+    (recordings / "claude-haiku-5-5" / "case" / "run-1.jsonl").write_text('{"new": 1}')
+    (recordings / "claude-sonnet-5-5").mkdir()
+    (recordings / "claude-sonnet-5-5" / "run-1.jsonl").write_text("{}")
+    assert commit_label(tmp_path, recording=True) == sha
+    (tmp_path / "a.txt").write_text("a")  # anything else still makes it dirty
+    assert commit_label(tmp_path, recording=True) == f"{sha}-dirty"
+
+
+def test_any_other_run_is_dirty_when_a_recording_changed(tmp_path: Path) -> None:
+    sha = committed_recording(tmp_path)
+    recording = tmp_path / "evals" / "recordings" / "claude-haiku-5-5" / "case" / "run-1.jsonl"
+    recording.write_text('{"new": 1}')
+    assert commit_label(tmp_path) == f"{sha}-dirty"
+    assert commit_label(tmp_path, recording=False) == f"{sha}-dirty"
+
+
 def test_an_untracked_file_is_listed_whatever_the_git_config_says(tmp_path: Path) -> None:
     git(tmp_path, "init", "-q")
     (tmp_path / "a.txt").write_text("a")

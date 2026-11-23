@@ -126,7 +126,7 @@ def test_a_live_run_of_only_the_last_failures_is_refused_before_any_run(
 def test_a_live_run_with_an_unreadable_commit_is_refused_before_any_run(
     pytester: pytest.Pytester, tmp_path: Path, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def unreadable(root: Path) -> str:
+    def unreadable(root: Path, *, recording: bool = False) -> str:
         raise subprocess.CalledProcessError(128, "git rev-parse HEAD")
 
     monkeypatch.setattr(hooks, "commit_label", unreadable)
@@ -168,7 +168,9 @@ def test_replay_keeps_its_behavior_for_all_three(
     stopped.assert_outcomes(passed=2, failed=1)
     assert calls.count == 3 + 3 and reports(tmp_path) == []
 
-    monkeypatch.setattr(hooks, "commit_label", lambda root: (_ for _ in ()).throw(OSError("git")))
+    monkeypatch.setattr(
+        hooks, "commit_label", lambda root, **_: (_ for _ in ()).throw(OSError("git"))
+    )
     unreadable = run(pytester, "--report", "v9.9")
     unreadable.assert_outcomes(passed=5, failed=1)
     unreadable.stdout.fnmatch_lines(["report NOT written: *commit could not be read*"])

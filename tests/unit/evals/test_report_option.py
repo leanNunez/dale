@@ -249,6 +249,27 @@ def test_a_worker_neither_deletes_a_report_nor_writes_one(tmp_path: Path) -> Non
     assert reports(tmp_path) == [f"{STEM}.md"]
 
 
+@pytest.mark.parametrize(
+    ("live", "record", "recording"),
+    [(False, False, False), (True, False, False), (True, True, True)],
+)
+def test_only_a_record_run_reads_the_commit_without_the_recordings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live: bool, record: bool, recording: bool
+) -> None:
+    """Both models record on one commit: the second record run is not dirtied by the first
+    one's recordings. Replay and live keep every change outside the reports."""
+    asked: list[bool] = []
+
+    def label(root: Path, *, recording: bool = False) -> str:
+        asked.append(recording)
+        return "a" * 40
+
+    monkeypatch.setattr(hooks, "commit_label", label)
+    session = fake(tmp_path, "v9.9", live=live, record=record)
+    hooks.pytest_sessionstart(session)
+    assert asked == [recording] and session.config.stash[hooks.COMMIT] == "a" * 40
+
+
 def test_the_report_is_built_for_the_model_the_session_ran(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
