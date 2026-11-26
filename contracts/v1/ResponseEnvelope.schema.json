@@ -1,0 +1,926 @@
+{
+  "$defs": {
+    "AssistantText": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AssistantText",
+      "type": "object"
+    },
+    "AssistantTextEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/AssistantText"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "AssistantText",
+          "default": "AssistantText",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "AssistantTextEvent",
+      "type": "object"
+    },
+    "ErrorBody": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WebErrorCode"
+            },
+            {
+              "$ref": "#/$defs/ErrorCode"
+            }
+          ],
+          "title": "Code"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorBody",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "customer_not_found",
+        "product_not_found",
+        "price_not_available",
+        "invalid_quantity",
+        "below_minimum_amount",
+        "no_delivery_slot",
+        "ungrounded_product",
+        "proposal_not_found",
+        "proposal_not_pending",
+        "price_changed",
+        "delivery_date_changed",
+        "rules_unavailable",
+        "turn_limit_reached",
+        "model_refusal",
+        "model_unavailable",
+        "unknown_tool",
+        "invalid_tool_input"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "verified",
+            "mismatch",
+            "missing",
+            "unexpected_write"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "order_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Order Id"
+        },
+        "proposal_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proposal Id"
+        }
+      },
+      "required": [
+        "kind",
+        "proposal_id",
+        "order_id",
+        "fields"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "HandoffNotice": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "HandoffNotice",
+      "type": "object"
+    },
+    "HandoffNoticeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/HandoffNotice"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "HandoffNotice",
+          "default": "HandoffNotice",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "HandoffNoticeEvent",
+      "type": "object"
+    },
+    "Money": {
+      "additionalProperties": false,
+      "properties": {
+        "cents": {
+          "title": "Cents",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cents"
+      ],
+      "title": "Money",
+      "type": "object"
+    },
+    "OrderConfirmed": {
+      "additionalProperties": false,
+      "properties": {
+        "delivery_date": {
+          "format": "date",
+          "title": "Delivery Date",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/ShownLine"
+          },
+          "title": "Lines",
+          "type": "array"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "order_id": {
+          "format": "uuid",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "proposal_id": {
+          "format": "uuid",
+          "title": "Proposal Id",
+          "type": "string"
+        },
+        "total": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "order_id",
+        "proposal_id",
+        "lines",
+        "total",
+        "delivery_date",
+        "message"
+      ],
+      "title": "OrderConfirmed",
+      "type": "object"
+    },
+    "OrderConfirmedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/OrderConfirmed"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "OrderConfirmed",
+          "default": "OrderConfirmed",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "OrderConfirmedEvent",
+      "type": "object"
+    },
+    "OrderRejected": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "proposal_id": {
+          "format": "uuid",
+          "title": "Proposal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "code",
+        "message"
+      ],
+      "title": "OrderRejected",
+      "type": "object"
+    },
+    "OrderRejectedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/OrderRejected"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "OrderRejected",
+          "default": "OrderRejected",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "OrderRejectedEvent",
+      "type": "object"
+    },
+    "ProposalSummary": {
+      "additionalProperties": false,
+      "description": "Built from the stored proposal, re-read after the write.",
+      "properties": {
+        "delivery_date": {
+          "format": "date",
+          "title": "Delivery Date",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/SummaryLine"
+          },
+          "title": "Lines",
+          "type": "array"
+        },
+        "proposal_id": {
+          "format": "uuid",
+          "title": "Proposal Id",
+          "type": "string"
+        },
+        "total": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "lines",
+        "total",
+        "delivery_date"
+      ],
+      "title": "ProposalSummary",
+      "type": "object"
+    },
+    "ProposalSummaryEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ProposalSummary"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "ProposalSummary",
+          "default": "ProposalSummary",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "ProposalSummaryEvent",
+      "type": "object"
+    },
+    "ShownLine": {
+      "additionalProperties": false,
+      "properties": {
+        "line_total": {
+          "$ref": "#/$defs/Money"
+        },
+        "product_id": {
+          "format": "uuid",
+          "title": "Product Id",
+          "type": "string"
+        },
+        "quantity": {
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "product_id",
+        "quantity",
+        "unit_price",
+        "line_total"
+      ],
+      "title": "ShownLine",
+      "type": "object"
+    },
+    "StoredOrder": {
+      "additionalProperties": false,
+      "description": "An order as the verifier read it in the database.",
+      "properties": {
+        "delivery_date": {
+          "format": "date",
+          "title": "Delivery Date",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/ShownLine"
+          },
+          "title": "Lines",
+          "type": "array"
+        },
+        "order_id": {
+          "format": "uuid",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "proposal_id": {
+          "format": "uuid",
+          "title": "Proposal Id",
+          "type": "string"
+        },
+        "received_at": {
+          "format": "date-time",
+          "title": "Received At",
+          "type": "string"
+        },
+        "total": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "order_id",
+        "proposal_id",
+        "lines",
+        "total",
+        "delivery_date",
+        "received_at"
+      ],
+      "title": "StoredOrder",
+      "type": "object"
+    },
+    "SummaryLine": {
+      "additionalProperties": false,
+      "properties": {
+        "line_total": {
+          "$ref": "#/$defs/Money"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "product_id": {
+          "format": "uuid",
+          "title": "Product Id",
+          "type": "string"
+        },
+        "quantity": {
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "product_id",
+        "name",
+        "quantity",
+        "unit_price",
+        "line_total"
+      ],
+      "title": "SummaryLine",
+      "type": "object"
+    },
+    "SystemNotice": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "SystemNotice",
+      "type": "object"
+    },
+    "SystemNoticeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/SystemNotice"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "SystemNotice",
+          "default": "SystemNotice",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "SystemNoticeEvent",
+      "type": "object"
+    },
+    "ToolCalled": {
+      "additionalProperties": false,
+      "description": "One tool call of a turn. `name` and `summary` are model-controlled text.",
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "maxLength": 64,
+          "title": "Name",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "summary": {
+          "maxLength": 200,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "summary",
+        "ok",
+        "code"
+      ],
+      "title": "ToolCalled",
+      "type": "object"
+    },
+    "ToolCalledEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ToolCalled"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "ToolCalled",
+          "default": "ToolCalled",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "ToolCalledEvent",
+      "type": "object"
+    },
+    "VerdictIssued": {
+      "additionalProperties": false,
+      "properties": {
+        "false_confirmations": {
+          "minimum": 0,
+          "title": "False Confirmations",
+          "type": "integer"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "reason": {
+          "enum": [
+            "",
+            "timeout",
+            "spawn_failed",
+            "malformed_output",
+            "bad_request",
+            "no_database_url",
+            "unknown",
+            "verifier_error"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "stored_orders": {
+          "items": {
+            "$ref": "#/$defs/StoredOrder"
+          },
+          "title": "Stored Orders",
+          "type": "array"
+        },
+        "subject_proposal_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Subject Proposal Id"
+        },
+        "unexpected_writes": {
+          "minimum": 0,
+          "title": "Unexpected Writes",
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "verified",
+            "mismatch",
+            "missing",
+            "unexpected_write",
+            "nothing_confirmed",
+            "unverifiable"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject_proposal_id",
+        "verdict",
+        "reason",
+        "false_confirmations",
+        "unexpected_writes",
+        "findings",
+        "stored_orders"
+      ],
+      "title": "VerdictIssued",
+      "type": "object"
+    },
+    "VerdictIssuedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "format": "uuid",
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/VerdictIssued"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "VerdictIssued",
+          "default": "VerdictIssued",
+          "title": "Type",
+          "type": "string"
+        },
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v",
+        "seq",
+        "conversation_id",
+        "type",
+        "data"
+      ],
+      "title": "VerdictIssuedEvent",
+      "type": "object"
+    },
+    "WebErrorCode": {
+      "enum": [
+        "invalid_host",
+        "forbidden_origin",
+        "unsupported_media_type",
+        "payload_too_large",
+        "invalid_request",
+        "not_found",
+        "method_not_allowed",
+        "conversation_not_found",
+        "conversation_busy",
+        "turn_failed",
+        "confirm_outcome_unknown",
+        "internal_error"
+      ],
+      "title": "WebErrorCode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Every API response. `seq` is the conversation's last event seq when it was built.",
+  "properties": {
+    "conversation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Conversation Id"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorBody"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "events": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "AssistantText": "#/$defs/AssistantTextEvent",
+            "HandoffNotice": "#/$defs/HandoffNoticeEvent",
+            "OrderConfirmed": "#/$defs/OrderConfirmedEvent",
+            "OrderRejected": "#/$defs/OrderRejectedEvent",
+            "ProposalSummary": "#/$defs/ProposalSummaryEvent",
+            "SystemNotice": "#/$defs/SystemNoticeEvent",
+            "ToolCalled": "#/$defs/ToolCalledEvent",
+            "VerdictIssued": "#/$defs/VerdictIssuedEvent"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AssistantTextEvent"
+          },
+          {
+            "$ref": "#/$defs/ProposalSummaryEvent"
+          },
+          {
+            "$ref": "#/$defs/OrderConfirmedEvent"
+          },
+          {
+            "$ref": "#/$defs/OrderRejectedEvent"
+          },
+          {
+            "$ref": "#/$defs/HandoffNoticeEvent"
+          },
+          {
+            "$ref": "#/$defs/SystemNoticeEvent"
+          },
+          {
+            "$ref": "#/$defs/ToolCalledEvent"
+          },
+          {
+            "$ref": "#/$defs/VerdictIssuedEvent"
+          }
+        ]
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "pending_proposal_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Pending Proposal Id"
+    },
+    "seq": {
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "v": {
+      "const": 1,
+      "default": 1,
+      "title": "V",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "conversation_id",
+    "seq",
+    "events",
+    "pending_proposal_id",
+    "error"
+  ],
+  "title": "ResponseEnvelope",
+  "type": "object"
+}
