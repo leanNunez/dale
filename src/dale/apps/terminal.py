@@ -6,99 +6,40 @@ judges the run, and its verdict is printed (§9, R12). `DALE_VERIFIER_DATABASE_U
 at startup too. Logs go to `DALE_TERMINAL_LOG` (default `~/.local/state/dale/terminal.log`),
 never into the chat.
 
-`compose` is the wiring the eval harness reuses with a frozen clock, a replay model and its
-own verifier call."""
+`compose` is `apps.compose.compose` for the terminal channel; the eval harness reuses it with a
+frozen clock, a replay model and its own verifier call."""
 
 import argparse
 import logging
 import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
-from uuid import uuid4
+from typing import Final
 
 import sqlalchemy as sa
 
 from dale.apps import verifier_runner
-from dale.apps.verifier_runner import VerifierVerdict, request_json, run_verifier
-from dale.brain.application.confirm_proposal import ConfirmProposal
-from dale.brain.application.model_port import ModelPort
-from dale.brain.application.prompt import system_blocks
-from dale.brain.application.take_turn import TakeTurn, TurnResult
-from dale.brain.application.tools import Tools
-from dale.brain.domain.session import SessionContext
+from dale.apps.compose import ChannelBackend
+from dale.apps.compose import compose as compose_channel
 from dale.brain.infrastructure.anthropic_model import AnthropicModel
-from dale.brain.infrastructure.conversation_repository import SqlConversationRepository
-from dale.brain.infrastructure.handoff_repository import SqlHandoffRepository
-from dale.brain.infrastructure.proposal_repository import SqlProposalRepository
 from dale.channels.common.pending import Pending
 from dale.channels.terminal.keys import TerminalInput
 from dale.channels.terminal.render import plain_writer
 from dale.channels.terminal.session import TerminalSession
-from dale.erp_sim.infrastructure.facade import SqlErpFacade
-from dale.erp_sim.public import ErpFacade
-from dale.shared.clock import Clock, SystemClock
-from dale.shared.customer_input import CustomerText, KeyPress
-from dale.shared.errors import Failure, Ok, Result, message_for
-from dale.shared.ids import ConversationId, IdGenerator, Uuid4Generator
-from dale.shared.shown_events import ShownEvent
+from dale.shared.clock import SystemClock
+from dale.shared.errors import Failure, message_for
 
-COMPANY_VARIABLE, URL_VARIABLE, CHANNEL = (
-    "DALE_TERMINAL_COMPANY",
-    "DALE_APP_DATABASE_URL",
-    "terminal",
-)
+COMPANY_VARIABLE, URL_VARIABLE = "DALE_TERMINAL_COMPANY", "DALE_APP_DATABASE_URL"
+CHANNEL: Final = "terminal"
 REQUIRED = (COMPANY_VARIABLE, URL_VARIABLE, verifier_runner.URL_VARIABLE)
 LOG_VARIABLE, DEFAULT_LOG = "DALE_TERMINAL_LOG", "~/.local/state/dale/terminal.log"
-type Verifier = Callable[[str], VerifierVerdict]
 
 
-class TerminalBackend:
-    """One conversation: the brain's turn and confirm, and the verifier call (the channel's
-    `Backend`). Each turn's result is kept for the harness: its usage and its failure."""
-
-    def __init__(
-        self, session: SessionContext, turn: TakeTurn, confirm: ConfirmProposal, verifier: Verifier
-    ) -> None:
-        self.session, self._turn, self._confirm, self._verifier = session, turn, confirm, verifier
-        self.turns: list[TurnResult] = []
-
-    def take_turn(self, said: CustomerText) -> Sequence[ShownEvent]:
-        self.turns.append(self._turn(said))
-        return self.turns[-1].shown
-
-    def confirm(self, press: KeyPress) -> ShownEvent:
-        return self._confirm(press)
-
-    def verify(self, shown: Sequence[ShownEvent]) -> VerifierVerdict:
-        s = self.session
-        return self._verifier(request_json(s.company_id, s.customer_id, s.conversation_id, shown))
-
-
-def compose(
-    engine: sa.Engine,
-    company: str,
-    customer: str,
-    model: Callable[[], ModelPort],
-    clock: Clock,
-    ids: IdGenerator | None = None,
-    verifier: Verifier = run_verifier,
-) -> Result[TerminalBackend]:
-    """`model` is called only once the customer is resolved, so nothing reaches it first."""
-    ids = ids or Uuid4Generator()
-    erp: ErpFacade = SqlErpFacade(engine, clock, ids)
-    found = erp.find_customer(company, customer)
-    if isinstance(found, Failure):
-        return found
-    who = found.value
-    session = SessionContext(who.company_id, who.customer_id, ConversationId(uuid4()))
-    proposals, handoffs = SqlProposalRepository(engine), SqlHandoffRepository(engine)
-    tools = Tools(session, erp, proposals, ids, handoffs)
-    rows = SqlConversationRepository(engine, clock, CHANNEL)
-    turn = TakeTurn(
-        session, model(), tools, rows, handoffs, proposals, system_blocks(who.company_name)
-    )
-    return Ok(TerminalBackend(session, turn, ConfirmProposal(session, proposals, erp), verifier))
+# The terminal's names for the shared wiring; the eval harness reuses `compose` too.
+TerminalBackend = ChannelBackend
+compose = partial(compose_channel, channel=CHANNEL)
 
 
 def log_to_file() -> logging.Handler:
