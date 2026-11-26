@@ -1,39 +1,41 @@
 schema: spec-driven
 
 context: |
-  Project: dale (greenfield, no code yet). AI agent that takes wholesale orders by chat and verifies each against the business database.
-  Stack (PLANNED, not detected; versions pinned during v0.1): Python, FastAPI, Pydantic, SQLAlchemy, Alembic, PostgreSQL with RLS; React+TS+Vite+Tailwind from v0.2+.
-  Architecture: single service in v0.1 with three modules (erp-sim, brain, verifier) separated by interfaces, hexagonal inside; split into services in v0.5.
-  Testing (PLANNED): pytest against real PostgreSQL, Hypothesis, ruff, mypy strict, import-linter. No runner exists yet.
-  Style: artifacts in English; README in English and Spanish; chat and test data in Rioplatense Spanish. Conventional commits, no AI attribution. PRs up to 400 changed lines excluding specs and generated files.
+  Project: dale. AI agent that takes wholesale orders by chat and verifies each against the business database. v0.1 is released (tag v0.1): terminal channel only.
+  Stack: Python 3.13 with uv, anthropic SDK, SQLAlchemy, Alembic, pydantic, PostgreSQL 17; all versions pinned exactly (docs/decisions/0001-pinned-versions.md). v0.2 adds FastAPI and a React + TS + Vite + Tailwind page.
+  Architecture: one service, hexagonal modules dale.erp_sim, dale.brain, dale.verifier (separate process, read-only role), dale.channels.terminal, dale.shared, dale.apps; boundaries enforced by import-linter contracts in pyproject.toml.
+  Decision records: docs/decisions/ (0001 pinned versions, 0002 confirm key).
+  Style: artifacts in English; README in English and Spanish; chat and test data in Rioplatense Spanish. Conventional commits, no AI attribution. PRs up to 400 changed lines excluding openspec/, eval recordings and reports, lockfiles and generated files.
   Authoritative docs: the internal project plan and the v0.1 kickoff. They are private and not published; "plan §N" and "kickoff" references point to them.
 
-strict_tdd: false   # no test runner yet; re-evaluate once the v0.1 skeleton and pytest exist
+strict_tdd: false   # kept as in v0.1 (2026-11-19): every behavior task still names its test and lands with it
 
 testing:
-  status: planned
-  runner: pytest (planned, real PostgreSQL)
+  status: in place
+  runner: uv run pytest (tests/ against a real PostgreSQL via DALE_TEST_ADMIN_URL; sockets limited to localhost)
   layers:
-    unit: planned (pytest, Hypothesis)
-    integration: planned (pytest + PostgreSQL)
-    e2e: not planned for v0.1
-  coverage: not decided
+    unit: pytest, Hypothesis (1094 tests at v0.1)
+    integration: pytest + PostgreSQL (marker "integration")
+    evals: uv run pytest evals (replay of recorded runs, 54 at v0.1)
+    e2e: not planned until the web page exists; Vitest arrives with the frontend (v02-web slice 6)
+  coverage: not enforced
   quality:
-    linter: ruff (planned)
-    type_checker: mypy strict (planned)
-    formatter: ruff format (planned)
-    architecture: import-linter (planned)
+    linter: ruff check
+    type_checker: mypy strict
+    formatter: ruff format
+    architecture: import-linter (uv run lint-imports)
+  ci: 8 required jobs (lint, types, arch, test, pr-base, tracked-files, secrets, size)
 
 rules:
   proposal:
     - Include rollback plan for risky changes
-    - Keep v0.1 to a single short spec (proposal, requirements, design, tasks); out-of-scope items go to "known pending items"
+    - Keep each release to one short change (proposal, specs, design, tasks); out-of-scope items go to "known pending items"
   specs:
     - Use Given/When/Then for scenarios
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
   design:
     - Document architecture decisions with rationale
-    - Follow backend-foundations rules, each with a CI check; include only the rules v0.1 needs
+    - Follow backend-foundations rules, each with a CI check; include only the rules the release needs
     - The model proposes and code executes; the prepared order lives in the brain module and is confirmed by code via the management module, with the proposal ID as idempotency key
   tasks:
     - Group by phase, use hierarchical numbering
@@ -45,10 +47,10 @@ rules:
       - Conventional commits, no AI attribution
       - All data is fictitious (distributor "Distribuidora El Hornero")
     tdd: false
-    test_command: ""
+    test_command: "uv run pytest"
   verify:
-    test_command: ""
-    build_command: ""
+    test_command: "uv run pytest"
+    build_command: "uv run lint-imports"
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas
