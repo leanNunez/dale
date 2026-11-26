@@ -113,7 +113,7 @@ def evals_runs() -> list[str]:
 def test_evals_job_runs_one_replay_per_model_in_its_matrix() -> None:
     job = JOBS["evals"]
     models = job["strategy"]["matrix"]["model"]
-    assert models == ["claude-haiku-5-5"]  # Sonnet joins with its recordings (slice 9)
+    assert models == list(COMPARED)  # both compared models replay their v0.2 recordings (slice 9)
     assert set(models) <= set(COMPARED)
     assert job["strategy"]["fail-fast"] is False  # one model's failure never hides the other's
     assert job["name"] == "evals (${{ matrix.model }})"  # the check name branch protection reads
