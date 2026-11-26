@@ -123,11 +123,16 @@ def report_paths(version: str, model: str, directory: Path | None = None) -> tup
 
 
 def write_report(report: Mapping[str, Any], directory: Path | None = None) -> tuple[Path, Path]:
+    """Both files, or neither (`write_pair`)."""
+    finals = report_paths(report["version"], report["model"], directory)
+    texts = (json.dumps(report, indent=2, ensure_ascii=False) + "\n", render_markdown(report))
+    return write_pair(finals, texts)
+
+
+def write_pair(finals: tuple[Path, Path], texts: tuple[str, str]) -> tuple[Path, Path]:
     """Both files, or neither: each is written to a temporary file next to its place, and the two
     are renamed only after both were written. A failure before the first rename leaves what was
     there; one after it removes both files, so a pair is never half new."""
-    finals = report_paths(report["version"], report["model"], directory)
-    texts = (json.dumps(report, indent=2, ensure_ascii=False) + "\n", render_markdown(report))
     finals[0].parent.mkdir(parents=True, exist_ok=True)
     temporaries = [final.with_name(f".{final.name}.tmp") for final in finals]
     renaming = False

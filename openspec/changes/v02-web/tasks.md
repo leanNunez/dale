@@ -255,13 +255,14 @@ Covers: R13 (S13.1, S13.2, S13.4, S13.5, S13.8, S13.9), R14 (S14.1-S14.4), D23, 
 
 Covers: R13 (S13.3), R16 (S16.2-S16.8), D24. Model hint: Opus high.
 
-- [ ] 8b.1 RED tests: grader counts `false_confirmations`, `disallowed_writes` (excess of the case's order and handoff multiset plus verifier unexpected writes), `unverifiable_runs`, `gauchada_exceptions` (gauchada runs with an `exception applied:` problem); a gauchada run that creates an order or applies an exception fails even with a handoff (S13.3).
-- [ ] 8b.2 GREEN: add the `gates` block and `snapshot_ids` (distinct `message.model` values from that model's recordings) to the report. Satisfies D24, S16.7 inputs.
-- [ ] 8b.3 RED then GREEN: `evals/harness/compare.py` refuses unless both reports share a clean commit, prompt version, case ids, k = 3, effort `medium` and mode `record` (S16.7 fixed conditions).
-- [ ] 8b.4 RED then GREEN: `decide()` table tests for S16.2 (one false confirmation rejects regardless of pass^3 or cost), S16.3 (40 cases → threshold 4; 38 cases → threshold 4, Decimal, no rounding), S16.4 (cost tie-break at ≤ 0.8 × other; `n/a` cost is inconclusive), S16.5 (both fail → "inconclusive: expand the cases", default Haiku), S16.6 (2 of 3 runs does not count; no per-model exclusions), S16.8 (outcome → `select:<model>` or `inconclusive`).
-- [ ] 8b.5 Hypothesis property test: swapping the two models swaps the selection (symmetry). Writes `evals/reports/v0.2-comparison.{json,md}` naming exactly one outcome with commit, prompt version, k, effort, both snapshot ids, pricing source and check date (S16.7).
-- [ ] 8b.6 Write `docs/decisions/0007-model-comparison-rule.md`: the rule verbatim from the proposal plus D24's mechanics, dated. Test: structural readback.
-- [ ] 8b.7 Verify no Sonnet recording exists yet: `git ls-files evals/recordings` lists only the Haiku directory. Record the result in the PR body.
+- [x] 8b.1 RED tests: grader counts `false_confirmations`, `disallowed_writes` (excess of the case's order and handoff multiset plus verifier unexpected writes), `unverifiable_runs`, `gauchada_exceptions` (gauchada runs with an `exception applied:` problem); a gauchada run that creates an order or applies an exception fails even with a handoff (S13.3).
+- [x] 8b.2 GREEN: add the `gates` block and `snapshot_ids` (distinct `message.model` values from that model's recordings) to the report. Satisfies D24, S16.7 inputs.
+- [x] 8b.3 RED then GREEN: `evals/harness/compare.py` refuses unless both reports share a clean commit, prompt version, case ids, k = 3, effort `medium` and mode `record` (S16.7 fixed conditions).
+- [x] 8b.4 RED then GREEN: `decide()` table tests for S16.2 (one false confirmation rejects regardless of pass^3 or cost), S16.3 (40 cases → threshold 4; 38 cases → threshold 4, Decimal, no rounding), S16.4 (cost tie-break at ≤ 0.8 × other; `n/a` cost is inconclusive), S16.5 (both fail → "inconclusive: expand the cases", default Haiku), S16.6 (2 of 3 runs does not count; no per-model exclusions), S16.8 (outcome → `select:<model>` or `inconclusive`).
+- [x] 8b.5 Hypothesis property test: swapping the two models swaps the selection (symmetry). Writes `evals/reports/v0.2-comparison.{json,md}` naming exactly one outcome with commit, prompt version, k, effort, both snapshot ids, pricing source and check date (S16.7).
+- [x] 8b.6 Write `docs/decisions/0007-model-comparison-rule.md`: the rule verbatim from the proposal plus D24's mechanics, dated. Test: structural readback.
+- [x] 8b.7 Verify no Sonnet recording exists yet: `git ls-files evals/recordings` lists only the Haiku directory. Record the result in the PR body.
+  - Done 2026-11-23: `git ls-files evals/recordings` lists only `claude-haiku-5-5/`.
 - [ ] 8b.8 **GATED (user)**: the user commits ADR 0007 (and the slice carrying it) before any Sonnet recording exists. This is the proof for S16.1 and it blocks tasks 9.7-9.9. Never automated.
 - [ ] 8b.9 Closing: blind review (focus: gate definitions match R16 exactly), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
 
