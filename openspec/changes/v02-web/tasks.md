@@ -320,7 +320,8 @@ Covers: R16 (S16.8), proposal Success Criteria, D23, §9 ADR 0008, §12. Nothing
 - [ ] 10.6 **GATED (user)**: one informal walkthrough with one person who does not program, one minute on the page; the user records what that person described. Not a study.
 - [x] 10.7 Live suite before release (R13): confirm the shipped model's comparison run is on the release code (no prompt, tool or brain change since); if anything changed, the user runs a new live run. Result and 0 false confirmations noted in the release notes.
   - Done 2026-11-26: `git diff f9db72a HEAD -- src/` is empty (only recordings, reports, the Sonnet CI replay, docs and one test changed) and `prompt_fingerprint()` equals the pin `d7db359b...`, so no new live run is needed. Result and "0 false confirmations" are in the release notes.
-- [ ] 10.8 Run the full suite: `uv run pytest`, `uv run lint-imports`, ruff, mypy strict, and the `web` job commands locally; all CI jobs green on the slice PR.
+- [x] 10.8 Run the full suite: `uv run pytest`, `uv run lint-imports`, ruff, mypy strict, and the `web` job commands locally; all CI jobs green on the slice PR.
+  - Done 2026-11-26: locally pytest 1701, replay 120/120 per model, ruff, mypy strict, import contracts, apps/web typecheck, lint, Vitest 408, build; every CI job green on #121, both `evals` jobs included.
   - Local half done 2026-11-26 on the slice head: pytest 1701 passed; evals replay 120 passed for each of claude-haiku-5-5 and claude-sonnet-5-5; lint-imports 15 kept; ruff check, ruff format --check and mypy strict clean; in `apps/web` typecheck, lint, Vitest 408 passed, build, and `gen:contract` with no drift. The CI half (all jobs green on the slice PR) waits for the PR.
 - [ ] 10.9 **GATED (user)**: open and merge the release PR `dev` to `main` (exempt from the size guard). The user approves.
 - [ ] 10.10 **GATED (user)**: tag `v0.2` on `main`, only after the comparison report and ADR 0008 exist. The user creates the tag.
