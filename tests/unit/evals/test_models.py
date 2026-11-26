@@ -10,6 +10,7 @@ import pytest
 from dale.brain.application.model_port import MODEL_SETTINGS, ModelRequest, ModelSettings
 from dale.brain.application.prompt import system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
+from evals.harness.compare import comparison_paths
 from evals.harness.model import (
     RECORDINGS,
     Mode,
@@ -29,6 +30,7 @@ from evals.harness.models import (
     UnknownModelError,
     settings_for,
 )
+from evals.harness.report_files import report_paths
 from tests.unit.brain.test_model_port import SEARCH, message
 
 pytest_plugins = ["pytester"]
@@ -47,6 +49,20 @@ def test_the_compared_models_differ_from_the_shipped_settings_only_in_the_model(
 def test_the_default_model_is_the_shipped_one_and_is_compared() -> None:
     assert MODEL_SETTINGS.model == DEFAULT_MODEL
     assert settings_for(DEFAULT_MODEL) == MODEL_SETTINGS
+
+
+def test_the_shipped_default_is_the_comparison_outcome_and_has_no_false_confirmation() -> None:
+    """Task 10.3 (S16.8, R16): ADR 0008 keeps the default the v0.2 comparison selected, and that
+    model's own comparison report counts 0 false confirmations over every run."""
+    comparison = json.loads(comparison_paths("v0.2")[0].read_text(encoding="utf-8"))
+    assert comparison["outcome"] == f"select:{MODEL_SETTINGS.model}"
+    assert comparison["default_model"] == MODEL_SETTINGS.model == HAIKU
+    assert comparison["default_false_confirmations"] == 0
+    shipped = json.loads(report_paths("v0.2", MODEL_SETTINGS.model)[0].read_text(encoding="utf-8"))
+    assert shipped["model"] == MODEL_SETTINGS.model and shipped["mode"] == "record"
+    conditions = comparison["conditions"]
+    assert (shipped["commit"], shipped["effort"]) == (conditions["commit"], conditions["effort"])
+    assert shipped["gates"]["false_confirmations"] == shipped["metrics"]["false_confirmations"] == 0
 
 
 def test_a_model_that_is_not_compared_has_no_settings() -> None:
