@@ -15,7 +15,8 @@ prices re-checked that day. `python -m evals.harness.compare v0.2` applied the r
 An earlier Haiku record run (on `7d3a4f0`) was discarded before the comparison: its 4 false
 confirmations were all false positives of the claim detector on correct, negated replies. The
 detector was fixed (claim list `2026-11-26.1`), Haiku was recorded again and Sonnet for the
-first time, both on the fixed commit, so both are graded by the same list. The rule itself was not touched.
+first time, both on the fixed commit, so both are graded by the same list. The discarded run's
+report and its 4 runs are in `evals/reports/discarded/v0.2-run1-claude-haiku-5-5/`. The rule itself was not touched.
 
 ## Decision
 
