@@ -56,9 +56,11 @@ it("sets no timeout of any kind, because no request may be cut short (D17)", () 
   }
 });
 
-function statusFor(port: number, host: string): Promise<number | undefined> {
+function statusFor(bound: AddressInfo, host: string): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
-    const sent = request({ host: "127.0.0.1", port, path: "/", headers: { host } }, (reply) => {
+    // Connect where the server is bound: "localhost" is ::1 on some machines, 127.0.0.1 on others.
+    const { address, port } = bound;
+    const sent = request({ host: address, port, path: "/", headers: { host } }, (reply) => {
       reply.resume();
       resolve(reply.statusCode);
     });
@@ -76,11 +78,12 @@ it("answers only to loopback names, so a rebinding Host is refused", async () =>
   try {
     expect(server.config.server.allowedHosts).toEqual(DEV_HOSTS);
     await server.listen();
-    const { port } = server.httpServer?.address() as AddressInfo;
-    expect(await statusFor(port, `localhost:${port}`)).toBe(200);
-    expect(await statusFor(port, `127.0.0.1:${port}`)).toBe(200);
-    expect(await statusFor(port, `rebind.example:${port}`)).toBe(403);
-    expect(await statusFor(port, `localhost.rebind.example:${port}`)).toBe(403);
+    const bound = server.httpServer?.address() as AddressInfo;
+    const { port } = bound;
+    expect(await statusFor(bound, `localhost:${port}`)).toBe(200);
+    expect(await statusFor(bound, `127.0.0.1:${port}`)).toBe(200);
+    expect(await statusFor(bound, `rebind.example:${port}`)).toBe(403);
+    expect(await statusFor(bound, `localhost.rebind.example:${port}`)).toBe(403);
   } finally {
     await server.close();
   }
