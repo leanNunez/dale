@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import date, datetime
 from typing import Literal, Self
 from uuid import UUID
 
@@ -46,6 +47,27 @@ class Finding(BaseModel):
         return self
 
 
+class StoredLine(BaseModel):
+    model_config = STRICT
+    product_id: UUID
+    quantity: int
+    unit_price_cents: int
+    line_total_cents: int
+
+
+class StoredOrder(BaseModel):
+    """An order as the verifier read it (D19): evidence to show, already judged by the child."""
+
+    model_config = STRICT
+    id: UUID
+    proposal_id: UUID
+    customer_id: UUID
+    lines: tuple[StoredLine, ...]
+    total_cents: int
+    delivery_date: date
+    received_at: datetime
+
+
 class VerifierVerdict(BaseModel):
     """The verdict JSON the process prints, checked for consistency before it is believed."""
 
@@ -57,10 +79,15 @@ class VerifierVerdict(BaseModel):
     findings: tuple[Finding, ...]
     false_confirmations: int = Field(ge=0)
     unexpected_writes: int = Field(ge=0)
+    stored_orders: tuple[StoredOrder, ...]  # required: an older output is malformed (D19)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
-        kinds = [f.kind for f in self.findings]
+        kinds, read = [f.kind for f in self.findings], [o.id for o in self.stored_orders]
+        if len(set(read)) < len(read):
+            raise ValueError("a stored order appears twice")
+        if not _agrees(self.findings, self.stored_orders):
+            raise ValueError("the stored orders do not agree with the findings")
         wrong = sum(k in ("missing", "mismatch") for k in kinds)
         if (self.false_confirmations, self.unexpected_writes) != (
             wrong,
@@ -69,7 +96,7 @@ class VerifierVerdict(BaseModel):
             raise ValueError("the counts do not match the findings")
         worst = next((k for k in WORST_FIRST if k in kinds), "nothing_confirmed")
         expected = "unverifiable" if self.reason else worst  # with a reason, no findings
-        if self.verdict != expected or (self.reason and kinds):
+        if self.verdict != expected or (self.reason and (kinds or read)):
             raise ValueError(f"the findings make {expected}, not {self.verdict}")
         return self
 
@@ -78,9 +105,30 @@ class VerifierVerdict(BaseModel):
         return self.verdict == "verified"
 
 
+def _agrees(findings: Sequence[Finding], stored: Sequence[StoredOrder]) -> bool:
+    """What the honest child (`judge`) always prints: every stored order named or counted, and
+    another customer's order never stored, only named in a "customer" mismatch or a write."""
+    read = {o.id: o.proposal_id for o in stored}
+    counted = {f.proposal_id for f in findings if f.fields == ("order_count",)}
+    shown = {f.proposal_id for f in findings if f.kind != "unexpected_write" and f.proposal_id}
+    for f in findings:
+        mine = {i for i, p in read.items() if p == f.proposal_id}  # stored, of its proposal
+        write = f.kind == "unexpected_write"
+        if (f.order_id in read and f.order_id not in mine) or (write and f.proposal_id in shown):
+            return False  # another proposal's order, or a write for a proposal shown confirmed
+        if f.order_id not in read and f.order_id and not (write or "customer" in f.fields):
+            return False  # only another customer's order is named without being stored
+        if not write and f.fields != ("order_count",) and mine - {f.order_id}:
+            return False  # a shown proposal's other orders hide only under order_count
+    named = {f.order_id for f in findings} | {i for i, p in read.items() if p in counted}
+    return set(read) <= named and len({o.customer_id for o in stored}) <= 1  # one customer
+
+
 def unverifiable(reason: str) -> VerifierVerdict:
     counts = {"false_confirmations": 0, "unexpected_writes": 0}
-    return VerifierVerdict(verdict="unverifiable", reason=reason, findings=(), **counts)
+    return VerifierVerdict(
+        verdict="unverifiable", reason=reason, findings=(), stored_orders=(), **counts
+    )
 
 
 def parse_verdict(stdout: bytes) -> VerifierVerdict:

@@ -51,6 +51,7 @@ def mismatch(*_: Any, **__: Any) -> VerifierVerdict:
         findings=(finding,),
         false_confirmations=1,
         unexpected_writes=0,
+        stored_orders=(),
     )
 
 
@@ -196,6 +197,7 @@ def test_the_verifiers_unexpected_writes_are_kept_in_the_record(
         findings=(extra, extra),
         false_confirmations=0,
         unexpected_writes=2,
+        stored_orders=(),
     )
     monkeypatch.setattr(runner, "run_verifier", lambda *_, **__: verdict)
     sink, env = RunSink(tmp_path, SESSION), Env(db, role_url("dale_verifier"))

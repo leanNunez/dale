@@ -33,6 +33,7 @@ from evals.harness.model import (
     messages_digest,
     mode_from_flags,
     model_factory,
+    prompt_fingerprint,
     recording_path,
     request_fingerprint,
     shown_path,
@@ -41,6 +42,9 @@ from tests.unit.brain.test_model_port import SEARCH, message
 
 REQUEST = ModelRequest(system_blocks("Distribuidora El Hornero"), TOOL_SCHEMAS, ({"role": "user"},))
 FIRST, SECOND = message(SEARCH), message({"type": "text", "text": "Listo."}, stop="end_turn")
+# S11.5, design §5 check 1: the prompt the v0.1 recordings were made against, pinned from slice 2
+# until the comparison slice. The tool trace and the verdict evidence must not move it.
+V01_FINGERPRINT = "d7db359bbb5c67a09edcef0a370c75531554e5e500de0124b2d3e36db3dce4c9"
 
 
 def write(root: Path, steps: list[Any], case: str = "a", run: int = 1, **changes: Any) -> Path:
@@ -66,6 +70,10 @@ def test_the_fingerprint_changes_with_the_prompt_the_tools_or_a_setting() -> Non
     assert request_fingerprint(REQUEST, replace(MODEL_SETTINGS, effort="high")) != base
     assert request_fingerprint(REQUEST, replace(MODEL_SETTINGS, model="claude-other")) != base
     assert request_fingerprint(REQUEST) == fingerprint(MODEL_SETTINGS, REQUEST.system, TOOL_SCHEMAS)
+
+
+def test_the_prompt_fingerprint_is_still_the_one_the_v01_recordings_hold() -> None:
+    assert prompt_fingerprint() == V01_FINGERPRINT
 
 
 def test_replay_answers_each_call_from_its_step_in_order(tmp_path: Path) -> None:
