@@ -1,5 +1,13 @@
 // Test data builders. Ids are fixed so every failure reads the same; seq is explicit.
-import type { ErrorBody, ErrorCode, ResponseEnvelope, WebEvent } from "../contract";
+import type {
+  ErrorBody,
+  ErrorCode,
+  ResponseEnvelope,
+  StoredOrder,
+  ToolCalledEvent,
+  VerdictIssuedEvent,
+  WebEvent,
+} from "../contract";
 
 export const CONVERSATION = "00000000-0000-4000-8000-000000000001";
 export const OTHER_CONVERSATION = "00000000-0000-4000-8000-000000000002";
@@ -72,15 +80,49 @@ export function systemNotice(seq: number, code: ErrorCode = "proposal_not_pendin
   return { ...base(seq), type: "SystemNotice", data: { code, message: "Ya no se puede." } };
 }
 
-export function toolCalled(seq: number, name = "search_products"): WebEvent {
+export function toolCalled(
+  seq: number,
+  name = "search_products",
+  patch: Partial<ToolCalledEvent["data"]> = {},
+): WebEvent {
   return {
     ...base(seq),
     type: "ToolCalled",
-    data: { name, summary: '{"query":"harina"}', ok: true, code: null },
+    data: { name, summary: '{"query":"harina"}', ok: true, code: null, ...patch },
   };
 }
 
-export function verdict(seq: number, subject: string | null = PROPOSAL_A): WebEvent {
+export const ORDER_ID = "00000000-0000-4000-8000-0000000000c3";
+
+/** An order as the verifier read it in the database: 2 bags of flour, as the sample has it. */
+export function storedOrder(
+  proposalId = PROPOSAL_A,
+  patch: Partial<StoredOrder> = {},
+): StoredOrder {
+  return {
+    order_id: ORDER_ID,
+    proposal_id: proposalId,
+    lines: [
+      {
+        product_id: PRODUCT,
+        quantity: 2,
+        unit_price: { cents: 185000 },
+        line_total: { cents: 370000 },
+      },
+    ],
+    total: { cents: 370000 },
+    delivery_date: "2026-11-24",
+    received_at: "2026-11-23T15:30:00Z",
+    ...patch,
+  };
+}
+
+/** A verdict with no findings and no stored order; `patch` says what else it carries. */
+export function verdict(
+  seq: number,
+  subject: string | null = PROPOSAL_A,
+  patch: Partial<VerdictIssuedEvent["data"]> = {},
+): WebEvent {
   return {
     ...base(seq),
     type: "VerdictIssued",
@@ -92,6 +134,7 @@ export function verdict(seq: number, subject: string | null = PROPOSAL_A): WebEv
       unexpected_writes: 0,
       findings: [],
       stored_orders: [],
+      ...patch,
     },
   };
 }
