@@ -22,7 +22,7 @@ retrieved = "2026-11-26"
 note = """Checked against the live page on 2026-11-26 (first checked 2026-11-16, unchanged): \
 the eight Haiku 5.5 prices, the 100,000-token threshold (the prompt counts input, cache writes \
 and cache reads) and the 5-minute cache write all match. The recordings use only 5-minute cache \
-writes, so no 1-hour price is needed. Re-check and commit on the run day (see the top)."""
+writes, so no 1-hour price is needed. Run-day check 2026-11-26: unchanged."""
 
 [models."claude-haiku-5-5".standard]  # prompts of 100,000 tokens or fewer
 input = 0.10
@@ -47,7 +47,7 @@ retrieved = "2026-11-26"
 note = """Read from the live page on 2026-11-26: Sonnet 5.5 base input 2 USD/MTok, 5-minute \
 cache write 2.50, cache hits 0.10 (0.05x the input price, not the usual 0.1x), output 10. The \
 page states that the full 1M-token window is billed at standard prices, so both tiers are the \
-same. The 1-hour cache write (4) is not needed. Re-check and commit on the run day (see the top)."""
+same. The 1-hour cache write (4) is not needed. Run-day check 2026-11-26: unchanged."""
 
 [models."claude-sonnet-5-5".standard]
 input = 2.00
