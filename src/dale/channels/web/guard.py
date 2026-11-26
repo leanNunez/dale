@@ -1,17 +1,25 @@
-"""The request guard (W8, W10, W17; design §4.2): a pure ASGI middleware that wraps the whole
-application, so it runs before routing and before any handler.
+"""The request guard (W8, W9, W10, W17; design §4.2): a pure ASGI middleware that wraps the whole
+application, so it runs before routing, before any handler and before any body is parsed.
 
 Checks, in this order, each rejecting with the one error envelope:
 1. exactly one `Host`, in the allow-list (`invalid_host`); a missing one is rejected too;
 2. on any method but GET and HEAD, exactly one `Origin`, in the allow-list (`forbidden_origin`);
    a missing one is rejected too, because browsers send `Origin` on every POST, same-origin
-   included.
+   included;
+3. on those methods, the media type `application/json`, charset UTF-8 if named
+   (`unsupported_media_type`);
+4. the body at most `MAX_BODY` bytes, by `Content-Length` and by counting the stream
+   (`payload_too_large`). The guard reads the whole capped body before the application runs,
+   so an oversized body is never handed to a parser.
 
-Every response, a rejection included, carries the CSP, `nosniff` and `no-referrer` headers; API
-paths also carry `Cache-Control: no-store`. Rejections never echo the request.
+Every response the guard or the application sends, a rejection included, carries the CSP,
+`nosniff` and `no-referrer` headers; API paths also carry `Cache-Control: no-store`. A request
+that is not valid HTTP never reaches the guard: uvicorn (h11) answers it with its own plain-text
+400. Rejections never echo the request.
 """
 
 import logging
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Final, Self
@@ -23,6 +31,7 @@ from dale.channels.web.contract import ErrorBody, ResponseEnvelope
 from dale.channels.web.errors import WebErrorCode, message_for, status_for
 from dale.shared.errors import ErrorCode
 
+MAX_BODY: Final = 16 * 1024
 CSP: Final = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
@@ -34,6 +43,7 @@ SECURITY_HEADERS: Final = {
     "referrer-policy": "no-referrer",
 }
 SAFE_METHODS: Final = frozenset({"GET", "HEAD"})
+DIGITS = re.compile(r"[0-9]+")
 log = logging.getLogger(__name__)
 
 
@@ -67,8 +77,8 @@ def is_api(path: str) -> bool:
 
 
 class RequestGuard:
-    def __init__(self, app: ASGIApp, allow: AllowList) -> None:
-        self.app, self.allow = app, allow
+    def __init__(self, app: ASGIApp, allow: AllowList, max_body: int = MAX_BODY) -> None:
+        self.app, self.allow, self.max_body = app, allow, max_body
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "lifespan":
@@ -80,11 +90,12 @@ class RequestGuard:
             return
         secured = _secured(scope["path"], send)
         rejected = self._check(scope["method"], Headers(scope=scope))
-        if rejected is not None:
-            log.info("request rejected: %s", rejected.value)
-            await _reject(rejected, secured)
-        else:
-            await self.app(scope, receive, secured)
+        body = rejected or await _read(receive, self.max_body)
+        if isinstance(body, WebErrorCode):
+            log.info("request rejected: %s", body.value)
+            await _reject(body, secured)
+        elif body is not None:  # None: the client left while sending
+            await self.app(scope, _replay(body, receive), secured)
 
     def _check(self, method: str, headers: Headers) -> WebErrorCode | None:
         hosts = headers.getlist("host")
@@ -95,7 +106,55 @@ class RequestGuard:
             # Fail closed: a browser always sends Origin here, so a missing one is never the page.
             if len(origins) != 1 or origins[0].lower() not in self.allow.origins:
                 return WebErrorCode.FORBIDDEN_ORIGIN
+            if not _is_json(headers.getlist("content-type")):
+                return WebErrorCode.UNSUPPORTED_MEDIA_TYPE
+        # Defense in depth: h11 already rejects a repeated or non-decimal Content-Length, so this
+        # branch is reached only by another server or a direct ASGI call.
+        lengths = headers.getlist("content-length")
+        if len(lengths) > 1 or (lengths and not DIGITS.fullmatch(lengths[0])):
+            return WebErrorCode.INVALID_REQUEST
+        if lengths and int(lengths[0]) > self.max_body:
+            return WebErrorCode.PAYLOAD_TOO_LARGE
         return None
+
+
+def _is_json(values: list[str]) -> bool:
+    if len(values) != 1:
+        return False
+    media, *params = (part.strip().lower() for part in values[0].split(";"))
+    return media == "application/json" and all(
+        p.replace(" ", "") in ("charset=utf-8", 'charset="utf-8"') for p in params
+    )
+
+
+async def _read(receive: Receive, cap: int) -> bytes | WebErrorCode | None:
+    """The whole body, `payload_too_large` as soon as it passes `cap`, or None on disconnect."""
+    chunks, size = list[bytes](), 0
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            return None
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > cap:
+            return WebErrorCode.PAYLOAD_TOO_LARGE
+        chunks.append(chunk)
+        if not message.get("more_body", False):
+            return b"".join(chunks)
+
+
+def _replay(body: bytes, receive: Receive) -> Receive:
+    """The body already read, as one message; later calls (a disconnect) reach the client."""
+    sent = False
+
+    async def replay() -> Message:
+        nonlocal sent
+        if sent:
+            return await receive()
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return replay
 
 
 def _secured(path: str, send: Send) -> Send:
