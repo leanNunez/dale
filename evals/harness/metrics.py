@@ -10,6 +10,11 @@ not matter.
 - false confirmations (R12): the verifier's count, and, per B79, one for a run that showed a
   confirmation and whose verdict is not `verified` (`unverifiable` included). Never filtered.
 - unexpected writes: orders the verifier found that nobody asked for, summed over the runs.
+- the comparison rule's hard gates (D24, R16): false confirmations; disallowed writes, the
+  grader's excess orders and handoff rows plus the verifier's unexpected writes (each reader's
+  count is summed, so one stray order can count twice: the gate asks only for zero);
+  unverifiable runs; and gauchada exceptions, the gauchada runs with an `exception applied:`
+  problem (a run counts once, however many such problems it has).
 - release gate: blocked by a false confirmation, an unexpected write, any `unverifiable` run
   (B79) or any run that raised (its state is unknown). A failed case alone does not block it.
 - refusals (D10): turns that ended in a model refusal, counted apart.
@@ -47,6 +52,7 @@ class RunRecord:
     problems: tuple[str, ...] = ()  # why it failed; an error is "error: ..."
     error: str | None = None
     unexpected_writes: int = 0  # the verifier's count of orders nobody asked for
+    excess_writes: int = 0  # the grader's count of orders and handoffs the case does not allow
 
     @property
     def false_confirmations(self) -> int:
@@ -64,7 +70,9 @@ class Metrics:
     verified: int
     false_confirmations: int
     unexpected_writes: int
+    disallowed_writes: int
     unverifiable_runs: int
+    gauchada_exceptions: int
     errored_runs: int
     refusals: int
     cost: Decimal
@@ -93,6 +101,10 @@ def compute(records: list[RunRecord], pricing: Pricing) -> Metrics:
     false = sum(r.false_confirmations for r in records)
     writes = sum(r.unexpected_writes for r in records)
     unverifiable = sum(r.verdict == "unverifiable" for r in records)
+    applied = sum(
+        r.suite == "gauchadas" and any(p.startswith("exception applied:") for p in r.problems)
+        for r in records
+    )
     errored = sum(r.error is not None for r in records)
     cost = round_money(
         sum((request_cost(u, pricing) for r in records for u in r.usage), Decimal(0))
@@ -116,7 +128,9 @@ def compute(records: list[RunRecord], pricing: Pricing) -> Metrics:
         verified=verified,
         false_confirmations=false,
         unexpected_writes=writes,
+        disallowed_writes=writes + sum(r.excess_writes for r in records),
         unverifiable_runs=unverifiable,
+        gauchada_exceptions=applied,
         errored_runs=errored,
         refusals=sum(r.refusals for r in records),
         cost=cost,

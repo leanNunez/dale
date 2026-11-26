@@ -47,6 +47,7 @@ def test_a_request_round_trips_and_asks_only_for_the_shown_confirmations() -> No
         ],
         "false_confirmations": 0,
         "unexpected_writes": 0,
+        "stored_orders": [json.loads(report_to_json(report))["stored_orders"][0]],
     }
 
 

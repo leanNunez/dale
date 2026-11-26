@@ -1,0 +1,163 @@
+// Test data builders. Ids are fixed so every failure reads the same; seq is explicit.
+import type {
+  ErrorBody,
+  ErrorCode,
+  ResponseEnvelope,
+  StoredOrder,
+  ToolCalledEvent,
+  VerdictIssuedEvent,
+  WebEvent,
+} from "../contract";
+
+export const CONVERSATION = "00000000-0000-4000-8000-000000000001";
+export const OTHER_CONVERSATION = "00000000-0000-4000-8000-000000000002";
+export const PROPOSAL_A = "00000000-0000-4000-8000-0000000000a1";
+export const PROPOSAL_B = "00000000-0000-4000-8000-0000000000b2";
+const PRODUCT = "00000000-0000-4000-8000-000000000003";
+
+const base = (seq: number) => ({ v: 1 as const, seq, conversation_id: CONVERSATION });
+
+export function assistantText(seq: number, text = "Hola"): WebEvent {
+  return { ...base(seq), type: "AssistantText", data: { text } };
+}
+
+export function summary(seq: number, proposalId = PROPOSAL_A): WebEvent {
+  return {
+    ...base(seq),
+    type: "ProposalSummary",
+    data: {
+      proposal_id: proposalId,
+      delivery_date: "2026-11-24",
+      total: { cents: 370000 },
+      lines: [
+        {
+          product_id: PRODUCT,
+          name: "Harina 000 x 25 kg",
+          quantity: 2,
+          unit_price: { cents: 185000 },
+          line_total: { cents: 370000 },
+        },
+      ],
+    },
+  };
+}
+
+export function orderConfirmed(seq: number, proposalId = PROPOSAL_A): WebEvent {
+  return {
+    ...base(seq),
+    type: "OrderConfirmed",
+    data: {
+      order_id: "00000000-0000-4000-8000-0000000000c3",
+      proposal_id: proposalId,
+      delivery_date: "2026-11-24",
+      message: "Listo, confirmé tu pedido.",
+      total: { cents: 370000 },
+      lines: [
+        {
+          product_id: PRODUCT,
+          quantity: 2,
+          unit_price: { cents: 185000 },
+          line_total: { cents: 370000 },
+        },
+      ],
+    },
+  };
+}
+
+export function orderRejected(seq: number, proposalId = PROPOSAL_A): WebEvent {
+  return {
+    ...base(seq),
+    type: "OrderRejected",
+    data: { code: "price_changed", proposal_id: proposalId, message: "Cambió el precio." },
+  };
+}
+
+export function handoffNotice(seq: number, message = "Te contacta una persona."): WebEvent {
+  return { ...base(seq), type: "HandoffNotice", data: { message } };
+}
+
+export function systemNotice(seq: number, code: ErrorCode = "proposal_not_pending"): WebEvent {
+  return { ...base(seq), type: "SystemNotice", data: { code, message: "Ya no se puede." } };
+}
+
+export function toolCalled(
+  seq: number,
+  name = "search_products",
+  patch: Partial<ToolCalledEvent["data"]> = {},
+): WebEvent {
+  return {
+    ...base(seq),
+    type: "ToolCalled",
+    data: { name, summary: '{"query":"harina"}', ok: true, code: null, ...patch },
+  };
+}
+
+export const ORDER_ID = "00000000-0000-4000-8000-0000000000c3";
+
+/** An order as the verifier read it in the database: 2 bags of flour, as the sample has it. */
+export function storedOrder(
+  proposalId = PROPOSAL_A,
+  patch: Partial<StoredOrder> = {},
+): StoredOrder {
+  return {
+    order_id: ORDER_ID,
+    proposal_id: proposalId,
+    lines: [
+      {
+        product_id: PRODUCT,
+        quantity: 2,
+        unit_price: { cents: 185000 },
+        line_total: { cents: 370000 },
+      },
+    ],
+    total: { cents: 370000 },
+    delivery_date: "2026-11-24",
+    received_at: "2026-11-23T15:30:00Z",
+    ...patch,
+  };
+}
+
+/** A verdict with no findings and no stored order; `patch` says what else it carries. */
+export function verdict(
+  seq: number,
+  subject: string | null = PROPOSAL_A,
+  patch: Partial<VerdictIssuedEvent["data"]> = {},
+): WebEvent {
+  return {
+    ...base(seq),
+    type: "VerdictIssued",
+    data: {
+      subject_proposal_id: subject,
+      verdict: "nothing_confirmed",
+      reason: "",
+      false_confirmations: 0,
+      unexpected_writes: 0,
+      findings: [],
+      stored_orders: [],
+      ...patch,
+    },
+  };
+}
+
+export function envelope(overrides: Partial<ResponseEnvelope> = {}): ResponseEnvelope {
+  const events = overrides.events ?? [];
+  const last = events.at(-1)?.seq ?? 0;
+  return {
+    v: 1,
+    conversation_id: CONVERSATION,
+    seq: last,
+    events,
+    pending_proposal_id: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+export function failure(code: ErrorBody["code"], overrides: Partial<ResponseEnvelope> = {}) {
+  return envelope({ error: { code, message: "Mensaje fijo" }, ...overrides });
+}
+
+/** An event type this page was not built for, as a later host might add one (additive v1). */
+export function futureEvent(seq: number): WebEvent {
+  return { ...base(seq), type: "SomethingNew", data: { anything: true } } as unknown as WebEvent;
+}

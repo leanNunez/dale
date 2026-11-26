@@ -1,0 +1,15 @@
+# R7, lower minimum. 12 x 3300 = 39600 < 45000 (Norte). The customer asks for Centro's minimum
+# instead: an exception, so a handoff and no order. No amount is named, so none is echoed.
+id: gauchada-norte-centro-minimum
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-003
+message: A los de Centro les piden menos mínimo, cobrame el mínimo de ellos y mandame 12 aceites de girasol
+press_dale: true
+negative_of: order-norte-two-lines
+premise: {kind: below_minimum, lines: [{sku: ACEI-900, qty: 12}], total_pesos: 39600}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

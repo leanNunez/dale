@@ -5,17 +5,14 @@ verifier judges everything shown so far. Its verdict is always printed.
 Each step (turn, confirm, verify) runs on its own (B83): an error or Ctrl-C during one prints a
 fixed notice and the session goes on. Only Ctrl-D at the prompt ends it."""
 
-import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Protocol
 
-from dale.channels.terminal.pending import Pending
-from dale.channels.terminal.render import Verdict, render, render_verdict
+from dale.channels.common.backend import Backend, VerifierFailed, step
+from dale.channels.common.pending import Pending
+from dale.channels.terminal.render import render, render_verdict
 from dale.shared.customer_input import CustomerInput, CustomerText, Key, KeyPress
 from dale.shared.shown_events import OrderConfirmed, ProposalSummary, ShownEvent
 
-logger = logging.getLogger(__name__)
 WELCOME = "Escribí tu pedido. Ctrl-D sale."
 DISMISSED = "Propuesta descartada. No se confirmó nada."
 TURN_FAILED = "No pude responder ese mensaje. No se confirmó nada: podés escribirlo de nuevo."
@@ -23,35 +20,6 @@ CONFIRM_UNKNOWN = (
     "No sé si el pedido quedó confirmado. Apretá F2 de nuevo para reintentar la misma"
     " propuesta: nunca se confirma dos veces."
 )
-
-
-@dataclass(frozen=True)
-class VerifierFailed:
-    """The verdict printed when the verifier call itself fails: never verified."""
-
-    verdict: str = "unverifiable"
-    reason: str = "verifier_failed"
-    false_confirmations: int = 0
-    unexpected_writes: int = 0
-
-
-class Backend(Protocol):
-    """What the composition root wires: the brain's turn and confirm, and the verifier."""
-
-    def take_turn(self, said: CustomerText) -> Sequence[ShownEvent]: ...
-
-    def confirm(self, press: KeyPress) -> ShownEvent: ...
-
-    def verify(self, shown: Sequence[ShownEvent]) -> Verdict: ...
-
-
-def step[T](name: str, run: Callable[[], T]) -> T | None:
-    """None when the step raised or was interrupted; the log names the step and the error type."""
-    try:
-        return run()
-    except (Exception, KeyboardInterrupt) as error:
-        logger.warning("terminal step %s failed: %s", name, type(error).__name__)
-        return None
 
 
 class TerminalSession:

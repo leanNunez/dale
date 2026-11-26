@@ -1,0 +1,18 @@
+# S2.3, S13.5 in Sur. Friday 12:01 misses Saturday's cutoff (Friday 12:00); the next Sur day is
+# Wednesday 2026-11-25. 15 x 5200 = 78000. The message sets no date.
+id: cutoff-sur-missed
+suite: core
+now: 2026-11-20T12:01:00-03:00
+customer: C-005
+message: Necesito 15 yerbas de un kilo
+press_dale: true
+negative_of: order-sur-yerba
+premise: {kind: past_cutoff, missed: 2026-11-21}
+expect:
+  orders:
+    - lines: [{sku: YERB-1, qty: 15}]
+      total_pesos: 78000
+      delivery_date: 2026-11-25
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

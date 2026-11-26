@@ -1,0 +1,10 @@
+{
+  "AssistantText": "ChatText",
+  "HandoffNotice": "HandoffNotice",
+  "OrderConfirmed": "OrderConfirmation",
+  "OrderRejected": "Notice",
+  "ProposalSummary": "OrderSummary",
+  "SystemNotice": "Notice",
+  "ToolCalled": "ToolTrace",
+  "VerdictIssued": "Verdict"
+}

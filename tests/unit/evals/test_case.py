@@ -176,3 +176,13 @@ def test_a_premise_of_each_kind_loads_and_any_other_is_refused(premise: dict[str
     for bad in ({"kind": "lucky"}, premise | {"extra": 1}, {"kind": premise["kind"]}):
         with pytest.raises(ValidationError):
             case(premise=bad)
+
+
+def test_the_key_presses_the_pending_proposal_unless_the_case_names_the_first_shown() -> None:
+    """D23: `press` picks the proposal the Dale key presses; a stale press needs a press."""
+    assert case().press == "pending"
+    assert case(press="first_shown").press == "first_shown"
+    with pytest.raises(ValidationError, match="press_dale"):
+        case(press="first_shown", press_dale=False)
+    with pytest.raises(ValidationError):
+        case(press="latest")

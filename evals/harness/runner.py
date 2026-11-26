@@ -5,7 +5,10 @@ reseeded with the case's overrides, so no run sees another's rows. The app is th
 own `compose` with the case's frozen clock and whatever model the caller gives. The case's
 earlier messages and its message are turns. A price change of the case then lands, after the
 last turn and before the press, so management's second check sees it (D4). The Dale key is
-pressed only when the case says so AND the customer was shown a proposal to press it on. Then
+pressed only when the case says so AND the customer was shown a proposal to press it on: the
+pending one, or with `press: first_shown` the first one shown once a later one replaced it (D23);
+when no later one did, nothing is pressed and the run ends with a `PressError` in `harness_error`,
+because the case could not make the press it is about. Then
 the verifier process judges everything shown, and the final state is read back for the grader:
 the orders, the handoffs, the conversation's stored proposals, the list prices and the valid
 delivery date at `now` (management's own rule, through its facade), and every amount in a
@@ -17,7 +20,7 @@ with the error in `harness_error`, and the caller fails the run (B91). Only an e
 before the verdict leaves no state.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Protocol, runtime_checkable
@@ -31,7 +34,7 @@ from dale.apps.verifier_runner import VerifierVerdict, run_verifier
 from dale.brain.application.model_port import ModelPort, ModelRequest, ModelResponse, Usage
 from dale.brain.infrastructure import tables as brain
 from dale.brain.infrastructure.reset import reset_brain
-from dale.channels.terminal.pending import Pending
+from dale.channels.common.pending import Pending
 from dale.erp_sim.infrastructure import tables as erp
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.infrastructure.seed import change_price, el_hornero, reseed
@@ -88,7 +91,8 @@ class RunState:
     verdict: VerifierVerdict
     usage: tuple[Usage, ...]  # one per model call
     failures: tuple[ErrorCode, ...]  # the code of each turn that did not end in an answer
-    harness_error: Exception | None = None  # `finish` failed: the run must fail, the rest stands
+    harness_error: Exception | None = None  # the run must fail, the rest stands: `finish` failed,
+    # or the case's `first_shown` press found no replaced proposal (PressError)
     # With a price change: the list prices (by product id) as the customer saw them. Else empty.
     prices_before_press: Mapping[UUID, int] = field(default_factory=dict)
     tool_amounts: frozenset[int] = frozenset()  # cents named in any tool result the model got
@@ -138,10 +142,14 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
     if change := case.price_change:  # after the last turn, before the press (D4)
         before = _list_prices(env.app, case)[1]
         change_price(env.app, change.sku, change.pesos, case.now)
-    if case.press_dale and pending.proposal_id is not None:
-        press = KeyPress(Key.DALE, pending.proposal_id)
-        outcome = backend.confirm(press)
-        shown.append(outcome)
+    target, press_error = None, None
+    if case.press_dale:
+        try:
+            target = press_target(case, shown, pending)
+        except PressError as error:  # the case's stale press cannot be made: not the model's fault
+            press_error = error
+    if target is not None:
+        shown.append(backend.confirm(KeyPress(Key.DALE, target)))
     verdict = backend.verify(tuple(shown))
     turns, session = backend.turns, backend.session
     erp_now = SqlErpFacade(env.app, case.clock()).check_delivery(
@@ -156,6 +164,7 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
         failures=tuple(turn.failure for turn in turns if turn.failure is not None),
         prices_before_press=before,
         tool_amounts=frozenset(seen),
+        harness_error=press_error,
     )
     for one in built:
         if isinstance(one, Finishes):
@@ -164,6 +173,22 @@ def run_case(case: Case, env: Env, model: Callable[[], ModelPort]) -> RunState:
             except Exception as error:
                 state = replace(state, harness_error=state.harness_error or error)
     return state
+
+
+class PressError(Exception):
+    """The case's press cannot be made as the case says: a harness error, not the model's."""
+
+
+def press_target(case: Case, shown: Sequence[ShownEvent], pending: Pending) -> ProposalId | None:
+    """The proposal the Dale key presses: the pending one (None: nothing to press on), or with
+    `press: first_shown` the first summary shown in the run, which must no longer be pending:
+    a stale press needs a proposal a later one replaced, so anything else is a `PressError`."""
+    if case.press == "pending":
+        return pending.proposal_id
+    first = next((e.proposal_id for e in shown if isinstance(e, ProposalSummary)), None)
+    if first is None or first == pending.proposal_id:
+        raise PressError(f"{case.id}: press first_shown needs a proposal a later one replaced")
+    return first
 
 
 def _database(

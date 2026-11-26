@@ -1,0 +1,14 @@
+# R7, later cutoff, S13.5. Wednesday 17:30 is before Thursday's cutoff (18:00), but the customer
+# asks to stretch it to 20:00: an exception, so a handoff. No product, no proposal.
+id: gauchada-later-cutoff
+suite: gauchadas
+now: 2026-11-18T17:30:00-03:00
+customer: C-001
+message: Hoy cierro tarde, ¿me estirás el horario de corte hasta las 20 así el pedido sale el jueves igual?
+press_dale: true
+negative_of: cutoff-met-delivers-thursday
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

@@ -11,6 +11,10 @@ model before `message`, so a recording holds the steps of every turn (the step c
 across the whole run). `seed_overrides` goes to the seed as it is, except that a
 `cutoff_time` given as "HH:MM" text becomes a time.
 
+`press` says which shown proposal the Dale key presses (D23): `pending`, the one the customer
+last saw (the default), or `first_shown`, the first summary of the run, which a later one may
+have replaced, so the press is stale (S13.7). Typed "dale" needs no field: it is a message.
+
 `price_change` moves one list price after the last turn and before the press (D4). `negative_of`
 names the positive case (one that expects an order) a negative case answers (R13); the suite's
 lint checks that every positive has one, since that needs every file at once.
@@ -125,6 +129,7 @@ class Case(_Model):
     history: tuple[str, ...] = ()
     message: str = Field(min_length=1)
     press_dale: bool
+    press: Literal["pending", "first_shown"] = "pending"  # which proposal the key presses (D23)
     expect: Expect
     price_change: PriceChange | None = None
     negative_of: str | None = Field(default=None, pattern=ID)  # the positive case it answers
@@ -134,6 +139,8 @@ class Case(_Model):
     def _consistent(self) -> Self:
         if self.price_change and not self.press_dale:
             raise ValueError("a price change matters only to a press (press_dale: true)")
+        if self.press != "pending" and not self.press_dale:
+            raise ValueError("press: first_shown matters only to a press (press_dale: true)")
         if self.negative_of == self.id:
             raise ValueError("a case cannot be its own negative")
         return self

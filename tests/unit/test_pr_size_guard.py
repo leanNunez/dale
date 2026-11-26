@@ -23,6 +23,34 @@ def test_counts_additions_and_deletions_but_not_excluded_paths_or_binaries() -> 
     assert guard.count_changed_lines(rows) == 18
 
 
+def test_generated_contract_files_are_excluded_but_samples_and_lookalikes_count() -> None:
+    rows = numstat(
+        ("500", "0", "contracts/v1/send_message.schema.json"),
+        ("500", "0", "contracts/v2/nested/x.schema.json"),
+        ("500", "0", "contracts/v1/components.json"),
+        ("4", "0", "contracts/v1/samples/send_message.json"),
+        ("3", "0", "contracts/v1/samples/odd.schema.json"),  # a sample is authored, never generated
+        ("2", "0", "contracts/v2/components.json"),  # only v1's components map is generated
+        ("1", "0", "docs/contracts/x.schema.json"),  # not under the top-level contracts/
+    )
+    assert guard.count_changed_lines(rows) == 10
+
+
+def test_the_page_lockfile_and_generated_types_are_excluded_but_the_rest_counts() -> None:
+    rows = numstat(
+        ("900", "40", "apps/web/package-lock.json"),
+        ("300", "0", "apps/web/src/contract/generated/WebEvent.d.ts"),
+        ("300", "0", "apps/web/src/contract/generated/nested/index.ts"),
+        ("5", "1", "apps/web/package.json"),  # a dependency change is always reviewed
+        ("4", "0", "apps/web/src/contract/index.ts"),  # authored, beside the generated folder
+        ("3", "0", "apps/web/src/contract/generated.ts"),  # a lookalike, not the folder
+        ("2", "0", "apps/web/src/api/package-lock.json"),  # only the page's own lockfile
+        ("1", "0", "package-lock.json"),
+        ("2", "0", "docs/apps/web/package-lock.json"),
+    )
+    assert guard.count_changed_lines(rows) == 18
+
+
 @pytest.mark.parametrize("line", ["garbage", "1\t2", "x\t2\tsrc/a.py", "-\t2\tsrc/a.py"])
 def test_malformed_numstat_line_fails_closed(line: str) -> None:
     with pytest.raises(ValueError, match="malformed"):

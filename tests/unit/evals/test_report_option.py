@@ -11,10 +11,16 @@ from typing import Any
 import pytest
 
 import evals.conftest as hooks
-from evals.harness import report_files
+from dale.brain.application.model_port import MODEL_SETTINGS
+from evals.harness import pricing, report_files
 from evals.harness.metrics import RunRecord
+from evals.harness.model import prompt_fingerprint
+from evals.harness.models import DEFAULT_MODEL, SONNET, settings_for
+from evals.harness.pricing import load_pricing
+from evals.harness.report import build_report
 
 pytest_plugins = ["pytester"]
+STEM = f"v9.9-{MODEL_SETTINGS.model}"  # a report is named for its version and its model (S14.3)
 FIXTURE_CASES = Path(__file__).parents[2] / "fixtures" / "evals" / "cases"
 INNER = """
 import pytest
@@ -62,9 +68,9 @@ def test_a_complete_session_writes_the_report_from_every_run(
 ) -> None:
     result = run(inner(pytester), "--report", "v9.9")
     result.assert_outcomes(passed=6)
-    result.stdout.fnmatch_lines(["report written: *v9.9.json, *v9.9.md"])
-    assert reports(tmp_path) == ["v9.9.json", "v9.9.md"] and result.ret == pytest.ExitCode.OK
-    text = (tmp_path / "reports" / "v9.9.json").read_text()
+    result.stdout.fnmatch_lines([f"report written: *{STEM}.json, *{STEM}.md"])
+    assert reports(tmp_path) == [f"{STEM}.json", f"{STEM}.md"] and result.ret == pytest.ExitCode.OK
+    text = (tmp_path / "reports" / f"{STEM}.json").read_text()
     assert '"mode": "replay"' in text and '"verified": 3' in text
 
 
@@ -75,7 +81,7 @@ def test_the_commit_is_the_one_at_session_start_not_dirtied_by_what_the_run_writ
         ["git", "rev-parse", "HEAD"], cwd=inner(pytester).path, capture_output=True, text=True
     ).stdout.strip()
     run(pytester, "--report", "v9.9")
-    assert f'"commit": "{sha}"' in (tmp_path / "reports" / "v9.9.json").read_text()
+    assert f'"commit": "{sha}"' in (tmp_path / "reports" / f"{STEM}.json").read_text()
     assert (pytester.path / "written-by-the-run.txt").exists()  # written after the label was read
 
 
@@ -94,25 +100,56 @@ def test_a_session_with_a_deselected_run_writes_no_report_and_fails(
     assert reports(tmp_path) == [] and result.ret == pytest.ExitCode.TESTS_FAILED
 
 
+UNRECORDED = """
+import pytest
+from pathlib import Path
+from evals.harness.metrics import RunRecord
+from evals.harness.model import Mode, unrecorded
+
+@pytest.mark.parametrize("case", ["fixture-order", "fixture-discount"])
+@pytest.mark.parametrize("run", [1, 2, 3])
+def test_case(case, run, run_sink, mode, request):
+    root = request.config.rootpath / "recordings"  # only fixture-order is recorded
+    if unrecorded(mode, root, case):  # what evals/test_cases.py does before any run
+        pytest.skip(f"{case}: no recording yet")
+    if run_sink:
+        run_sink.write(RunRecord(case, run, "core", True, True, "verified", 0, True, 0, ()))
+"""
+
+
+def test_a_session_that_skips_an_unrecorded_case_writes_no_report_and_fails(
+    pytester: pytest.Pytester, tmp_path: Path
+) -> None:
+    """B122: a case replay skips for want of a recording leaves its runs without a record, so the
+    report is refused, never written over the cases that did run."""
+    inner(pytester).makepyfile(test_inner=UNRECORDED)
+    (pytester.path / "recordings" / "fixture-order").mkdir(parents=True)
+    result = run(pytester, "--report", "v9.9")
+    result.assert_outcomes(passed=3, skipped=3)
+    result.stdout.fnmatch_lines(["report NOT written: *no record for*fixture-discount*"])
+    assert reports(tmp_path) == [] and result.ret == pytest.ExitCode.TESTS_FAILED
+
+
 def test_a_report_that_cannot_be_written_never_leaves_an_older_one_in_place(
     pytester: pytest.Pytester, tmp_path: Path
 ) -> None:  # B91 (2)
     (tmp_path / "reports").mkdir()
-    for name in ("v9.9.json", "v9.9.md", "v1.0.json"):
+    for name in (f"{STEM}.json", f"{STEM}.md", "v1.0.json", "v9.9-claude-sonnet-5-5.json"):
         (tmp_path / "reports" / name).write_text("Release gate: PASS")
     result = run(inner(pytester), "--report", "v9.9", "-k", "fixture-order")  # runs missing
     assert result.ret == pytest.ExitCode.TESTS_FAILED
-    assert reports(tmp_path) == ["v1.0.json"]  # the stale pair of this version is gone, no other
+    # the stale pair of this version and model is gone, no other (not another model's either)
+    assert reports(tmp_path) == ["v1.0.json", "v9.9-claude-sonnet-5-5.json"]
 
 
 def test_without_the_option_nothing_is_written_nor_deleted(
     pytester: pytest.Pytester, tmp_path: Path
 ) -> None:
     (tmp_path / "reports").mkdir()
-    (tmp_path / "reports" / "v9.9.json").write_text("old")
+    (tmp_path / "reports" / f"{STEM}.json").write_text("old")
     result = run(inner(pytester))
     result.assert_outcomes(passed=6)
-    assert reports(tmp_path) == ["v9.9.json"] and "report" not in result.stdout.str().lower()
+    assert reports(tmp_path) == [f"{STEM}.json"] and "report" not in result.stdout.str().lower()
 
 
 def test_the_sink_directory_of_the_session_is_removed_at_its_end(
@@ -136,13 +173,62 @@ def test_the_option_needs_the_cache_provider(pytester: pytest.Pytester) -> None:
     assert "cache provider" in result.stderr.str()
 
 
+def priced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *models: str) -> None:
+    """A price file with only the shipped Haiku table, copied for each model named, so a test
+    picks which models are priced whatever the shipped file holds."""
+    shipped = pricing.PRICING_FILE.read_text(encoding="utf-8")
+    haiku = shipped[shipped.index('[models."claude-haiku-5-5"]') :]
+    haiku = haiku.split('[models."claude-sonnet-5-5"]')[0]
+    text = "".join(haiku.replace("claude-haiku-5-5", model) for model in models)
+    (tmp_path / "pricing.toml").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(pricing, "PRICING_FILE", tmp_path / "pricing.toml")
+
+
+def test_each_model_writes_its_own_report_and_never_the_others(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S14.3: the same version for two compared models gives two named pairs."""
+    priced(tmp_path, monkeypatch, "claude-haiku-5-5", "claude-sonnet-5-5")
+    inner(pytester)
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        assert run(pytester, "--report", "v9.9", "--model", model).ret == 0
+    assert reports(tmp_path) == [
+        "v9.9-claude-haiku-5-5.json",
+        "v9.9-claude-haiku-5-5.md",
+        "v9.9-claude-sonnet-5-5.json",
+        "v9.9-claude-sonnet-5-5.md",
+    ]
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        text = (tmp_path / "reports" / f"v9.9-{model}.json").read_text()
+        assert f'"model": "{model}"' in text and f'"effort": "{MODEL_SETTINGS.effort}"' in text
+
+
+def test_a_model_with_no_prices_is_a_usage_error_before_any_run(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S14.4: nothing runs, so no paid run can end with a report that cannot be written."""
+    priced(tmp_path, monkeypatch, "claude-haiku-5-5")
+    result = run(inner(pytester), "--report", "v9.9", "--model", "claude-sonnet-5-5")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "no pricing table for claude-sonnet-5-5" in result.stderr.str()
+    assert reports(tmp_path) == [] and not (pytester.path / "written-by-the-run.txt").exists()
+
+
 class Terminal:
     def write_line(self, line: str) -> None:
         pass
 
 
-def fake(tmp: Path, report: str | None, worker: dict[str, Any] | None = None) -> Any:
-    options = {"--report": report, "--live": False, "--record": False}
+def fake(
+    tmp: Path,
+    report: str | None,
+    worker: dict[str, Any] | None = None,
+    model: str = DEFAULT_MODEL,
+    *,
+    live: bool = False,
+    record: bool = False,
+) -> Any:
+    options = {"--report": report, "--live": live, "--record": record, "--model": model}
     config = SimpleNamespace(
         getoption=options.__getitem__,
         cache=SimpleNamespace(mkdir=lambda name: tmp / name),
@@ -186,10 +272,99 @@ def test_a_worker_neither_deletes_a_report_nor_writes_one(tmp_path: Path) -> Non
         for n in (1, 2, 3):
             sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
     (tmp_path / "reports").mkdir()
-    (tmp_path / "reports" / "v9.9.md").write_text("kept")
+    (tmp_path / "reports" / f"{STEM}.md").write_text("kept")
     worker = fake(
         tmp_path, "v9.9", {hooks.WORKER_KEY: {"id": "x", "mode": "replay", "fingerprint": "f"}}
     )
     hooks.pytest_sessionstart(worker)
     hooks.pytest_sessionfinish(worker)
-    assert reports(tmp_path) == ["v9.9.md"]
+    assert reports(tmp_path) == [f"{STEM}.md"]
+
+
+@pytest.mark.parametrize(
+    ("live", "record", "recording"),
+    [(False, False, False), (True, False, False), (True, True, True)],
+)
+def test_only_a_record_run_reads_the_commit_without_the_recordings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live: bool, record: bool, recording: bool
+) -> None:
+    """Both models record on one commit: the second record run is not dirtied by the first
+    one's recordings. Replay and live keep every change outside the reports."""
+    asked: list[bool] = []
+
+    def label(root: Path, *, recording: bool = False) -> str:
+        asked.append(recording)
+        return "a" * 40
+
+    monkeypatch.setattr(hooks, "commit_label", label)
+    session = fake(tmp_path, "v9.9", live=live, record=record)
+    hooks.pytest_sessionstart(session)
+    assert asked == [recording] and session.config.stash[hooks.COMMIT] == "a" * 40
+
+
+def test_the_report_is_built_for_the_model_the_session_ran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B109: a session for another model never writes a report that names the default one. The
+    prices are stood in for here, since only the shipped model has a table in this file."""
+    written: list[dict[str, Any]] = []
+
+    def build(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return build_report(
+            *args, pricing=replace(load_pricing(DEFAULT_MODEL), model=SONNET), **kwargs
+        )
+
+    def write(report: dict[str, Any]) -> tuple[Path, Path]:
+        written.append(report)
+        return tmp_path / "a.json", tmp_path / "a.md"
+
+    monkeypatch.setattr(hooks, "build_report", build)
+    monkeypatch.setattr(hooks, "write_report", write)
+    session = fake(tmp_path, "v9.9", model=SONNET)
+    sink = hooks._sink(session.config)
+    assert sink is not None
+    for case, suite in (("fixture-order", "core"), ("fixture-discount", "gauchadas")):
+        for n in (1, 2, 3):
+            sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
+    monkeypatch.setattr(hooks, "CASES_DIR", FIXTURE_CASES)
+    session.config.stash[hooks.COMMIT] = "a" * 40
+    hooks.pytest_sessionfinish(session)
+    assert session.exitstatus == pytest.ExitCode.OK
+    assert [(r["model"], r["prompt"]["fingerprint"]) for r in written] == [
+        (SONNET, prompt_fingerprint(settings_for(SONNET)))
+    ]
+
+
+@pytest.mark.parametrize(
+    ("live", "record", "read"), [(False, False, True), (True, True, True), (True, False, False)]
+)
+def test_the_report_names_the_snapshots_of_the_model_s_recordings_unless_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live: bool, record: bool, read: bool
+) -> None:
+    """S16.7: replay and record name what the recordings hold; a live run writes none, so its
+    report names no snapshot rather than an older recording's (B114)."""
+    asked: list[tuple[Path, list[str]]] = []
+    written: list[dict[str, Any]] = []
+
+    def snapshots(root: Path, cases: Any) -> list[str]:
+        asked.append((root, sorted(cases)))
+        return ["snap-1"]
+
+    def write(report: dict[str, Any]) -> tuple[Path, Path]:
+        written.append(report)
+        return tmp_path / "a.json", tmp_path / "a.md"
+
+    monkeypatch.setattr(hooks, "snapshot_ids", snapshots)
+    monkeypatch.setattr(hooks, "write_report", write)
+    session = fake(tmp_path, "v9.9", live=live, record=record)
+    sink = hooks._sink(session.config)
+    assert sink is not None
+    for case, suite in (("fixture-order", "core"), ("fixture-discount", "gauchadas")):
+        for n in (1, 2, 3):
+            sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
+    session.config.stash[hooks.COMMIT] = "a" * 40
+    hooks.pytest_sessionfinish(session)
+    assert session.exitstatus == pytest.ExitCode.OK
+    root = Path(hooks.__file__).parent / "recordings" / DEFAULT_MODEL
+    assert asked == ([(root, ["fixture-discount", "fixture-order"])] if read else [])
+    assert [r["snapshot_ids"] for r in written] == [["snap-1"] if read else []]

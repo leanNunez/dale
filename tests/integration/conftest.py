@@ -22,11 +22,8 @@ def app(engines: dict[str, Engine]) -> Iterator[Engine]:
             conn.execute(sa.delete(table))
 
 
-@pytest.fixture
-def db(app: Engine) -> Iterator[Engine]:
-    """The seeded app engine; every brain row (the brain's reset, B24) and every order is
-    removed afterwards, so a reused proposal id finds no stored order."""
-    yield app
+def clear_conversations(app: Engine) -> None:
+    """Removes every brain row (the brain's reset, B24) and every order."""
     with app.begin() as conn:
         for table in (
             *reversed(brain.METADATA.sorted_tables),
@@ -34,3 +31,11 @@ def db(app: Engine) -> Iterator[Engine]:
             erp.sales_order,
         ):
             conn.execute(sa.delete(table))
+
+
+@pytest.fixture
+def db(app: Engine) -> Iterator[Engine]:
+    """The seeded app engine, cleared of conversations and orders afterwards, so a reused
+    proposal id finds no stored order."""
+    yield app
+    clear_conversations(app)

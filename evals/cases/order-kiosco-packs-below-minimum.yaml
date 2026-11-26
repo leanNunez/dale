@@ -1,0 +1,14 @@
+# S2.1 negative. 2 x 6200 + 1 x 15900 = 28300 < 30000 (Centro): no proposal, no handoff.
+id: order-kiosco-packs-below-minimum
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-002
+message: Mandame 2 packs de agua sin gas y 1 pack de cerveza
+press_dale: true
+negative_of: order-kiosco-packs
+premise: {kind: below_minimum, lines: [{sku: AGUA-6X2, qty: 2}, {sku: CERV-12, qty: 1}], total_pesos: 28300}
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [AssistantText], excludes: [ProposalSummary, OrderConfirmed]}

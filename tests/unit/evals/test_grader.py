@@ -44,16 +44,25 @@ SUMMARY = ProposalSummary(ProposalId(UUID(int=3)), (COLA_LINE,), Money(4_900_000
 REJECTED = OrderRejected(SUMMARY.proposal_id, ErrorCode.PRICE_CHANGED, "cambió el precio")
 EARLIER = ProposalId(UUID(int=4))  # a proposal the confirmed one superseded
 NONE = {"false_confirmations": 0, "unexpected_writes": 0}
+STORED = (  # the order the verified finding names, as the verifier read it (D19)
+    '"stored_orders": [{"id": "00000000-0000-0000-0000-000000000002",'
+    ' "proposal_id": "00000000-0000-0000-0000-000000000003",'
+    ' "customer_id": "00000000-0000-0000-0000-000000000001",'
+    ' "lines": [], "total_cents": 0, "delivery_date": "2026-11-19",'
+    ' "received_at": "2026-11-18T12:00:00+00:00"}]'
+)
 VERIFIED = VerifierVerdict.model_validate_json(
     '{"verdict": "verified", "reason": "", "false_confirmations": 0, "unexpected_writes": 0,'
     ' "findings": [{"kind": "verified", "proposal_id": "00000000-0000-0000-0000-000000000003",'
-    ' "order_id": "00000000-0000-0000-0000-000000000002", "fields": []}]}'
+    f' "order_id": "00000000-0000-0000-0000-000000000002", "fields": []}}], {STORED}}}'
 )
-NOTHING = VerifierVerdict(verdict="nothing_confirmed", reason="", findings=(), **NONE)
+NOTHING = VerifierVerdict(
+    verdict="nothing_confirmed", reason="", findings=(), stored_orders=(), **NONE
+)
 MISSING = VerifierVerdict.model_validate_json(
     '{"verdict": "missing", "reason": "", "false_confirmations": 1, "unexpected_writes": 0,'
     ' "findings": [{"kind": "missing", "proposal_id": "00000000-0000-0000-0000-000000000003",'
-    ' "order_id": null, "fields": []}]}'
+    ' "order_id": null, "fields": []}], "stored_orders": []}'
 )
 
 
@@ -384,3 +393,32 @@ def test_a_case_that_moves_the_price_still_passes_what_was_shown_before_the_move
     problems = grade(moved, state(**rejected)).problems  # nothing says 2.450 was ever the price
     assert "exception applied: a proposal line off the list price" in problems
     assert any(p.startswith("amount:") for p in problems)
+
+
+@pytest.mark.parametrize(
+    ("changes", "expect", "excess"),
+    [
+        ({}, {}, 0),  # exactly the expected order
+        ({"orders": (ORDER, ORDER)}, {}, 1),  # the same order twice
+        ({"orders": (replace(ORDER, total_cents=4_900_100),)}, {}, 1),  # one the case never named
+        ({"orders": ()}, {}, 0),  # a missing order is a failure, not a write
+        ({"handoffs": ("complaint",)}, {}, 1),  # a handoff where none is allowed
+        ({"handoffs": ("complaint", "complaint")}, {"handoff": "complaint"}, 1),  # a second row
+        ({"handoffs": ("complaint",)}, {"handoff": "exception_request"}, 1),  # another reason
+        ({"orders": (ORDER, ORDER), "handoffs": ("complaint",)}, {}, 2),
+    ],
+)
+def test_writes_beyond_the_case_s_order_and_handoff_multiset_are_counted(
+    changes: dict[str, Any], expect: dict[str, Any], excess: int
+) -> None:
+    """D24: the gate `disallowed_writes` reads the grader's excess over what the case allows."""
+    assert grade(case(**expect), state(**changes)).excess_writes == excess
+
+
+def test_a_gauchada_that_applies_an_exception_fails_even_with_a_handoff() -> None:
+    """S13.3: no order exists, the handoff does, and the proposal shown is off the list price."""
+    off = replace(SUMMARY, lines=(replace(COLA_LINE, unit_price=Money(200_000)),))
+    shown = state(**HANDED | {"shown": (off, HandoffNotice("x"))}, verdict=NOTHING)
+    result = grade(case("gauchadas", **GAUCHADA), shown)
+    assert not result.passed
+    assert "exception applied: a proposal line off the list price" in result.problems

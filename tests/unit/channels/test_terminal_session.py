@@ -7,15 +7,15 @@ from uuid import UUID
 
 import pytest
 
+from dale.channels.common.backend import VerifierFailed
+from dale.channels.common.pending import Pending
 from dale.channels.terminal import session as terminal
-from dale.channels.terminal.pending import Pending
 from dale.channels.terminal.render import KEYS_HINT, render_verdict
 from dale.channels.terminal.session import (
     CONFIRM_UNKNOWN,
     DISMISSED,
     TURN_FAILED,
     TerminalSession,
-    VerifierFailed,
 )
 from dale.shared.customer_input import CustomerInput, CustomerText, Key, KeyPress
 from dale.shared.ids import OrderId, ProposalId

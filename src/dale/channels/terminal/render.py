@@ -9,13 +9,13 @@ a line of it into one that looks like code's."""
 import shutil
 import unicodedata
 from collections.abc import Callable
-from typing import Protocol
 
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.output import Output
 from prompt_toolkit.utils import get_cwidth
 
+from dale.channels.common.backend import Verdict
 from dale.shared.money import pesos
 from dale.shared.shown_events import (
     AssistantText,
@@ -31,19 +31,6 @@ WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "do
 KEYS_HINT = "F2: confirmar la propuesta. F3: descartarla."
 MODEL_PREFIX = "Dale │ "
 FALLBACK_COLUMNS, NARROWEST = 80, 20
-
-
-class Verdict(Protocol):
-    """The verifier's verdict as the terminal reads it (the runner's `VerifierVerdict`)."""
-
-    @property
-    def verdict(self) -> str: ...
-    @property
-    def reason(self) -> str: ...
-    @property
-    def false_confirmations(self) -> int: ...
-    @property
-    def unexpected_writes(self) -> int: ...
 
 
 def plain_writer(output: Output | None = None) -> Callable[[str], None]:

@@ -130,11 +130,13 @@ INPUT_MODELS: dict[str, type[BaseModel]] = {
 
 @dataclass(frozen=True, slots=True)
 class ToolOutcome:
-    """The tool result for the model (JSON text) and what code shows the customer."""
+    """The tool result for the model (JSON text) and what code shows the customer. `code` is
+    for the tool trace only (D18): the model reads `content`, which already carries it."""
 
     content: str
     is_error: bool = False
     shown: tuple[ShownEvent, ...] = ()
+    code: ErrorCode | None = None  # set only by `_error`
 
 
 def _ok(payload: dict[str, Any], *shown: ShownEvent) -> ToolOutcome:
@@ -144,7 +146,7 @@ def _ok(payload: dict[str, Any], *shown: ShownEvent) -> ToolOutcome:
 def _error(code: ErrorCode, **amounts: Money) -> ToolOutcome:
     payload = {"code": code.value, "message": message_for(code)}
     payload |= {name: pesos(amount) for name, amount in amounts.items()}
-    return ToolOutcome(json.dumps(payload, ensure_ascii=False), True)
+    return ToolOutcome(json.dumps(payload, ensure_ascii=False), True, code=code)
 
 
 def _unavailable(tool: str, company: CompanyId, error: Exception) -> ToolOutcome:

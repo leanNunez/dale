@@ -23,6 +23,8 @@ from dale.brain.application.model_port import (
 from dale.brain.application.prompt import fingerprint, system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
 from evals.conftest import lifts_host_restriction
+from evals.harness.case import load_cases
+from evals.harness.collect import CASES_DIR
 from evals.harness.model import (
     REPO_ROOT,
     Mode,
@@ -33,14 +35,23 @@ from evals.harness.model import (
     messages_digest,
     mode_from_flags,
     model_factory,
+    orphan_recordings,
+    prompt_fingerprint,
     recording_path,
+    recordings_dir,
     request_fingerprint,
     shown_path,
+    snapshot_ids,
+    unrecorded,
 )
+from evals.harness.models import COMPARED
 from tests.unit.brain.test_model_port import SEARCH, message
 
 REQUEST = ModelRequest(system_blocks("Distribuidora El Hornero"), TOOL_SCHEMAS, ({"role": "user"},))
 FIRST, SECOND = message(SEARCH), message({"type": "text", "text": "Listo."}, stop="end_turn")
+# S11.5, design §5 check 1: the prompt the v0.1 recordings were made against, pinned from slice 2
+# until the comparison slice. The tool trace and the verdict evidence must not move it.
+V01_FINGERPRINT = "d7db359bbb5c67a09edcef0a370c75531554e5e500de0124b2d3e36db3dce4c9"
 
 
 def write(root: Path, steps: list[Any], case: str = "a", run: int = 1, **changes: Any) -> Path:
@@ -66,6 +77,10 @@ def test_the_fingerprint_changes_with_the_prompt_the_tools_or_a_setting() -> Non
     assert request_fingerprint(REQUEST, replace(MODEL_SETTINGS, effort="high")) != base
     assert request_fingerprint(REQUEST, replace(MODEL_SETTINGS, model="claude-other")) != base
     assert request_fingerprint(REQUEST) == fingerprint(MODEL_SETTINGS, REQUEST.system, TOOL_SCHEMAS)
+
+
+def test_the_prompt_fingerprint_is_still_the_one_the_v01_recordings_hold() -> None:
+    assert prompt_fingerprint() == V01_FINGERPRINT
 
 
 def test_replay_answers_each_call_from_its_step_in_order(tmp_path: Path) -> None:
@@ -228,19 +243,20 @@ def test_replay_never_builds_the_live_model(tmp_path: Path, built: type[Built]) 
     assert built.calls == []
 
 
-def test_live_builds_the_adapter_with_no_arguments_and_writes_nothing(
+def test_live_builds_the_adapter_with_the_settings_only_and_writes_nothing(
     tmp_path: Path, built: type[Built]
 ) -> None:
     model_factory(Mode.LIVE, tmp_path, "a", 1)().complete(REQUEST)
-    assert built.calls == [((), {})] and list(tmp_path.iterdir()) == []
+    assert built.calls == [((), {"settings": MODEL_SETTINGS})] and list(tmp_path.iterdir()) == []
 
 
-def test_record_builds_the_adapter_with_no_arguments_and_writes_the_file(
+def test_record_builds_the_adapter_with_the_settings_only_and_writes_the_file(
     tmp_path: Path, built: type[Built]
 ) -> None:
-    model = model_factory(Mode.RECORD, tmp_path, "a", 1)()
+    other = replace(MODEL_SETTINGS, model="claude-sonnet-5-5")
+    model = model_factory(Mode.RECORD, tmp_path, "a", 1, other)()
     model.complete(REQUEST)
-    assert built.calls == [((), {})] and isinstance(model, RecordingModel)
+    assert built.calls == [((), {"settings": other})] and isinstance(model, RecordingModel)
     model.finish()
     assert json.loads(recording_path(tmp_path, "a", 1).read_text())["message"] == SECOND
 
@@ -277,7 +293,10 @@ def pytest_sessionstart(session):
 """
 
 
-@pytest.mark.parametrize(("flags", "lifted"), [([], False), (["--live"], True)])
+@pytest.mark.parametrize(
+    ("flags", "lifted"),
+    [([], False), (["--model", "claude-sonnet-5-5"], False), (["--live"], True)],
+)
 def test_pytest_socket_reads_the_lifted_option_and_replay_keeps_it_off(
     tmp_path: Path, flags: list[str], lifted: bool
 ) -> None:
@@ -322,3 +341,43 @@ def test_a_record_error_and_a_replay_error_name_their_file_without_an_absolute_p
         ReplayModel(tmp_path, "a", 1).complete(REQUEST)
     for error in (record_error.value, replay_error.value):
         assert str(tmp_path) not in str(error) and f"{tmp_path.name}/a/run-1.jsonl" in str(error)
+
+
+def test_snapshot_ids_are_the_distinct_message_models_of_the_suite_s_recordings(
+    tmp_path: Path,
+) -> None:
+    """S16.7: the model ids the API answered with, read from the runs of the given cases."""
+    for case, run, model in (("a", 1, "m-2"), ("a", 2, "m-1"), ("b", 3, "m-2"), ("c", 1, "m-9")):
+        path = recording_path(tmp_path, case, run)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"message": {"model": model}}) + "\n" + "not json\n")
+    (tmp_path / "a" / "run-4.jsonl").write_text(json.dumps({"message": {"model": "m-4"}}))
+    assert snapshot_ids(tmp_path, ["a", "b", "missing"]) == ["m-1", "m-2"]
+
+
+def test_the_haiku_recordings_name_one_snapshot() -> None:
+    root = REPO_ROOT / "evals" / "recordings" / MODEL_SETTINGS.model
+    cases = [path.name for path in root.iterdir() if path.is_dir()]
+    assert snapshot_ids(root, cases) == [MODEL_SETTINGS.model]
+
+
+def test_only_replay_of_a_case_with_no_recording_directory_is_unrecorded(tmp_path: Path) -> None:
+    """B122: a new case waits for its record run; a recorded case with a missing run fails."""
+    write(tmp_path, [FIRST], case="recorded", run=2)
+    assert unrecorded(Mode.REPLAY, tmp_path, "new")
+    assert not unrecorded(Mode.REPLAY, tmp_path, "recorded")  # run 1 is missing: replay fails
+    assert not any(unrecorded(mode, tmp_path, "new") for mode in (Mode.LIVE, Mode.RECORD))
+
+
+@pytest.mark.parametrize("model", sorted(COMPARED))
+def test_every_recording_directory_names_a_case(model: str) -> None:
+    """B122's other direction: a renamed or removed case leaves no recording skipped forever."""
+    assert orphan_recordings(recordings_dir(model), (c.id for c in load_cases(CASES_DIR))) == []
+
+
+def test_a_recording_directory_with_no_case_is_an_orphan(tmp_path: Path) -> None:
+    write(tmp_path, [FIRST], case="kept")
+    write(tmp_path, [FIRST], case="renamed")
+    (tmp_path / "known_misses.toml").write_text("", encoding="utf-8")  # a file, not a case
+    assert orphan_recordings(tmp_path, ["kept"]) == ["renamed"]
+    assert orphan_recordings(tmp_path / "missing", ["kept"]) == []

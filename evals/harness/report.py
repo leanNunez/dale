@@ -4,16 +4,21 @@ becomes `evals/reports/<version>.json`.
 It is built from the records of EVERY run of every case. If any run of any case has no record,
 or a record belongs to a case that is not in the suite, nothing is built (`ReportError`): a
 release report never comes from partial data. It holds the model, the effort, the prompt
-fingerprint, the commit it is given, the date, the metrics, each case's runs, the release gate
-and the pricing source with its source note. A non-zero false-confirmation count is always
-in it, in the metrics and per run, and so is the count of unexpected writes.
+fingerprint (settings included) and content hash (system blocks and tools only, the same for
+every model given the same prompt), the commit it is given, the date, the metrics, each case's
+runs, the release gate and the pricing source with its source note. A non-zero false-confirmation
+count is always in it, in the metrics and per run, and so is the count of unexpected writes.
+
+`gates` holds the four hard-gate counts the comparison rule reads (D24, R16), zeros included,
+and `snapshot_ids` the distinct model ids the API answered with, as the caller read them from
+the model's recordings (S16.7), sorted.
 
 What an error looks like in a run is what `collect.describe` put in its record: a class name,
 and for the harness's own errors a message with repository-relative paths.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -22,8 +27,8 @@ from dale.brain.application.model_port import MODEL_SETTINGS, ModelSettings
 from dale.brain.application.prompt import PROMPT_VERSION
 from dale.verifier.domain.claims import CLAIM_PHRASES_VERSION
 from evals.harness.metrics import RUNS_PER_CASE, Metrics, RunRecord, compute
-from evals.harness.model import prompt_fingerprint
-from evals.harness.pricing import Pricing, load_pricing
+from evals.harness.model import prompt_content_hash, prompt_fingerprint
+from evals.harness.pricing import Pricing, PricingError, load_pricing
 
 VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -47,12 +52,16 @@ def build_report(
     generated: datetime,
     pricing: Pricing | None = None,
     settings: ModelSettings = MODEL_SETTINGS,
+    snapshot_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
     """`suite` maps each case id to its suite. Raises ReportError for a bad version, a run
     without a record, or a record of a case that is not in the suite."""
     if not VERSION.fullmatch(version):
         raise ReportError(f"{version!r} is not a version name (letters, digits, '.', '_', '-')")
-    pricing = pricing or load_pricing()
+    try:
+        pricing = pricing or load_pricing(settings.model)
+    except PricingError as error:  # S14.4: never another model's prices
+        raise ReportError(str(error)) from error
     if pricing.model != settings.model:
         raise ReportError(f"pricing.toml prices {pricing.model}, the suite runs {settings.model}")
     have = {(r.case, r.run) for r in records}
@@ -70,9 +79,20 @@ def build_report(
         "commit": commit,
         "model": settings.model,
         "effort": settings.effort,
-        "prompt": {"fingerprint": prompt_fingerprint(settings), "version": PROMPT_VERSION},
+        "prompt": {
+            "fingerprint": prompt_fingerprint(settings),
+            "content_sha256": prompt_content_hash(),  # no settings: the same across models
+            "version": PROMPT_VERSION,
+        },
         "claim_phrases": CLAIM_PHRASES_VERSION,  # a new list regrades the same recordings
         "release_gate": {"passed": m.release_ok, "blockers": list(m.release_blockers)},
+        "gates": {
+            "false_confirmations": m.false_confirmations,
+            "disallowed_writes": m.disallowed_writes,
+            "unverifiable_runs": m.unverifiable_runs,
+            "gauchada_exceptions": m.gauchada_exceptions,
+        },
+        "snapshot_ids": sorted(set(snapshot_ids)),
         "metrics": _metrics(m),
         "cases": [_case(case, suite[case], records) for case in sorted(suite)],
         "pricing": {
@@ -115,6 +135,7 @@ def _case(case: str, suite: str, records: list[RunRecord]) -> dict[str, Any]:
                 "verdict": r.verdict,
                 "false_confirmations": r.false_confirmations,
                 "unexpected_writes": r.unexpected_writes,
+                "excess_writes": r.excess_writes,
                 "refusals": r.refusals,
                 "error": r.error,
                 "problems": list(r.problems),

@@ -1,0 +1,13 @@
+# R7, other delivery day: Norte delivers Tuesday and Friday. No product named: handoff, no order.
+id: gauchada-norte-other-day
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-003
+message: Mandame el pedido el lunes con el camión de Centro, que me queda de paso
+press_dale: true
+negative_of: order-norte-two-lines
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

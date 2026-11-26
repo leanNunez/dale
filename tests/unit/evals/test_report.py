@@ -11,12 +11,17 @@ from typing import Any
 import pytest
 
 from dale.brain.application.model_port import MODEL_SETTINGS, Usage
+from dale.brain.application.prompt import system_blocks
+from dale.brain.application.tools import TOOL_SCHEMAS
 from dale.verifier.domain.claims import CLAIM_PHRASES_VERSION
 from evals.harness.metrics import RunRecord
-from evals.harness.model import prompt_fingerprint
+from evals.harness.model import content_hash, prompt_content_hash, prompt_fingerprint
+from evals.harness.models import HAIKU, SONNET, settings_for
+from evals.harness.pricing import load_pricing
 from evals.harness.report import ReportError, build_report
 
 RECORDINGS = Path(__file__).parents[2] / "fixtures" / "evals" / "recordings"
+PRICING = load_pricing(MODEL_SETTINGS.model)
 SUITE = {"order": "core", "discount": "gauchadas"}
 NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 
@@ -161,5 +166,73 @@ def test_pricing_for_another_model_is_refused() -> None:
             mode="replay",
             commit="x",
             generated=NOW,
+            pricing=load_pricing(MODEL_SETTINGS.model),
             settings=replace(MODEL_SETTINGS, model="claude-other"),
         )
+
+
+def test_a_model_with_no_pricing_table_fails_the_report_instead_of_borrowing_prices() -> None:
+    """S14.4: no other model's prices stand in, whatever the usage in the records."""
+    with pytest.raises(ReportError, match="no pricing table for claude-other"):
+        build_report(
+            [*runs("order"), *runs("discount")],
+            SUITE,
+            version="v",
+            mode="replay",
+            commit="x",
+            generated=NOW,
+            settings=replace(MODEL_SETTINGS, model="claude-other"),
+        )
+
+
+def test_the_report_names_its_model_and_prices_it_with_that_models_table() -> None:
+    r = report()
+    assert r["model"] == r["pricing"]["model"] == MODEL_SETTINGS.model
+
+
+def test_two_models_have_different_fingerprints_and_the_same_prompt_content_hash() -> None:
+    """B111: the fingerprint hashes the settings, so it differs by model; the content hash is
+    the system blocks and tools alone, so two reports can show they ran the same prompt."""
+    haiku, sonnet = (
+        report(settings=settings_for(model), pricing=replace(PRICING, model=model))["prompt"]
+        for model in (HAIKU, SONNET)
+    )
+    assert haiku["fingerprint"] != sonnet["fingerprint"]
+    assert haiku["content_sha256"] == sonnet["content_sha256"] == prompt_content_hash()
+
+
+def test_the_content_hash_follows_the_system_blocks_and_the_tools_only() -> None:
+    system, tools = system_blocks("Distribuidora El Hornero"), TOOL_SCHEMAS
+    assert content_hash(system, tools) == prompt_content_hash()
+    schema = {**tools[0], "description": "changed"}
+    assert content_hash(system, [schema, *tools[1:]]) != prompt_content_hash()
+    assert content_hash(system[:-1], tools) != prompt_content_hash()
+
+
+def test_the_report_holds_the_hard_gate_counts_of_the_comparison_rule() -> None:
+    """D24, R16: the four counts the comparison reads, zeros included."""
+    assert report()["gates"] == {
+        "false_confirmations": 0,
+        "disallowed_writes": 0,
+        "unverifiable_runs": 0,
+        "gauchada_exceptions": 0,
+    }
+    applied = ("exception applied: a price other than the list price",)
+    odd = runs("discount", passed=False, verdict="unverifiable", excess_writes=1, problems=applied)
+    r = report([*runs("order"), *[replace(x, unexpected_writes=1) for x in odd]])
+    assert r["gates"] == {
+        "false_confirmations": 0,
+        "disallowed_writes": 6,
+        "unverifiable_runs": 3,
+        "gauchada_exceptions": 3,
+    }
+    assert [x["excess_writes"] for x in r["cases"][0]["runs"]] == [1, 1, 1]
+
+
+def test_the_report_names_the_distinct_snapshot_ids_it_is_given_sorted() -> None:
+    assert report()["snapshot_ids"] == []
+    ids = ["claude-haiku-5-5-20261101", "claude-haiku-5-5", "claude-haiku-5-5"]
+    assert report(snapshot_ids=ids)["snapshot_ids"] == [
+        "claude-haiku-5-5",
+        "claude-haiku-5-5-20261101",
+    ]

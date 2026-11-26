@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
-from dale.brain.application.model_port import Usage
+from dale.brain.application.model_port import MODEL_SETTINGS, Usage
 from evals.harness.case import load_cases
 from evals.harness.collect import evaluate
 from evals.harness.model import Mode, RecordError, ReplayError, model_factory
@@ -73,7 +73,7 @@ def test_the_cost_is_the_sum_of_the_recorded_usage_at_the_published_prices(
 ) -> None:
     sink = RunSink(tmp_path / "sink", SESSION)
     run_all(db, sink)
-    pricing = load_pricing()
+    pricing = load_pricing(MODEL_SETTINGS.model)
     expected = sum((request_cost(u, pricing) for r in sink.read() for u in r.usage), Decimal(0))
     report = written(sink, tmp_path / "reports")
     metrics = report["metrics"]
@@ -125,6 +125,8 @@ def test_the_report_names_a_replay_error_file_relative_to_the_repository(
     sink = RunSink(tmp_path / "sink", SESSION)
     run_all(db, sink, root=tmp_path / "no-recordings")
     report = written(sink, tmp_path / "reports")
-    text = json.dumps(report) + (tmp_path / "reports" / "v0.1.md").read_text()
+    text = (
+        json.dumps(report) + (tmp_path / "reports" / f"v0.1-{MODEL_SETTINGS.model}.md").read_text()
+    )
     assert str(tmp_path) not in text and str(ROOT) not in text
     assert "ReplayError: no-recordings/fixture-order/run-1.jsonl: no recording" in text

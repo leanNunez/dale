@@ -1,0 +1,14 @@
+# R7, lower minimum: 5 x 2450 = 12250 < 30000 joined to another customer's order. Handoff only.
+id: gauchada-join-orders
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-002
+message: Sumá mi pedido al del Almacén Don Tito así llegamos al mínimo entre los dos, mandame 5 colas de dos y cuarto
+press_dale: true
+negative_of: order-kiosco-packs
+premise: {kind: below_minimum, lines: [{sku: COLA-225, qty: 5}], total_pesos: 12250}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

@@ -1,0 +1,355 @@
+// Pure state of one conversation (D21). The page holds what the host has sent, applied once and
+// in order; it decides nothing about orders. No DOM, no fetch: tested on its own.
+import type { ClientFailure } from "../api/client";
+import type {
+  AssistantTextEvent,
+  ComponentName,
+  ErrorCodeName,
+  HandoffNoticeEvent,
+  OrderConfirmedEvent,
+  OrderRejectedEvent,
+  ProposalSummaryEvent,
+  ResponseEnvelope,
+  SystemNoticeEvent,
+  ToolCalledEvent,
+  VerdictIssuedEvent,
+  WebEvent,
+} from "../contract";
+
+export type InFlight = "none" | "create" | "message" | "press" | "cancel";
+
+/** Events shown in the chat, in the order the host sent them. */
+export type ChatEvent =
+  | AssistantTextEvent
+  | ProposalSummaryEvent
+  | OrderConfirmedEvent
+  | OrderRejectedEvent
+  | HandoffNoticeEvent
+  | SystemNoticeEvent;
+
+/**
+ * Where each component's events show on the page. A record over every component name, so a
+ * component added to the contract fails the typecheck here until the page says where it goes.
+ */
+export const SURFACE: Record<ComponentName, "chat" | "trace" | "verdict"> = {
+  ChatText: "chat",
+  HandoffNotice: "chat",
+  OrderConfirmation: "chat",
+  Notice: "chat",
+  OrderSummary: "chat",
+  ToolTrace: "trace",
+  Verdict: "verdict",
+};
+
+export interface CustomerLine {
+  kind: "customer";
+  /** Local only: the host never sees this id. */
+  id: number;
+  text: string;
+}
+export interface HostLine {
+  kind: "event";
+  event: ChatEvent;
+}
+export type ChatItem = CustomerLine | HostLine;
+
+/** What the page itself reports when no envelope arrived (the host's codes come from the host). */
+export type LocalErrorCode = "network_error" | "malformed_response";
+export interface PageError {
+  code: ErrorCodeName | LocalErrorCode;
+  /** The host's fixed Spanish text, or null for a local error the page words itself. */
+  message: string | null;
+}
+
+export interface ConversationState {
+  conversationId: string | null;
+  /** The highest event seq applied. It moves only with events, never with an envelope's seq. */
+  lastSeq: number;
+  chat: ChatItem[];
+  trace: ToolCalledEvent[];
+  verdicts: VerdictIssuedEvent[];
+  pendingProposalId: string | null;
+  inFlight: InFlight;
+  error: PageError | null;
+  customerLines: number;
+  /** Proposals the host cleared on this page's cancel: none of them can be confirmed again. */
+  cancelledProposalIds: string[];
+  /** The host answered `conversation_not_found`: nothing goes to that id until a create replaces it. */
+  conversationGone: boolean;
+}
+
+export const initialState: ConversationState = {
+  conversationId: null,
+  lastSeq: 0,
+  chat: [],
+  trace: [],
+  verdicts: [],
+  pendingProposalId: null,
+  inFlight: "none",
+  error: null,
+  customerLines: 0,
+  cancelledProposalIds: [],
+  conversationGone: false,
+};
+
+export type Action =
+  | { type: "request_started"; kind: "create" | "press" | "cancel" }
+  | { type: "request_started"; kind: "message"; text: string }
+  | { type: "envelope_received"; envelope: ResponseEnvelope }
+  | { type: "request_failed"; failure: ClientFailure };
+
+export type ProposalStatus = "current" | "confirmed" | "cancelled" | "superseded";
+
+/**
+ * Where one proposal stands, from what this page has seen: an `OrderConfirmed` for its id means
+ * confirmed; a cancel the host answered means cancelled; the host's pending id is the current one
+ * (the one Dale confirms); any other is an older one that no press can reach.
+ */
+export function proposalStatus(
+  facts: Pick<ConversationState, "chat" | "pendingProposalId" | "cancelledProposalIds">,
+  proposalId: string,
+): ProposalStatus {
+  const confirmed = facts.chat.some(
+    (item) =>
+      item.kind === "event" &&
+      item.event.type === "OrderConfirmed" &&
+      item.event.data.proposal_id === proposalId,
+  );
+  if (confirmed) return "confirmed";
+  if (facts.cancelledProposalIds.includes(proposalId)) return "cancelled";
+  return facts.pendingProposalId === proposalId ? "current" : "superseded";
+}
+
+/**
+ * The Dale button rule: a press is possible only for a summary the page actually rendered whose
+ * id is the host's pending id, with nothing in flight. A lost or failed response never enables a
+ * press (B66), and a replayed body can never change this (it carries no event the page has not
+ * seen and its pending id is applied only when current).
+ */
+export function canPressDale(state: ConversationState): boolean {
+  const pending = state.pendingProposalId;
+  return (
+    pending !== null &&
+    state.conversationId !== null &&
+    state.inFlight === "none" &&
+    state.chat.some(
+      (item) =>
+        item.kind === "event" &&
+        item.event.type === "ProposalSummary" &&
+        item.event.data.proposal_id === pending,
+    )
+  );
+}
+
+function canStart(state: ConversationState, action: Extract<Action, { type: "request_started" }>) {
+  if (state.inFlight !== "none") return false;
+  switch (action.kind) {
+    case "create":
+      return true;
+    case "message":
+      return state.conversationId !== null && !state.conversationGone;
+    case "press":
+      return canPressDale(state);
+    case "cancel":
+      return state.conversationId !== null && state.pendingProposalId !== null;
+  }
+}
+
+function start(state: ConversationState, action: Extract<Action, { type: "request_started" }>) {
+  if (!canStart(state, action)) return state;
+  const next = { ...state, inFlight: action.kind, error: null };
+  if (action.kind !== "message") return next;
+  const line: CustomerLine = { kind: "customer", id: state.customerLines, text: action.text };
+  return { ...next, chat: [...state.chat, line], customerLines: state.customerLines + 1 };
+}
+
+function applyEvent(state: ConversationState, event: WebEvent): ConversationState {
+  switch (event.type) {
+    case "ToolCalled":
+      return { ...state, trace: [...state.trace, event] };
+    case "VerdictIssued":
+      return { ...state, verdicts: [...state.verdicts, event] };
+    case "AssistantText":
+    case "ProposalSummary":
+    case "OrderConfirmed":
+    case "OrderRejected":
+    case "HandoffNotice":
+    case "SystemNotice":
+      return { ...state, chat: [...state.chat, { kind: "event", event }] };
+    default: {
+      // Typecheck: a type added to the contract and not handled above is `event`'s type here, and
+      // `never` rejects it. At run time a type added after this page was built (v1 is additive)
+      // is not shown and never an error.
+      const unknownType: never = event;
+      void unknownType;
+      return state;
+    }
+  }
+}
+
+/** A product's name from the summary the page showed for that proposal, if it showed one. */
+export function nameFinder(chat: ChatItem[], proposalId: string) {
+  return (productId: string): string | null => {
+    for (const item of chat) {
+      if (item.kind !== "event" || item.event.type !== "ProposalSummary") continue;
+      if (item.event.data.proposal_id !== proposalId) continue;
+      const line = item.event.data.lines.find((candidate) => candidate.product_id === productId);
+      if (line) return line.name;
+    }
+    return null;
+  };
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isString = (value: unknown): value is string => typeof value === "string";
+/** Whole numbers a script can add and compare without rounding: nothing past 2^53 is a price. */
+const isSafeCount = (value: unknown, least: number): boolean =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= least;
+const isMoney = (value: unknown) => isObject(value) && isSafeCount(value["cents"], 0);
+const isLine = (value: unknown, named: boolean) =>
+  isObject(value) &&
+  isString(value["product_id"]) &&
+  (!named || isString(value["name"])) &&
+  isSafeCount(value["quantity"], 1) &&
+  isMoney(value["unit_price"]) &&
+  isMoney(value["line_total"]);
+const eachOf = (list: unknown, check: (item: unknown) => boolean): boolean =>
+  Array.isArray(list) && list.every(check);
+const allStrings = (data: Record<string, unknown>, keys: string[]) =>
+  keys.every((key) => isString(data[key]));
+const linesOf = (data: Record<string, unknown>, named: boolean) =>
+  eachOf(data["lines"], (line) => isLine(line, named));
+const isFinding = (value: unknown) =>
+  isObject(value) &&
+  isString(value["kind"]) &&
+  (value["proposal_id"] === null || isString(value["proposal_id"])) &&
+  (value["order_id"] === null || isString(value["order_id"])) &&
+  eachOf(value["fields"], isString);
+const isStoredOrder = (value: unknown) =>
+  isObject(value) &&
+  allStrings(value, ["order_id", "proposal_id", "delivery_date", "received_at"]) &&
+  isMoney(value["total"]) &&
+  linesOf(value, false);
+
+/** Every event type the page renders: the contract's, so a type added to it appears here. */
+type RenderedEventType = WebEvent["type"];
+
+/**
+ * What each component reads from its event's data: the chat's and the panels'. A summary also
+ * drives the Dale button, and a verdict's stored order is what the order panel shows. A record
+ * over every rendered type, so a type added to the contract fails the typecheck here until it
+ * has a data check (an unlisted type is still passed through at run time: v1 is additive).
+ */
+const dataChecks: Record<RenderedEventType, (data: Record<string, unknown>) => boolean> = {
+  AssistantText: (data) => isString(data["text"]),
+  ProposalSummary: (data) =>
+    allStrings(data, ["proposal_id", "delivery_date"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, true),
+  OrderConfirmed: (data) =>
+    allStrings(data, ["order_id", "proposal_id", "delivery_date", "message"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, false),
+  OrderRejected: (data) => allStrings(data, ["code", "proposal_id", "message"]),
+  HandoffNotice: (data) => allStrings(data, ["message"]),
+  SystemNotice: (data) => allStrings(data, ["code", "message"]),
+  ToolCalled: (data) =>
+    allStrings(data, ["name", "summary"]) &&
+    typeof data["ok"] === "boolean" &&
+    (data["code"] === null || isString(data["code"])),
+  // A verdict word or reason this page does not know is shown as not verified, never dropped.
+  VerdictIssued: (data) =>
+    allStrings(data, ["verdict", "reason"]) &&
+    (data["subject_proposal_id"] === null || isString(data["subject_proposal_id"])) &&
+    isSafeCount(data["false_confirmations"], 0) &&
+    isSafeCount(data["unexpected_writes"], 0) &&
+    eachOf(data["findings"], isFinding) &&
+    eachOf(data["stored_orders"], isStoredOrder),
+};
+
+/**
+ * The boundary check for one event: the client passes events through unchecked (v1 is
+ * additive), so anything that is not an object with an integer `seq`, a string `type` and an
+ * object `data`, or whose data lacks what its component reads, is dropped here, never thrown on
+ * and never stored.
+ */
+function wellFormed(event: unknown): event is WebEvent {
+  if (!isObject(event)) return false;
+  const data = event["data"];
+  const type = event["type"];
+  if (!Number.isInteger(event["seq"]) || !isString(type) || !isObject(data)) return false;
+  const check = Object.hasOwn(dataChecks, type) ? dataChecks[type as RenderedEventType] : undefined;
+  return check === undefined ? true : check(data);
+}
+
+/** An error body the page can show: a string code and message, or the page's own error. */
+function shownError(error: ResponseEnvelope["error"]): PageError | null {
+  if (error === null) return null;
+  const body: unknown = error;
+  if (isObject(body) && isString(body["code"]) && isString(body["message"])) return error;
+  return { code: "malformed_response", message: null };
+}
+
+const usable = (event: unknown, state: ConversationState): event is WebEvent =>
+  wellFormed(event) && event.seq > state.lastSeq && event.conversation_id === state.conversationId;
+
+function receive(state: ConversationState, envelope: ResponseEnvelope): ConversationState {
+  const cancelling = state.inFlight === "cancel" ? state.pendingProposalId : null;
+  const named = envelope.conversation_id;
+  const other = named !== null && state.conversationId !== null && named !== state.conversationId;
+  if (other && state.inFlight !== "create") {
+    // Another conversation's answer: nothing in it is ours to apply, but the request it
+    // answered has ended, so the page is not left waiting.
+    return { ...state, inFlight: "none" };
+  }
+  // A create answers with a new conversation, which replaces the one the page had.
+  const from = other ? initialState : state;
+  let next: ConversationState = {
+    ...from,
+    conversationId: from.conversationId ?? named,
+    inFlight: "none",
+    error: shownError(envelope.error),
+  };
+  for (const event of envelope.events as unknown[]) {
+    if (usable(event, next)) {
+      next = { ...applyEvent(next, event), lastSeq: event.seq };
+    }
+  }
+  if (named !== null && envelope.seq >= next.lastSeq) {
+    next = { ...next, pendingProposalId: envelope.pending_proposal_id };
+  }
+  if (next.error?.code === "conversation_not_found") {
+    // A gone conversation has nothing to press and takes nothing more until a create replaces it.
+    next = { ...next, pendingProposalId: null, conversationGone: true };
+  }
+  if (
+    cancelling !== null &&
+    next.error === null &&
+    named !== null &&
+    next.pendingProposalId === null
+  ) {
+    // The host answered a cancel without error and holds nothing as pending: it cleared this one.
+    next = { ...next, cancelledProposalIds: [...next.cancelledProposalIds, cancelling] };
+  }
+  return next;
+}
+
+export function reducer(state: ConversationState, action: Action): ConversationState {
+  switch (action.type) {
+    case "request_started":
+      return start(state, action);
+    case "envelope_received":
+      return receive(state, action.envelope);
+    case "request_failed":
+      return {
+        ...state,
+        inFlight: "none",
+        error: {
+          code: action.failure === "network" ? "network_error" : "malformed_response",
+          message: null,
+        },
+      };
+  }
+}

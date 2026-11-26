@@ -1,0 +1,1 @@
+{"v":1,"seq":2,"conversation_id":"00000000-0000-4000-8000-000000000001","type":"ProposalSummary","data":{"proposal_id":"00000000-0000-4000-8000-000000000002","lines":[{"product_id":"00000000-0000-4000-8000-000000000003","quantity":2,"unit_price":{"cents":185000},"line_total":{"cents":370000},"name":"Harina 000 x 25 kg"}],"total":{"cents":370000},"delivery_date":"2026-11-20"}}

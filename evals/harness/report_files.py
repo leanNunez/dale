@@ -1,14 +1,18 @@
-"""The release report as files (design §10; S14.1): `evals/reports/<version>.json` and `.md`.
+"""The release report as files (design §7 and §10; S14.1, S14.3): one pair per model,
+`evals/reports/<version>-<model>.json` and `.md`, so two compared models never share a file.
 
 `render_markdown` says under its title, in bold, that false confirmations were found whenever
 the count is not zero, and shows the release gate, every metric, each case's runs and the
-pricing source with its source note. A false-confirmation count of zero is printed too.
+pricing source with its source note. A false-confirmation count of zero is printed too, and so
+are the comparison rule's hard-gate counts and the model snapshot ids.
 
 `write_report` writes both files to temporary files in the report's own directory and renames
 them only when both were written, so a failed write leaves neither temporary nor a half pair.
 
 `commit_label` names the commit a report is made from; the session reads it before its first
-test, so what a run writes itself (a recording) cannot make it dirty.
+test, so what a run writes itself (a recording) cannot make it dirty. A record run also leaves
+`evals/recordings` out of its dirty check: the recordings are a record run's own output, so the
+second model records on the same clean commit after the first one rewrote its recordings.
 """
 
 import json
@@ -20,9 +24,10 @@ from typing import Any
 REPORTS_DIR = Path(__file__).parents[1] / "reports"
 
 
-def commit_label(root: Path) -> str:
-    """`git rev-parse HEAD`, plus "-dirty" when the tree has changes outside the reports, the
-    untracked files in every directory included whatever the user's git config says."""
+def commit_label(root: Path, *, recording: bool = False) -> str:
+    """`git rev-parse HEAD`, plus "-dirty" when the tree has changes outside the reports (and,
+    for a record run, outside the recordings), the untracked files in every directory included
+    whatever the user's git config says."""
     sha = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -35,6 +40,7 @@ def commit_label(root: Path) -> str:
             "--",
             ".",
             ":(exclude)evals/reports",
+            *([":(exclude)evals/recordings"] if recording else []),
         ],
         cwd=root,
         capture_output=True,
@@ -46,7 +52,7 @@ def commit_label(root: Path) -> str:
 
 def render_markdown(report: Mapping[str, Any]) -> str:
     m, gate, price = report["metrics"], report["release_gate"], report["pricing"]
-    p1, p3, prompt = m["pass_1"], m["pass_3"], report["prompt"]
+    p1, p3, prompt, gates = m["pass_1"], m["pass_3"], report["prompt"], report["gates"]
     lines = [f"# Dale eval report {report['version']}", ""]
     if m["false_confirmations"]:
         lines += [f"**FALSE CONFIRMATIONS: {m['false_confirmations']}. Do not release.**", ""]
@@ -57,8 +63,12 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"- Model: {report['model']}, effort {report['effort']}, mode {report['mode']}",
         f"- Prompt fingerprint: `{prompt['fingerprint']}` (prompt {prompt['version']})",
+        f"- Prompt content, system blocks and tools: `{prompt['content_sha256']}`",
         f"- Claim phrase list: {report['claim_phrases']}",
         f"- Commit: `{report['commit']}`, generated {report['generated']}",
+        f"- Model snapshot ids: {', '.join(report['snapshot_ids']) or 'none recorded'}",
+        "- Hard gates of the comparison rule: "
+        + ", ".join(f"{name.replace('_', ' ')} {count}" for name, count in gates.items()),
         "",
         "| Metric | Value |",
         "| --- | --- |",
@@ -104,18 +114,25 @@ def _dollars(amount: str) -> str:
     return amount if amount == "n/a" else f"${amount}"
 
 
-def report_paths(version: str, directory: Path | None = None) -> tuple[Path, Path]:
-    """The JSON and the markdown file of a version. `version` must already be a plain name."""
-    base = directory or REPORTS_DIR
-    return base / f"{version}.json", base / f"{version}.md"
+def report_paths(version: str, model: str, directory: Path | None = None) -> tuple[Path, Path]:
+    """The JSON and the markdown file of a version for one model (S14.3). `version` and `model`
+    must already be plain names: the report's version is checked by `build_report`, the model is
+    one of the compared models."""
+    base, stem = directory or REPORTS_DIR, f"{version}-{model}"
+    return base / f"{stem}.json", base / f"{stem}.md"
 
 
 def write_report(report: Mapping[str, Any], directory: Path | None = None) -> tuple[Path, Path]:
+    """Both files, or neither (`write_pair`)."""
+    finals = report_paths(report["version"], report["model"], directory)
+    texts = (json.dumps(report, indent=2, ensure_ascii=False) + "\n", render_markdown(report))
+    return write_pair(finals, texts)
+
+
+def write_pair(finals: tuple[Path, Path], texts: tuple[str, str]) -> tuple[Path, Path]:
     """Both files, or neither: each is written to a temporary file next to its place, and the two
     are renamed only after both were written. A failure before the first rename leaves what was
     there; one after it removes both files, so a pair is never half new."""
-    finals = report_paths(report["version"], directory)
-    texts = (json.dumps(report, indent=2, ensure_ascii=False) + "\n", render_markdown(report))
     finals[0].parent.mkdir(parents=True, exist_ok=True)
     temporaries = [final.with_name(f".{final.name}.tmp") for final in finals]
     renaming = False

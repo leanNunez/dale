@@ -1,0 +1,1 @@
+{"v":1,"seq":4,"conversation_id":"00000000-0000-4000-8000-000000000001","type":"OrderRejected","data":{"proposal_id":"00000000-0000-4000-8000-000000000002","code":"price_changed","message":"No se confirmó el pedido porque cambió el precio de algún producto."}}
