@@ -1,7 +1,9 @@
 """PR size guard: fail when a diff changes more than 400 authored lines.
 
 Counts ``git diff --numstat`` additions + deletions, skipping ``openspec/``, the generated
-eval files (``evals/recordings/`` and ``evals/reports/``) and ``uv.lock``. The release PR
+eval files (``evals/recordings/`` and ``evals/reports/``), ``uv.lock`` and the generated contract
+files (``contracts/**/*.schema.json`` and ``contracts/v1/components.json``; the authored samples
+under ``contracts/v1/samples/`` still count). The release PR
 (``dev`` of this same repository into ``main``) is skipped: it carries slices that were already
 reviewed. A fork's ``dev`` is not.
 """
@@ -11,14 +13,20 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import PurePosixPath
 
 LIMIT = 400
 EXCLUDED_PREFIXES = ("openspec/", "evals/recordings/", "evals/reports/")
-EXCLUDED_FILES = ("uv.lock",)
+EXCLUDED_FILES = ("uv.lock", "contracts/v1/components.json")
+
+
+def is_generated_schema(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return parts[:1] == ("contracts",) and "samples" not in parts and path.endswith(".schema.json")
 
 
 def is_excluded(path: str) -> bool:
-    return path in EXCLUDED_FILES or path.startswith(EXCLUDED_PREFIXES)
+    return path in EXCLUDED_FILES or path.startswith(EXCLUDED_PREFIXES) or is_generated_schema(path)
 
 
 def count_changed_lines(numstat: str) -> int:
