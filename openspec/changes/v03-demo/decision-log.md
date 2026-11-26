@@ -1,0 +1,34 @@
+# Decision log: v03-demo
+
+This is a dated record of the decisions made while building Dale v0.3 "Probalo vos", the public live demo. The build runs as in v0.1 and v0.2: the orchestrator takes the recommended option for product and technical defaults and records it here. Hard gates that spend money or act outside the repository wait for the user: buying a server or a domain, creating API workspaces or keys, paid live runs, merging to `main` and tags, and the public deploy.
+
+Entries marked **user** were chosen by the user. Entries marked **auto** were taken by the orchestrator under that rule.
+
+## Planning (2026-11-26)
+
+| # | Decision | Choice | Source |
+|---|---|---|---|
+| P1 | SDD session preflight | Execution mode auto, artifacts in OpenSpec and Engram, PR split asked on risk, review budget 400 changed lines | user |
+| P2 | Recordings | No video or recording of the demo (carried from v0.2 P2) | user |
+| P3 | Autonomy | The orchestrator decides defaults and launches agents with the model and effort a task needs; the session model is recommended before each new block | user |
+
+## Exploration review (2026-11-26)
+
+The exploration (`exploration.md`) was reviewed on Opus 5.5 before the proposal. Two of its recommendations contradicted rules already enforced in the repository and are replaced here (D1, D2). The user accepted the proposed values D1-D13 on 2026-11-26.
+
+| # | Date | Decision | Options | Choice | Reason | Source |
+|---|---|---|---|---|---|---|
+| D1 | 2026-11-26 | Live eval before each release | A key in a GitHub Environment runs the live eval in CI; the owner runs it locally and CI checks the committed report | The owner runs the live Haiku eval with their own `ant` profile, as in v0.2, and commits its report. The release workflow checks that the report exists, that nothing in the code or prompt path changed between its commit and the tag, and that it meets the pre-registered criterion | `scripts/check_no_api_key.sh` fails CI when any tracked file names an Anthropic key, including `secrets.anthropic…` in workflows, and live runs have always used the owner's `ant auth login` profile | user (accepted 2026-11-26) |
+| D2 | 2026-11-26 | Deploy | CI deploys over SSH with a key stored in GitHub; the owner runs a deploy script | CI builds and publishes the image to GHCR on a `v*` tag on `main`; the owner runs the deploy script from their machine | An SSH key in GitHub gives CI root access to the server, against the v0.3 goal "no risk to the owner's account" | user (accepted 2026-11-26) |
+| D3 | 2026-11-26 | Demo API credential | A key in the repo or in CI; a key only on the server | The demo workspace's key lives only on the server, in a root-only file outside the repository | Keeps the repository and CI free of keys (D1, `check_no_api_key.sh`) | user (accepted 2026-11-26) |
+| D4 | 2026-11-26 | Multi-visitor isolation | New customer per conversation; leased pool; narrower verifier scope; schema per session; one visitor at a time | A new customer per conversation, from a template customer in zone Centro, with caps on live conversations and concurrent turns and an idle TTL. Supersedes v0.2 B65 | Keeps the verifier's run scope and its unexpected-write net (v0.2 B14, B65) exactly as they are; `dale_app` already has INSERT on `erp` (`migrations/versions/0001_schemas_and_grants.py:23`) | user (accepted 2026-11-26) |
+| D5 | 2026-11-26 | Hosting | 2 GB VPS with Compose and Caddy; Fly.io; Render; Railway; Vercel + Neon | A 2 GB VPS (DigitalOcean Basic, USD 12/month, price verified 2026-11-26; Hetzner CX23 at EUR 5.99 if a plan is orderable) with Docker Compose and Caddy on the host; the app keeps the `127.0.0.1` bind | Fits the stateful single-worker host and the verifier subprocess and leaves web-channel W1 and ADR 0005 unchanged; buying it is a user gate | user (accepted 2026-11-26) |
+| D6 | 2026-11-26 | Daily spend cap enforced in code | USD 0.25, 0.50, 1.00 | USD 0.50 per day | A typical turn costs about USD 0.0005 and a worst-case turn about USD 0.05 (6 calls at 16,000 output tokens), so the cap allows hundreds of turns a day and bounds a bad day | user (accepted 2026-11-26) |
+| D7 | 2026-11-26 | Demo workspace monthly spend limit | USD 10, 15, 25 | USD 15 per month | Backstop if the code cap fails; about the daily cap times 30. Creating the workspace is a user gate | user (accepted 2026-11-26) |
+| D8 | 2026-11-26 | Transcript retention | 7, 14, 30 days | 30 days, purged nightly, with a contact for deletion requests on the privacy page | The plan keeps conversations to turn failures into cases. Visitors may type real personal data: recorded as a privacy risk, not legal advice | user (accepted 2026-11-26) |
+| D9 | 2026-11-26 | Visitor limits | Exploration defaults | 4 concurrent turns, 10 live conversations, 3 conversations per session per day, 20 customer turns per conversation, 60 turns per IP per day, 30 min idle TTL | Bounds cost and threadpool use well below the 40 anyio tokens; values are settings, revisited after launch | user (accepted 2026-11-26) |
+| D10 | 2026-11-26 | Turn deadline | 60, 90, 120 s | 90 s per turn, a setting, revisited after measuring p50/p95 | No latency data exists in the v0.2 reports; the value must stay above the verifier timeout (v0.2 B60) | user (accepted 2026-11-26) |
+| D11 | 2026-11-26 | Database reset | Nightly; per-session purge; template clone | Nightly at 04:00 America/Argentina/Buenos_Aires: pause, drain, clear the registry, reseed, resume | Never reseed under a live conversation (false `missing` verdicts); transcripts live in a `demo` schema the reseed does not touch | user (accepted 2026-11-26) |
+| D12 | 2026-11-26 | Release eval pass criterion | Exploration default | Hard gates at 0 and pass^3 at least 35 of 40, written as an ADR before the first release run | Live runs are non-deterministic (v0.2 Haiku pass^3 37/40); the criterion is fixed before the data, as ADR 0007 | user (accepted 2026-11-26) |
+| D13 | 2026-11-26 | Tool-trace panel in the public demo | Show; hide | Show | It is the point of the demo: what the agent did behind each reply | user (accepted 2026-11-26) |
+| D14 | 2026-11-26 | Demo domain | — | Pending: the user says which domain or subdomain the link uses | Needed for TLS and the CV link; buying one is a user gate | user (pending) |
