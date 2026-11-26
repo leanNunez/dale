@@ -234,7 +234,7 @@ inesperadas, corridas no verificables y corridas que lanzaron una excepción.
   registradas en el registro de decisiones y en las notas de apply-progress.
 - Un registro de decisiones anota cada elección y su motivo:
   `openspec/changes/archive/2026-11-18-v01-core/decision-log.md` (v0.1) y
-  `openspec/changes/v02-web/decision-log.md` (v0.2).
+  `openspec/changes/archive/2026-11-26-v02-web/decision-log.md` (v0.2).
 
 ## Licencia
 
