@@ -2,7 +2,8 @@
 (R13, S13.4). A run passes when its final state grades clean (the grader never reads the tool
 path). With `--report <version>` each run's record is also collected for the report (task 13).
 In replay, a run listed in the model's own `evals/recordings/<model>/known_misses.toml` must fail
-exactly as recorded and never be a false confirmation; every other run must pass."""
+exactly as recorded and never be a false confirmation; every other run must pass. A case with no
+recording directory for the model is skipped in replay, by name, until it is recorded (B122)."""
 
 import pytest
 from sqlalchemy import Engine
@@ -11,7 +12,7 @@ from dale.brain.application.model_port import ModelSettings
 from evals.harness.case import Case, load_cases
 from evals.harness.collect import CASES_DIR, evaluate
 from evals.harness.known_misses import KnownMiss, load_known_misses
-from evals.harness.model import Mode, model_factory, recordings_dir
+from evals.harness.model import Mode, model_factory, recordings_dir, unrecorded
 from evals.harness.runner import Env
 from evals.harness.sink import RunSink
 from tests.conftest import role_url
@@ -37,10 +38,11 @@ def test_case(
     model_settings: ModelSettings,
     known_misses: dict[tuple[str, int], KnownMiss],
 ) -> None:
+    root = recordings_dir(model_settings.model)
+    if unrecorded(mode, root, case.id):
+        pytest.skip(f"{case.id}: no recording for {model_settings.model} yet (record it first)")
     env = Env(engines["dale_app"], role_url("dale_verifier"))
-    factory = model_factory(
-        mode, recordings_dir(model_settings.model), case.id, run, model_settings
-    )
+    factory = model_factory(mode, root, case.id, run, model_settings)
     result = evaluate(case, run, env, factory, run_sink)
     miss = known_misses.get((case.id, run)) if mode is Mode.REPLAY else None
     if miss is None:

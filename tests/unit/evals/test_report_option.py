@@ -100,6 +100,36 @@ def test_a_session_with_a_deselected_run_writes_no_report_and_fails(
     assert reports(tmp_path) == [] and result.ret == pytest.ExitCode.TESTS_FAILED
 
 
+UNRECORDED = """
+import pytest
+from pathlib import Path
+from evals.harness.metrics import RunRecord
+from evals.harness.model import Mode, unrecorded
+
+@pytest.mark.parametrize("case", ["fixture-order", "fixture-discount"])
+@pytest.mark.parametrize("run", [1, 2, 3])
+def test_case(case, run, run_sink, mode, request):
+    root = request.config.rootpath / "recordings"  # only fixture-order is recorded
+    if unrecorded(mode, root, case):  # what evals/test_cases.py does before any run
+        pytest.skip(f"{case}: no recording yet")
+    if run_sink:
+        run_sink.write(RunRecord(case, run, "core", True, True, "verified", 0, True, 0, ()))
+"""
+
+
+def test_a_session_that_skips_an_unrecorded_case_writes_no_report_and_fails(
+    pytester: pytest.Pytester, tmp_path: Path
+) -> None:
+    """B122: a case replay skips for want of a recording leaves its runs without a record, so the
+    report is refused, never written over the cases that did run."""
+    inner(pytester).makepyfile(test_inner=UNRECORDED)
+    (pytester.path / "recordings" / "fixture-order").mkdir(parents=True)
+    result = run(pytester, "--report", "v9.9")
+    result.assert_outcomes(passed=3, skipped=3)
+    result.stdout.fnmatch_lines(["report NOT written: *no record for*fixture-discount*"])
+    assert reports(tmp_path) == [] and result.ret == pytest.ExitCode.TESTS_FAILED
+
+
 def test_a_report_that_cannot_be_written_never_leaves_an_older_one_in_place(
     pytester: pytest.Pytester, tmp_path: Path
 ) -> None:  # B91 (2)
