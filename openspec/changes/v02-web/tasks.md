@@ -48,8 +48,13 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 6e | `feat(web): add the pure conversation reducer` | `v02-slice-06e-reducer` | `v02-slice-06d-client` | 319 | 6d | no | Sonnet high |
 | 6f | `feat(web): add the boundary, pending and Dale button rules` | `v02-slice-06f-rules` | `v02-slice-06e-reducer` | 315 | 6e | no | Sonnet high |
 | 6g | `feat(web): add the conversation hook and the frontend ADR appendix` | `v02-slice-06g-hook` | `v02-slice-06f-rules` | 379 | 6f | no | Sonnet high |
-| 7a | `feat(web): add the chat pane, composer and Dale button` | `v02-slice-07a-chat` | `v02-slice-06g-hook` | 230 | 5b5, 6g | yes (button state) | Sonnet high |
-| 7b | `feat(web): add the tool, order and verdict panels` | `v02-slice-07b-panels` | `v02-slice-07a-chat` | 230 | 7a | no | Sonnet high |
+| 7a1 | `feat(web): check event fields at the reducer and record cancelled and retired state` | `v02-slice-07a1-state` | `v02-slice-06g-hook` | 377 | 6g | yes (button state) | Sonnet high |
+| 7a2 | `feat(web): add the Spanish labels and the event components` | `v02-slice-07a2-components` | `v02-slice-07a1-state` | 377 | 7a1 | yes (button state) | Sonnet high |
+| 7a3 | `feat(web): add the Dale button, pending status and chat pane` | `v02-slice-07a3-dale` | `v02-slice-07a2-components` | 344 | 7a2 | yes (button state) | Sonnet high |
+| 7a4 | `feat(web): add the composer that keeps the customer's text` | `v02-slice-07a4-composer` | `v02-slice-07a3-dale` | 236 | 7a3 | yes (button state) | Sonnet high |
+| 7a5 | `feat(web): wire the conversation container and the page layout` | `v02-slice-07a5-container` | `v02-slice-07a4-composer` | 395 | 7a4 | yes (button state) | Sonnet high |
+| 7a6 | `feat(web): add the cancel control and hold a retired conversation` | `v02-slice-07a6-cancel` | `v02-slice-07a5-container` | 355 | 7a5 | yes (button state) | Sonnet high |
+| 7b | `feat(web): add the tool, order and verdict panels` | `v02-slice-07b-panels` | `v02-slice-07a6-cancel` | 230 | 7a6 | no | Sonnet high |
 | 8a | `feat(evals): add the model dimension, per-model recordings and the evals job` | `v02-slice-08a-eval-model` | `v02-slice-07b-panels` | 300 | 1 | no | Sonnet high |
 | 8b | `feat(evals): add gate counts and the pre-registered comparison rule` | `v02-slice-08b-compare` | `v02-slice-08a-eval-model` | 300 | 8a | yes (rule) | Opus high |
 | 9 | `feat(evals): add the v0.2 case set, fresh recordings for both models and the comparison` | `v02-slice-09-cases-runs` | `v02-slice-08b-compare` | 300 | 8b, 2 | no | Sonnet high |
@@ -204,12 +209,14 @@ Covers: W5 (S5.3 generation), W10 (S10.3 lint), W18 (S18.1, S18.2), D20, D21, D2
 
 Covers: W10 (S10.2, S10.3), W15 (S15.4, S15.5), W16 (S16.1 chat parts), D21, §6. Model hint: Sonnet high.
 
-- [ ] 7a.1 RED tests (Vitest, Testing Library): button disabled with no pending proposal, disabled while a request is in flight, disabled from click until the response arrives, enabled only when `pendingProposalId !== null && inFlight === "none"` (S15.4); on `proposal_not_pending` the notice and the server's current pending summary are shown (S15.5); `<img src=x onerror=alert(1)>` in assistant text renders as literal characters and creates no element (S10.2).
+- [x] 7a.1 RED tests (Vitest, Testing Library): button disabled with no pending proposal, disabled while a request is in flight, disabled from click until the response arrives, enabled only when `pendingProposalId !== null && inFlight === "none"` (S15.4); on `proposal_not_pending` the notice and the server's current pending summary are shown (S15.5); `<img src=x onerror=alert(1)>` in assistant text renders as literal characters and creates no element (S10.2).
   - Note from slice 5b (B66): the page enables the Dale button only for a `ProposalSummary` it actually rendered whose `proposal_id` equals the envelope's `pending_proposal_id`; a lost or failed response never enables a press.
-- [ ] 7a.2 GREEN: `src/i18n/es.ts` with every label, panel titles, button, pending and error states in Spanish (W16); `ConversationContainer.tsx` as the only container, and `ChatPane`, `Composer`, `DaleButton`. Satisfies D21.
-- [ ] 7a.3 GREEN: presentational `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice` components rendering every model-controlled field as a React text node; the four async states (idle, pending with elapsed time, error, success) and `focus-visible`. Test: pending state shows the elapsed time and the button label in Spanish (S16.1).
-- [ ] 7a.4 Confirm S10.3 holds on the new code: lint (task 6.6) passes with no `dangerouslySetInnerHTML` or `innerHTML` in `src/`.
-- [ ] 7a.5 Closing: blind review, PR body with "Known pending items" (SSE live reveal), commit with the slice title, check the PR size guard output.
+- [x] 7a.2 GREEN: `src/i18n/es.ts` with every label, panel titles, button, pending and error states in Spanish (W16); `ConversationContainer.tsx` as the only container, and `ChatPane`, `Composer`, `DaleButton`. Satisfies D21.
+- [x] 7a.3 GREEN: presentational `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice` components rendering every model-controlled field as a React text node; the four async states (idle, pending with elapsed time, error, success) and `focus-visible`. Test: pending state shows the elapsed time and the button label in Spanish (S16.1).
+- [x] 7a.4 Confirm S10.3 holds on the new code: lint (task 6.6) passes with no `dangerouslySetInnerHTML` or `innerHTML` in `src/`.
+  - Done 2026-11-20 (7a.1-7a.4): nine commits in six PRs (B93). Tests: reducer boundary checks (RED first), event components with the markup test (S10.2), controls, and the container (S15.4, S15.5, S16.1, B65); `ConversationContainer.tsx` is the only container and `ChatPane`, `Composer`, `DaleButton`, `CancelButton`, `PendingStatus`, `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice`, `ChatText` are presentational. Decisions B83-B93 (the review's fixes are B88-B92). Smoke: the built page served by the Python host on a throwaway database renders the chat, the composer and the disabled Dale button, no inline style or script; no message sent. Left to 7b: the panels, the `verifier_error` label (B62), the `ToolCalled`/`VerdictIssued` checks, the exhaustive switch over the components map.
+- [x] 7a.5 Closing: blind review, PR body with "Known pending items" (SSE live reveal), commit with the slice title, check the PR size guard output.
+  - Done 2026-11-20: blind review (Opus) gave 5 should-fix (no cancel control, lost first message, per-second announcements, wrong status on a confirmed summary, Safari IME Enter) and 6 nits, all fixed (B88-B92); 6 PRs (B93). 246 vitest, 1455 pytest; page renders with Enviar, Dale and Cancelar disabled and no inline style. Known pending: SSE live reveal; real screen-reader and Safari IME check by hand. Push and PR wait for the user.
 
 ## Phase 7b: Tool, order and verdict panels (slice 7b, ~230 lines)
 

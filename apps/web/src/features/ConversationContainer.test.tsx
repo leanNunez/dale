@@ -139,6 +139,53 @@ describe("async states (S16.1)", () => {
     expect(screen.queryByText(/…/)).toBeNull();
   });
 
+  it("keeps one clock for one send, even though the create turns into the message", async () => {
+    vi.useFakeTimers();
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "hola" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    act(() => vi.advanceTimersByTime(4000));
+    expect(screen.getByText("4 s")).toBeTruthy();
+    await fake.release(envelope()); // the create ends and the message of the same send begins
+    expect(screen.getByRole("status").textContent).toContain(es.pending.message);
+    expect(screen.getByText("4 s")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(3000));
+    expect(screen.getByText("7 s")).toBeTruthy();
+    await fake.release(envelope({ events: [assistantText(1)] }));
+    expect(screen.queryByText(/\d s$/)).toBeNull();
+  });
+
+  it("starts a new clock for the next action", async () => {
+    vi.useFakeTimers();
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    await say(fake, envelope({ events: [assistantText(1)] }));
+    act(() => vi.advanceTimersByTime(9000));
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(screen.getByText("0 s")).toBeTruthy();
+  });
+
+  it("announces the wait once: the page has exactly one status region while it waits", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    await say(
+      fake,
+      envelope({
+        events: [assistantText(1), systemNotice(2), summary(3)],
+        pending_proposal_id: PROPOSAL_A,
+      }),
+    );
+    expect(screen.queryAllByRole("status")).toHaveLength(0); // the chat's notice adds none
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    const log = screen.getByRole("log", { name: es.chat.title });
+    expect(within(log).queryAllByRole("status")).toHaveLength(0);
+    expect(within(log).getByText("Ya no se puede.")).toBeTruthy();
+  });
+
   it("shows the host's catalog message as an alert and frees the page for a retry", async () => {
     const fake = fakeApi();
     render(<ConversationContainer api={fake.api} />);
@@ -182,6 +229,231 @@ describe("async states (S16.1)", () => {
     await fake.release(envelope({ conversation_id: PROPOSAL_B }));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("log", { name: es.chat.title }).textContent).toContain(es.chat.empty);
+  });
+});
+
+describe("the composer keeps the customer's words until the host takes them", () => {
+  const field = () => screen.getByLabelText(es.composer.label) as HTMLTextAreaElement;
+  const type = (value: string) => fireEvent.change(field(), { target: { value } });
+  const send = () => fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+
+  it("keeps the text of a first message whose create failed, and sends nothing", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    type("dos bolsas de harina");
+    send();
+    await fake.release(new ClientError("network", null));
+    expect(field().value).toBe("dos bolsas de harina");
+    expect(fake.api.sendMessage).not.toHaveBeenCalled();
+    expect(screen.queryByText("dos bolsas de harina", { selector: "p" })).toBeNull(); // no customer line
+    expect(screen.getByRole("alert").textContent).toContain(es.errors.network_error);
+  });
+
+  it("clears the field once the message was accepted, and the line is in the chat", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    type("dos bolsas");
+    send();
+    await fake.release(envelope());
+    expect(field().value).toBe("dos bolsas"); // still there while the host works
+    await fake.release(envelope({ events: [assistantText(1)] }));
+    expect(field().value).toBe("");
+    expect(screen.getByText("dos bolsas", { selector: "p" })).toBeTruthy();
+  });
+
+  it("keeps the text when the host refused the message with an error", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    type("dos bolsas");
+    send();
+    await fake.release(envelope());
+    await fake.release(failure("conversation_busy"));
+    expect(field().value).toBe("dos bolsas");
+  });
+
+  it("can send the kept text again", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    type("dos bolsas");
+    send();
+    await fake.release(new ClientError("network", null));
+    send();
+    await fake.release(envelope());
+    await fake.release(envelope({ events: [assistantText(1)] }));
+    expect(fake.api.createConversation).toHaveBeenCalledTimes(2);
+    expect(fake.api.sendMessage).toHaveBeenCalledExactlyOnceWith(CONVERSATION, "dos bolsas");
+    expect(field().value).toBe("");
+  });
+});
+
+describe("a retired conversation takes no more messages (B65)", () => {
+  async function gone() {
+    const fake = await withProposalShown();
+    fireEvent.click(dale());
+    await fake.release(
+      failure("conversation_not_found", { conversation_id: null, pending_proposal_id: null }),
+    );
+    return fake;
+  }
+  const field = () => screen.getByLabelText(es.composer.label) as HTMLTextAreaElement;
+
+  it("disables the composer, so nothing is sent to the retired id, by button or by Enter", async () => {
+    const fake = await gone();
+    expect(screen.getByRole("button", { name: es.composer.send })).toHaveProperty("disabled", true);
+    fireEvent.change(field(), { target: { value: "hola" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(fake.api.sendMessage).toHaveBeenCalledTimes(1); // only the one before it went away
+    expect(field().value).toBe("hola");
+  });
+
+  it("stays disabled when the new conversation could not be opened, and frees on success", async () => {
+    const fake = await gone();
+    fireEvent.change(field(), { target: { value: "hola" } });
+    fireEvent.click(screen.getByRole("button", { name: es.newConversation }));
+    await fake.release(new ClientError("network", null));
+    expect(screen.getByRole("button", { name: es.composer.send })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: es.newConversation }));
+    await fake.release(envelope({ conversation_id: PROPOSAL_B }));
+    expect(screen.getByRole("button", { name: es.composer.send })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(fake.api.sendMessage).toHaveBeenLastCalledWith(PROPOSAL_B, "hola");
+    expect(fake.api.sendMessage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the Dale button's hint says why it waits only when a proposal waits", () => {
+  it("shows the plain disabled hint while a message runs and no proposal exists", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "hola" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(dale()).toHaveProperty("disabled", true);
+    expect(screen.getByText(es.dale.disabledHint)).toBeTruthy();
+    expect(screen.queryByText(es.dale.busyHint)).toBeNull();
+  });
+
+  it("shows the busy hint while a message runs and a proposal is pending", async () => {
+    const fake = await withProposalShown();
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(screen.getByText(es.dale.busyHint)).toBeTruthy();
+    expect(fake.api.sendMessage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a summary says where its proposal stands (S15.5)", () => {
+  it("says confirmed, never 'not yet confirmed', after the order is confirmed", async () => {
+    const fake = await withProposalShown();
+    expect(screen.getByText(es.summary.notConfirmed)).toBeTruthy();
+    fireEvent.click(dale());
+    await fake.release(
+      envelope({ events: [orderConfirmed(3), verdict(4)], seq: 4, pending_proposal_id: null }),
+    );
+    const card = screen.getByRole("article", { name: es.summary.title });
+    expect(within(card).getByText(es.summary.status.confirmed)).toBeTruthy();
+    expect(screen.queryByText(es.summary.notConfirmed)).toBeNull();
+  });
+
+  it("says confirmed even if the host still names the proposal as pending", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(dale());
+    await fake.release(
+      envelope({ events: [orderConfirmed(3)], seq: 3, pending_proposal_id: PROPOSAL_A }),
+    );
+    expect(screen.getByText(es.summary.status.confirmed)).toBeTruthy();
+    expect(screen.queryByText(es.summary.status.current)).toBeNull();
+  });
+});
+
+describe("the cancel control (S15.5)", () => {
+  const cancelButton = () => screen.getByRole("button", { name: es.cancel.label });
+
+  it("is disabled before there is any proposal, with the reason said in words", () => {
+    render(<ConversationContainer api={fakeApi().api} />);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    expect(screen.getByText(es.cancel.disabledHint)).toBeTruthy();
+  });
+
+  it("is enabled only for a rendered current summary with nothing in flight", async () => {
+    const fake = fakeApi();
+    render(<ConversationContainer api={fake.api} />);
+    await say(fake, envelope({ events: [assistantText(1)], pending_proposal_id: PROPOSAL_A }));
+    expect(cancelButton()).toHaveProperty("disabled", true); // pending, but never shown as a summary
+  });
+
+  it("is enabled for the current summary, and disabled while a request runs", async () => {
+    const fake = await withProposalShown();
+    expect(cancelButton()).toHaveProperty("disabled", false);
+    expect(screen.getByText(es.cancel.enabledHint)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    await fake.release(envelope({ events: [assistantText(3)], pending_proposal_id: PROPOSAL_A }));
+    expect(cancelButton()).toHaveProperty("disabled", false);
+  });
+
+  it("asks the host to cancel the pending proposal once, however often it is clicked", async () => {
+    const fake = await withProposalShown();
+    cancelButton().focus();
+    fireEvent.click(cancelButton());
+    fireEvent.click(cancelButton());
+    expect(fake.api.cancel).toHaveBeenCalledExactlyOnceWith(CONVERSATION, PROPOSAL_A);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    expect(dale()).toHaveProperty("disabled", true);
+    expect(screen.getByRole("status").textContent).toContain(es.pending.cancel);
+  });
+
+  it("marks the summary cancelled once the host answered, and Dale cannot press it", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(envelope({ seq: 2, pending_proposal_id: null }));
+    const card = screen.getByRole("article", { name: es.summary.title });
+    expect(within(card).getByText(es.summary.status.cancelled)).toBeTruthy();
+    expect(screen.queryByText(es.summary.status.current)).toBeNull();
+    expect(screen.queryByText(es.summary.notConfirmed)).toBeNull();
+    expect(dale()).toHaveProperty("disabled", true);
+    expect(cancelButton()).toHaveProperty("disabled", true);
+    fireEvent.click(dale());
+    fireEvent.click(cancelButton());
+    expect(fake.api.press).not.toHaveBeenCalled();
+    expect(fake.api.cancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps a proposal pressable when the host's answer is an error or never arrived", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(failure("conversation_busy", { seq: 2, pending_proposal_id: PROPOSAL_A }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText(es.summary.status.current)).toBeTruthy();
+    expect(dale()).toHaveProperty("disabled", false);
+    expect(cancelButton()).toHaveProperty("disabled", false);
+    fireEvent.click(cancelButton());
+    await fake.release(new ClientError("network", null));
+    expect(screen.getByText(es.summary.status.current)).toBeTruthy();
+    expect(dale()).toHaveProperty("disabled", false);
+  });
+
+  it("leaves a later proposal for Dale after an earlier one was cancelled", async () => {
+    const fake = await withProposalShown();
+    fireEvent.click(cancelButton());
+    await fake.release(envelope({ seq: 2, pending_proposal_id: null }));
+    fireEvent.change(screen.getByLabelText(es.composer.label), { target: { value: "otra" } });
+    fireEvent.click(screen.getByRole("button", { name: es.composer.send }));
+    await fake.release(
+      envelope({ events: [summary(3, PROPOSAL_B)], pending_proposal_id: PROPOSAL_B }),
+    );
+    const cards = screen.getAllByRole("article", { name: es.summary.title });
+    expect(
+      cards.map((card) => within(card).queryByText(es.summary.status.cancelled) !== null),
+    ).toEqual([true, false]);
+    expect(dale()).toHaveProperty("disabled", false);
+    fireEvent.click(dale());
+    expect(fake.api.press).toHaveBeenCalledExactlyOnceWith(CONVERSATION, PROPOSAL_B);
   });
 });
 

@@ -2,6 +2,7 @@
 // callbacks to presentational components. It decides nothing about orders; the Dale button's
 // state is `canPress`, the reducer's rule, shown as it is.
 import type { Api } from "../api/client";
+import { CancelButton } from "../components/CancelButton";
 import { ChatPane } from "../components/ChatPane";
 import { Composer } from "../components/Composer";
 import { DaleButton } from "../components/DaleButton";
@@ -31,7 +32,7 @@ function errorText(state: ConversationState): string | null {
 }
 
 export function ConversationContainer({ api }: { api?: Api }) {
-  const { state, canPress, startedAt, start, send, press } = useConversation(api);
+  const { state, canPress, startedAt, start, send, press, cancel } = useConversation(api);
   const waiting = state.inFlight !== "none";
   const error = errorText(state);
   return (
@@ -53,7 +54,7 @@ export function ConversationContainer({ api }: { api?: Api }) {
         )}
         {error !== null && (
           <Notice kind="error" message={error}>
-            {state.error?.code === "conversation_not_found" && (
+            {state.conversationGone && (
               <button
                 type="button"
                 disabled={waiting}
@@ -65,8 +66,17 @@ export function ConversationContainer({ api }: { api?: Api }) {
             )}
           </Notice>
         )}
-        <Composer disabled={waiting} onSend={send} />
-        <DaleButton enabled={canPress} busy={waiting} onPress={press} />
+        {/* A retired conversation takes nothing more: only "start a new one" leaves this state. */}
+        <Composer disabled={waiting || state.conversationGone} onSend={send} />
+        <div className="flex flex-wrap items-start gap-4">
+          <DaleButton
+            enabled={canPress}
+            busy={waiting && state.pendingProposalId !== null}
+            onPress={press}
+          />
+          {/* Cancel and Dale share one rule: the proposal one can reach, the other can discard. */}
+          <CancelButton enabled={canPress} onCancel={cancel} />
+        </div>
       </div>
     </section>
   );

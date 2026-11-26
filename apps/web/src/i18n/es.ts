@@ -18,6 +18,11 @@ export const es = {
     enabledHint: "Confirma la propuesta vigente, tal como se muestra.",
     busyHint: "Esperando la respuesta: el botón vuelve cuando llegue.",
   },
+  cancel: {
+    label: "Cancelar propuesta",
+    disabledHint: "Se habilita cuando hay una propuesta vigente.",
+    enabledHint: "Descarta la propuesta vigente: después ya no se puede confirmar.",
+  },
   summary: {
     title: "Propuesta de pedido",
     notConfirmed: "Todavía no está confirmada",
