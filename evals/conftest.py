@@ -19,7 +19,8 @@ before any run (S14.4). Only the process that owns the session (not an xdist wor
 the reports:
 - at session start it reads the commit and its dirty flag, then deletes the files of that version
   and model (git keeps the old ones), so a report that is not written can never leave a stale
-  one in place and a recording the session writes cannot make the commit dirty (B91);
+  one in place and a recording the session writes cannot make the commit dirty (B91); a record
+  run leaves `evals/recordings` out of that dirty check, so both models record on one commit;
 - each session has its own id and its own sink directory under pytest's cache directory; the
   controller hands the id to its workers (`workerinput`), and a record from any other session,
   mode or prompt is refused;
@@ -152,7 +153,8 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
     if (version := config.getoption("--report")) and not _is_worker(config):
         try:
-            config.stash[COMMIT] = commit_label(config.rootpath)
+            recording = _mode(config) is Mode.RECORD  # its own recordings are not dirt
+            config.stash[COMMIT] = commit_label(config.rootpath, recording=recording)
         except (OSError, subprocess.CalledProcessError) as error:
             if lifts_host_restriction(_mode(config)):  # B110: never pay for a report to lose
                 raise pytest.UsageError(
