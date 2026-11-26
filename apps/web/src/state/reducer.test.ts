@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import type { WebEvent } from "../contract";
 import {
   CONVERSATION,
+  OTHER_CONVERSATION,
   PROPOSAL_A,
+  PROPOSAL_B,
   assistantText,
   envelope,
   failure,
@@ -12,6 +15,7 @@ import {
   verdict,
 } from "../test/factories";
 import {
+  canPressDale,
   initialState,
   reducer,
   type Action,
@@ -54,6 +58,68 @@ describe("a conversation starts and is adopted from the first envelope", () => {
     expect(state.inFlight).toBe("none");
     expect(state.lastSeq).toBe(0);
   });
+
+  it("moves to the new conversation a create answers with, and frees the page", () => {
+    const ours = run([received(envelope({ events: [assistantText(1)] }))], started);
+    const state = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      ours,
+    );
+    expect(state).toEqual({ ...initialState, conversationId: OTHER_CONVERSATION });
+  });
+
+  it("drops another conversation's answer to any other request, but ends that request", () => {
+    const ours = run([received(envelope({ events: [assistantText(1)] }))], started);
+    const stray = failure("turn_failed", {
+      conversation_id: OTHER_CONVERSATION,
+      events: [{ ...assistantText(2), conversation_id: OTHER_CONVERSATION }],
+      seq: 2,
+    });
+    for (const kind of ["message", "press", "cancel"] as const) {
+      const flying = { ...ours, inFlight: kind };
+      expect(reducer(flying, received(stray))).toEqual(ours);
+    }
+    expect(reducer(ours, received(stray))).toEqual(ours);
+  });
+});
+
+const without = (event: WebEvent, key: string) =>
+  Object.fromEntries(Object.entries(event).filter(([name]) => name !== key));
+const brokenSummary = (patch: Record<string, unknown>) => {
+  const good = summary(1) as unknown as { data: Record<string, unknown> };
+  return { ...good, data: { ...good.data, ...patch } };
+};
+
+describe("malformed events are dropped at the boundary, never thrown on or stored", () => {
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["a number", 7],
+    ["a list", [assistantText(1)]],
+    ["an event with a string seq", { ...assistantText(1), seq: "1" }],
+    ["an event with no seq", without(assistantText(1), "seq")],
+    ["an event with no type", without(assistantText(1), "type")],
+    ["an event with a numeric type", { ...assistantText(1), type: 1 }],
+    ["an event with no data", without(assistantText(1), "data")],
+    ["an event whose data is text", { ...assistantText(1), data: "Hola" }],
+    ["a summary without data", without(summary(1), "data")],
+    ["a summary without a proposal id", brokenSummary({ proposal_id: 1 })],
+    ["a summary whose total is not cents", brokenSummary({ total: 3700 })],
+    ["a summary whose lines are not a list", brokenSummary({ lines: {} })],
+  ])("drops %s and still applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, assistantText(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(["AssistantText"]);
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("takes an envelope whose only event is null as one that brought nothing", () => {
+    const nothing = envelope({ events: [null as unknown as WebEvent], seq: 0 });
+    expect(run([received(nothing)], started)).toEqual(started);
+  });
 });
 
 describe("events are applied once, in seq order (D21)", () => {
@@ -75,6 +141,7 @@ describe("events are applied once, in seq order (D21)", () => {
     expect(state.trace.map((e) => e.data.name)).toEqual(["search_products"]);
     expect(state.verdicts).toHaveLength(1);
     expect(state.lastSeq).toBe(4);
+    expect(state.pendingProposalId).toBe(PROPOSAL_A);
   });
 
   it("drops events with seq at or below lastSeq, so a repeated body changes nothing", () => {
@@ -133,6 +200,78 @@ describe("events are applied once, in seq order (D21)", () => {
   });
 });
 
+describe("pending_proposal_id is applied only from an envelope that is not behind (D21)", () => {
+  const at7 = run(
+    [
+      received(
+        envelope({
+          events: [
+            assistantText(1),
+            summary(2, PROPOSAL_A),
+            assistantText(3),
+            assistantText(4),
+            assistantText(5),
+            summary(6, PROPOSAL_B),
+            assistantText(7),
+          ],
+          pending_proposal_id: PROPOSAL_B,
+        }),
+      ),
+    ],
+    started,
+  );
+
+  it("takes the pending id of an envelope at or ahead of what the page has", () => {
+    expect(at7.pendingProposalId).toBe(PROPOSAL_B);
+    const ahead = run(
+      [received(envelope({ events: [assistantText(8)], pending_proposal_id: null }))],
+      at7,
+    );
+    expect(ahead.pendingProposalId).toBeNull();
+  });
+
+  it("ignores the pending id of an envelope behind the page", () => {
+    const stale = envelope({ seq: 4, events: [], pending_proposal_id: PROPOSAL_A });
+    expect(run([received(stale)], at7).pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("leaves the button alone when a settled press is replayed (B52)", () => {
+    const replay = envelope({
+      events: [assistantText(3), assistantText(4)],
+      seq: 7,
+      pending_proposal_id: PROPOSAL_B,
+    });
+    const after = run([{ type: "request_started", kind: "press" }, received(replay)], at7);
+    expect(after.chat).toEqual(at7.chat);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.inFlight).toBe("none");
+  });
+
+  it("does not let an old replay body bring back a pending id the page already moved past", () => {
+    const old = envelope({ events: [assistantText(3)], seq: 3, pending_proposal_id: PROPOSAL_A });
+    expect(run([received(old)], at7).pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("takes the current pair from an error envelope that carries no events (B48)", () => {
+    const busy = failure("conversation_busy", { seq: 7, pending_proposal_id: PROPOSAL_B });
+    const after = run([received(busy)], at7);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.error?.code).toBe("conversation_busy");
+  });
+
+  it("never touches pending from an envelope that names no conversation", () => {
+    const guard = failure("invalid_host", { conversation_id: null, seq: 0 });
+    const after = run([received(guard)], at7);
+    expect(after.pendingProposalId).toBe(PROPOSAL_B);
+    expect(after.error?.code).toBe("invalid_host");
+  });
+
+  it("clears pending when the host no longer knows the conversation, so nothing can be pressed", () => {
+    const lost = failure("conversation_not_found", { conversation_id: null, seq: 0 });
+    expect(run([received(lost)], at7).pendingProposalId).toBeNull();
+  });
+});
+
 describe("errors and failures", () => {
   it("keeps the host's error and clears it when the next request starts or succeeds", () => {
     const failed = run([received(failure("turn_failed"))], started);
@@ -155,5 +294,99 @@ describe("errors and failures", () => {
     expect(state.error).toEqual({ code: "network_error", message: null });
     const bad = run([{ type: "request_failed", failure: "malformed_response" }], started);
     expect(bad.error?.code).toBe("malformed_response");
+  });
+
+  it("keeps a pending proposal through a failed press, since the outcome is unknown", () => {
+    const pending = run(
+      [received(envelope({ events: [summary(1)], pending_proposal_id: PROPOSAL_A }))],
+      started,
+    );
+    const after = run(
+      [
+        { type: "request_started", kind: "press" },
+        { type: "request_failed", failure: "network" },
+      ],
+      pending,
+    );
+    expect(after.pendingProposalId).toBe(PROPOSAL_A);
+    expect(canPressDale(after)).toBe(true);
+  });
+});
+
+describe("the Dale button rule (S15.4, B66)", () => {
+  const pendingA = run(
+    [received(envelope({ events: [summary(1, PROPOSAL_A)], pending_proposal_id: PROPOSAL_A }))],
+    started,
+  );
+
+  it("is enabled only for a rendered summary whose id is the pending id, with nothing in flight", () => {
+    expect(canPressDale(pendingA)).toBe(true);
+  });
+
+  it("is disabled with no pending proposal", () => {
+    expect(canPressDale(started)).toBe(false);
+    expect(
+      canPressDale(
+        run([received(envelope({ events: [summary(1)], pending_proposal_id: null }))], started),
+      ),
+    ).toBe(false);
+  });
+
+  it("is disabled while any request is in flight", () => {
+    for (const kind of ["message", "cancel"] as const) {
+      const flying = reducer(
+        pendingA,
+        kind === "message"
+          ? { type: "request_started", kind, text: "hola" }
+          : { type: "request_started", kind },
+      );
+      expect(canPressDale(flying)).toBe(false);
+    }
+    expect(canPressDale(reducer(pendingA, { type: "request_started", kind: "press" }))).toBe(false);
+  });
+
+  it("is disabled when the pending id was never rendered as a summary (a lost response)", () => {
+    const unseen = run(
+      [
+        received(
+          envelope({ events: [summary(1, PROPOSAL_A)], seq: 2, pending_proposal_id: PROPOSAL_B }),
+        ),
+      ],
+      started,
+    );
+    expect(unseen.pendingProposalId).toBe(PROPOSAL_B);
+    expect(canPressDale(unseen)).toBe(false);
+  });
+
+  it("starts a press or a cancel only when the rule allows it", () => {
+    expect(reducer(started, { type: "request_started", kind: "press" })).toBe(started);
+    expect(reducer(started, { type: "request_started", kind: "cancel" })).toBe(started);
+    expect(reducer(pendingA, { type: "request_started", kind: "press" }).inFlight).toBe("press");
+    expect(reducer(pendingA, { type: "request_started", kind: "cancel" }).inFlight).toBe("cancel");
+  });
+
+  it("never throws on what the reducer stored, and a malformed summary enables nothing", () => {
+    const broken = { ...summary(1), data: undefined } as unknown as WebEvent;
+    const state = run(
+      [
+        received(
+          envelope({
+            events: [broken, null as unknown as WebEvent],
+            seq: 1,
+            pending_proposal_id: PROPOSAL_A,
+          }),
+        ),
+      ],
+      started,
+    );
+    expect(state.chat).toEqual([]);
+    expect(() => canPressDale(state)).not.toThrow();
+    expect(canPressDale(state)).toBe(false);
+  });
+
+  it("does not start a message before a conversation exists", () => {
+    expect(reducer(initialState, { type: "request_started", kind: "message", text: "hola" })).toBe(
+      initialState,
+    );
   });
 });
