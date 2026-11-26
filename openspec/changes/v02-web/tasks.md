@@ -32,8 +32,11 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 4e | `feat(web): add the web composition root with a start-up customer check` | `v02-slice-04e-web-startup` | `v02-slice-04d-app` | 346 | 4d | no | Opus high |
 | 4f | `feat(web): map the runner's verdict onto the web verdict` | `v02-slice-04f-web-verdict` | `v02-slice-04e-web-startup` | 137 | 4e | no | Opus high |
 | 4g | `docs(decisions): add ADR 0005 on web confirmation safety` | `v02-slice-04g-adr` | `v02-slice-04f-web-verdict` | 49 | 4f | no | Opus high |
-| 5a | `feat(web): add the conversation registry, lock and press gate` | `v02-slice-05a-conversation` | `v02-slice-04g-adr` | 230 | 4g | yes (press safety) | Opus high |
-| 5b | `feat(web): add message, confirm and cancel routes with safety tests` | `v02-slice-05b-routes` | `v02-slice-05a-conversation` | 220 | 5a | yes (confirmation) | Opus high |
+| 5a1 | `feat(web): add the web conversation with its lock and seq counter` | `v02-slice-05a1-conversation` | `v02-slice-04g-adr` | 330 | 4g | yes (press safety) | Opus high |
+| 5a2 | `feat(web): add the registry port and verify after a confirming turn` | `v02-slice-05a2-registry` | `v02-slice-05a1-conversation` | 173 | 5a1 | yes (press safety) | Opus high |
+| 5a3 | `feat(web): add the press gate that confirms only the pending proposal` | `v02-slice-05a3-gate` | `v02-slice-05a2-registry` | 238 | 5a2 | yes (press safety) | Opus high |
+| 5a4 | `feat(web): serialize presses of one proposal, replay and cancel` | `v02-slice-05a4-replay` | `v02-slice-05a3-gate` | 309 | 5a3 | yes (press safety) | Opus high |
+| 5b | `feat(web): add message, confirm and cancel routes with safety tests` | `v02-slice-05b-routes` | `v02-slice-05a4-replay` | 220 | 5a4 | yes (confirmation) | Opus high |
 | 6 | `feat(web): scaffold the React app with codegen, state and the web CI job` | `v02-slice-06-frontend` | `v02-slice-05b-routes` | 350 | 3 | no | Sonnet high |
 | 7a | `feat(web): add the chat pane, composer and Dale button` | `v02-slice-07a-chat` | `v02-slice-06-frontend` | 230 | 5b, 6 | yes (button state) | Sonnet high |
 | 7b | `feat(web): add the tool, order and verdict panels` | `v02-slice-07b-panels` | `v02-slice-07a-chat` | 230 | 7a | no | Sonnet high |
@@ -146,12 +149,13 @@ Covers: W1, W2 (S2.2), W5 (S5.1), W8, W9, W10 (S10.1), W11 (S11.2, S11.3), W18 (
 
 Covers: W6 (S6.1, S6.4), W7 (S7.1, S7.2, S7.3, S7.5, S7.6), W12, W13 (S13.3), W17 (S17.1), D15, D16, §4.3. Model hint: Opus high. Pure units with a fake backend and `threading.Event`; no HTTP routes yet.
 
-- [ ] 5a.1 RED tests in `tests/unit/channels/web/test_conversations.py`: lock overlap returns busy while the first turn completes (S12.1); lock released on failure (S12.2); two conversations do not block each other (S12.3); a registry test double implementing the port works unchanged (S17.1); `seq` increases by one per event from 1.
-- [ ] 5a.2 GREEN: `ConversationRegistry` port (`create`, `get`) with the in-memory implementation, and `WebConversation` (backend, transcript, `Pending`, shown summary ids, seq counter, the conversation lock released in `finally`). Satisfies D16, W17.
-- [ ] 5a.3 RED tests for the press gate table (§4.3): pending id → confirm called (S6.1); no proposal → nothing confirmed, `proposal_not_found`-style notice, brain not called (S6.4); superseded id → `proposal_not_pending`, no order (S7.2); cancelled-on-page id still `prepared` in the DB → `proposal_not_pending`, brain not called (S7.6); foreign id → `proposal_not_found` (S7.3); `rules_unavailable` is not cached and leaves the proposal pending, a later press runs again (S7.5).
-- [ ] 5a.4 GREEN: the press procedure (steps 1-6): per-proposal press lock with 60 s wait, settled-response cache for `OrderConfirmed` and `OrderRejected`, gate, transcript append then `Pending.after_press`, raised press → `confirm_outcome_unknown` with pending kept. Tests: concurrent presses of one id yield identical bodies and one confirm call (S7.1). Satisfies D15, W7, W12 exception.
-- [ ] 5a.5 GREEN: verify step wrapper (always runs after a press; failure or timeout becomes an `unverifiable` `VerdictIssued`). Test: verifier raising `VerifierFailed` yields `unverifiable` and the order is not shown as verified (S13.3). Satisfies W13.
-- [ ] 5a.6 Closing: blind review (focus: lock ordering, no deadlock between press lock and conversation lock), PR body with "Known pending items" (cap on in-memory conversations), commit with the slice title, check the PR size guard output.
+- [x] 5a.1 RED tests in `tests/unit/channels/web/test_conversations.py`: lock overlap returns busy while the first turn completes (S12.1); lock released on failure (S12.2); two conversations do not block each other (S12.3); a registry test double implementing the port works unchanged (S17.1); `seq` increases by one per event from 1.
+- [x] 5a.2 GREEN: `ConversationRegistry` port (`create`, `get`) with the in-memory implementation, and `WebConversation` (backend, transcript, `Pending`, shown summary ids, seq counter, the conversation lock released in `finally`). Satisfies D16, W17.
+- [x] 5a.3 RED tests for the press gate table (§4.3): pending id → confirm called (S6.1); no proposal → nothing confirmed, `proposal_not_found`-style notice, brain not called (S6.4); superseded id → `proposal_not_pending`, no order (S7.2); cancelled-on-page id still `prepared` in the DB → `proposal_not_pending`, brain not called (S7.6); foreign id → `proposal_not_found` (S7.3); `rules_unavailable` is not cached and leaves the proposal pending, a later press runs again (S7.5).
+- [x] 5a.4 GREEN: the press procedure (steps 1-6): per-proposal press lock with 60 s wait, settled-response cache for `OrderConfirmed` and `OrderRejected`, gate, transcript append then `Pending.after_press`, raised press → `confirm_outcome_unknown` with pending kept. Tests: concurrent presses of one id yield identical bodies and one confirm call (S7.1). Satisfies D15, W7, W12 exception.
+- [x] 5a.5 GREEN: verify step wrapper (always runs after a press; failure or timeout becomes an `unverifiable` `VerdictIssued`). Test: verifier raising `VerifierFailed` yields `unverifiable` and the order is not shown as verified (S13.3). Satisfies W13.
+- [x] 5a.6 Closing: blind review (focus: lock ordering, no deadlock between press lock and conversation lock), PR body with "Known pending items" (cap on in-memory conversations), commit with the slice title, check the PR size guard output.
+  - Done 2026-11-20: blind review (Opus, with thread stress probes) gave 6 should-fix and 1 nit, fixed in the commits that introduced them (B50-B55); the press commit split in two (B56). 1368 tests, 54 evals, concurrency tests 20/20; probes A-G as expected. PR sizes 330, 173, 238, 309. Known pending: cap on in-memory conversations, registry persistence (B54). Push and PR wait for the user.
 
 ## Phase 5b: Routes and end-to-end safety tests (slice 5b, ~220 lines) [critical: confirmation]
 
@@ -277,6 +281,7 @@ Not tasks; copied into PR bodies and the release notes.
 - JS-safe integer bounds on `Money` (cents above 2^53).
 - LLM claim judge (D8c).
 - Persistent conversation state (lost on restart in v0.2).
+- The registry port returns the live `WebConversation`, so a v0.3 persistent store keeps exactly one live object per conversation id in the process and persists pending, seq, transcript and settled replies on change; restoring after a restart is v0.3 work (B54).
 - v0.3: deploy, per-visitor limits, spend cap, kill switch, auto-reset database, saved conversations with notice, cookie session; the registry port and the configurable allow-list are the extension points.
 - Assumption to validate in slice 6: native packages install with `--ignore-scripts`.
 
