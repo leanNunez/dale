@@ -10,13 +10,18 @@ import {
   envelope,
   failure,
   futureEvent,
+  handoffNotice,
+  orderConfirmed,
+  orderRejected,
   summary,
+  systemNotice,
   toolCalled,
   verdict,
 } from "../test/factories";
 import {
   canPressDale,
   initialState,
+  proposalStatus,
   reducer,
   type Action,
   type ConversationState,
@@ -119,6 +124,85 @@ describe("malformed events are dropped at the boundary, never thrown on or store
   it("takes an envelope whose only event is null as one that brought nothing", () => {
     const nothing = envelope({ events: [null as unknown as WebEvent], seq: 0 });
     expect(run([received(nothing)], started)).toEqual(started);
+  });
+});
+
+describe("an event the chat renders must carry the fields its component reads (W10)", () => {
+  const patched = (event: WebEvent, patch: Record<string, unknown>) => {
+    const good = event as unknown as { data: Record<string, unknown> };
+    return { ...good, data: { ...good.data, ...patch } };
+  };
+  const brokenLine = (patch: Record<string, unknown>) => {
+    const good = summary(1) as unknown as { data: { lines: Record<string, unknown>[] } };
+    return patched(summary(1), { lines: [{ ...good.data.lines[0], ...patch }] });
+  };
+
+  const confirmedLine = () => {
+    const good = orderConfirmed(1) as unknown as { data: { lines: Record<string, unknown>[] } };
+    return good.data.lines[0] ?? {};
+  };
+
+  it.each<[string, unknown]>([
+    ["assistant text that is not a string", patched(assistantText(1), { text: { html: "<b>" } })],
+    ["a summary line with no name", brokenLine({ name: undefined })],
+    ["a summary line whose quantity is text", brokenLine({ quantity: "2" })],
+    ["a summary line whose unit price is a number", brokenLine({ unit_price: 1850 })],
+    ["a summary line that is null", patched(summary(1), { lines: [null] })],
+    ["a summary with a negative total", patched(summary(1), { total: { cents: -1 } })],
+    [
+      "a summary with a total past the safe integers",
+      patched(summary(1), { total: { cents: 2 ** 53 } }),
+    ],
+    ["a summary with a fractional total", patched(summary(1), { total: { cents: 1.5 } })],
+    ["a summary line with a zero quantity", brokenLine({ quantity: 0 })],
+    ["a summary line with a negative quantity", brokenLine({ quantity: -2 })],
+    ["a summary line with an unsafe quantity", brokenLine({ quantity: 2 ** 53 })],
+    ["a summary line with a fractional quantity", brokenLine({ quantity: 1.5 })],
+    ["a summary line with unsafe cents", brokenLine({ line_total: { cents: 2 ** 53 + 2 } })],
+    [
+      "a confirmation line with a zero quantity",
+      patched(orderConfirmed(1), { lines: [{ ...confirmedLine(), quantity: 0 }] }),
+    ],
+    [
+      "a confirmation line with a negative price",
+      patched(orderConfirmed(1), { lines: [{ ...confirmedLine(), unit_price: { cents: -5 } }] }),
+    ],
+    ["a confirmation with no message", patched(orderConfirmed(1), { message: 7 })],
+    ["a confirmation with no order id", patched(orderConfirmed(1), { order_id: null })],
+    ["a confirmation whose lines are text", patched(orderConfirmed(1), { lines: "x" })],
+    ["a rejection with no code", patched(orderRejected(1), { code: undefined })],
+    ["a rejection with a list as its message", patched(orderRejected(1), { message: ["a"] })],
+    ["a handoff notice with no message", patched(handoffNotice(1), { message: undefined })],
+    ["a system notice with no code", patched(systemNotice(1), { code: 3 })],
+  ])("drops %s and applies the next good event", (_name, bad) => {
+    const batch = envelope({ events: [bad as WebEvent, assistantText(2)], seq: 2 });
+    let state = started;
+    expect(() => (state = run([received(batch)], started))).not.toThrow();
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(["AssistantText"]);
+  });
+
+  it("keeps a well-formed event of every type the chat renders", () => {
+    const events = [
+      assistantText(1),
+      summary(2),
+      orderConfirmed(3),
+      orderRejected(4),
+      handoffNotice(5),
+      systemNotice(6),
+    ];
+    const state = run([received(envelope({ events, seq: 6 }))], started);
+    expect(state.chat.map((i) => i.kind === "event" && i.event.type)).toEqual(
+      events.map((e) => e.type),
+    );
+  });
+
+  it.each<[string, unknown]>([
+    ["no message", { code: "turn_failed" }],
+    ["a message that is not text", { code: "turn_failed", message: { html: "<b>" } }],
+    ["no code", { message: "x" }],
+  ])("replaces an error body with %s by the page's own error", (_name, bad) => {
+    const next = run([received(envelope({ error: bad as never }))], started);
+    expect(next.error).toEqual({ code: "malformed_response", message: null });
   });
 });
 
@@ -388,5 +472,145 @@ describe("the Dale button rule (S15.4, B66)", () => {
     expect(reducer(initialState, { type: "request_started", kind: "message", text: "hola" })).toBe(
       initialState,
     );
+  });
+});
+
+describe("a cancel the host answered marks that proposal cancelled", () => {
+  const pendingA = run(
+    [received(envelope({ events: [summary(1, PROPOSAL_A)], pending_proposal_id: PROPOSAL_A }))],
+    started,
+  );
+  const cancelling = run([{ type: "request_started", kind: "cancel" }], pendingA);
+  const answer = (patch: Partial<Parameters<typeof envelope>[0]> = {}) =>
+    run([received(envelope({ seq: 1, ...patch }))], cancelling);
+
+  it("records the cancelled id, and nothing can press it afterwards", () => {
+    const after = answer();
+    expect(after.cancelledProposalIds).toEqual([PROPOSAL_A]);
+    expect(after.pendingProposalId).toBeNull();
+    expect(after.inFlight).toBe("none");
+    expect(canPressDale(after)).toBe(false);
+    expect(proposalStatus(after, PROPOSAL_A)).toBe("cancelled");
+  });
+
+  it("records nothing when the host answered with an error, and the proposal stays pending", () => {
+    const busy = run(
+      [received(failure("conversation_busy", { seq: 1, pending_proposal_id: PROPOSAL_A }))],
+      cancelling,
+    );
+    expect(busy.cancelledProposalIds).toEqual([]);
+    expect(canPressDale(busy)).toBe(true);
+  });
+
+  it("records nothing when no answer arrived", () => {
+    const lost = run([{ type: "request_failed", failure: "network" }], cancelling);
+    expect(lost.cancelledProposalIds).toEqual([]);
+    expect(canPressDale(lost)).toBe(true);
+  });
+
+  it("records nothing when the host holds another proposal as pending", () => {
+    const moved = answer({
+      events: [summary(2, PROPOSAL_B)],
+      seq: 2,
+      pending_proposal_id: PROPOSAL_B,
+    });
+    expect(moved.cancelledProposalIds).toEqual([]);
+    expect(moved.pendingProposalId).toBe(PROPOSAL_B);
+  });
+
+  it("records nothing from an answer that is behind what the page has seen", () => {
+    expect(answer({ seq: 0 }).cancelledProposalIds).toEqual([]);
+  });
+
+  it("records nothing for a request that is not a cancel", () => {
+    const pressing = run([{ type: "request_started", kind: "press" }], pendingA);
+    expect(run([received(envelope({ seq: 1 }))], pressing).cancelledProposalIds).toEqual([]);
+  });
+
+  it("starts again from nothing in a new conversation", () => {
+    const fresh = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      answer(),
+    );
+    expect(fresh.cancelledProposalIds).toEqual([]);
+  });
+});
+
+describe("where a proposal stands (S15.5)", () => {
+  const facts = (over: Partial<ConversationState>) => ({ ...initialState, ...over });
+  const shown = run(
+    [
+      received(
+        envelope({
+          events: [summary(1, PROPOSAL_A), summary(2, PROPOSAL_B)],
+          pending_proposal_id: PROPOSAL_B,
+        }),
+      ),
+    ],
+    started,
+  );
+
+  it("is current for the host's pending id and superseded for an older one", () => {
+    expect(proposalStatus(shown, PROPOSAL_B)).toBe("current");
+    expect(proposalStatus(shown, PROPOSAL_A)).toBe("superseded");
+  });
+
+  it("is confirmed once an OrderConfirmed for that id exists, even if it is still pending", () => {
+    const done = run(
+      [
+        received(
+          envelope({ events: [orderConfirmed(3, PROPOSAL_B)], pending_proposal_id: PROPOSAL_B }),
+        ),
+      ],
+      shown,
+    );
+    expect(proposalStatus(done, PROPOSAL_B)).toBe("confirmed");
+    expect(proposalStatus(done, PROPOSAL_A)).toBe("superseded");
+  });
+
+  it("is cancelled for an id the page cancelled, and confirmed wins over cancelled", () => {
+    expect(proposalStatus(facts({ cancelledProposalIds: [PROPOSAL_A] }), PROPOSAL_A)).toBe(
+      "cancelled",
+    );
+    const both = facts({ ...shown, cancelledProposalIds: [PROPOSAL_B] });
+    const confirmed = run([received(envelope({ events: [orderConfirmed(3, PROPOSAL_B)] }))], both);
+    expect(proposalStatus(confirmed, PROPOSAL_B)).toBe("confirmed");
+  });
+});
+
+describe("a retired conversation takes no more messages (B65)", () => {
+  const lost = run(
+    [received(failure("conversation_not_found", { conversation_id: null, seq: 0 }))],
+    started,
+  );
+
+  it("is marked gone, and a message is refused", () => {
+    expect(lost.conversationGone).toBe(true);
+    expect(reducer(lost, { type: "request_started", kind: "message", text: "hola" })).toBe(lost);
+  });
+
+  it("stays gone through a failed create, and a create's answer replaces it", () => {
+    const retry = run(
+      [
+        { type: "request_started", kind: "create" },
+        { type: "request_failed", failure: "network" },
+      ],
+      lost,
+    );
+    expect(retry.conversationGone).toBe(true);
+    const created = run(
+      [
+        { type: "request_started", kind: "create" },
+        received(envelope({ conversation_id: OTHER_CONVERSATION })),
+      ],
+      lost,
+    );
+    expect(created.conversationGone).toBe(false);
+    expect(
+      reducer(created, { type: "request_started", kind: "message", text: "hola" }).inFlight,
+    ).toBe("message");
   });
 });

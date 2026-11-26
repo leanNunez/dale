@@ -1,5 +1,5 @@
 // Test data builders. Ids are fixed so every failure reads the same; seq is explicit.
-import type { ErrorBody, ResponseEnvelope, WebEvent } from "../contract";
+import type { ErrorBody, ErrorCode, ResponseEnvelope, WebEvent } from "../contract";
 
 export const CONVERSATION = "00000000-0000-4000-8000-000000000001";
 export const OTHER_CONVERSATION = "00000000-0000-4000-8000-000000000002";
@@ -32,6 +32,44 @@ export function summary(seq: number, proposalId = PROPOSAL_A): WebEvent {
       ],
     },
   };
+}
+
+export function orderConfirmed(seq: number, proposalId = PROPOSAL_A): WebEvent {
+  return {
+    ...base(seq),
+    type: "OrderConfirmed",
+    data: {
+      order_id: "00000000-0000-4000-8000-0000000000c3",
+      proposal_id: proposalId,
+      delivery_date: "2026-11-24",
+      message: "Listo, confirmé tu pedido.",
+      total: { cents: 370000 },
+      lines: [
+        {
+          product_id: PRODUCT,
+          quantity: 2,
+          unit_price: { cents: 185000 },
+          line_total: { cents: 370000 },
+        },
+      ],
+    },
+  };
+}
+
+export function orderRejected(seq: number, proposalId = PROPOSAL_A): WebEvent {
+  return {
+    ...base(seq),
+    type: "OrderRejected",
+    data: { code: "price_changed", proposal_id: proposalId, message: "Cambió el precio." },
+  };
+}
+
+export function handoffNotice(seq: number, message = "Te contacta una persona."): WebEvent {
+  return { ...base(seq), type: "HandoffNotice", data: { message } };
+}
+
+export function systemNotice(seq: number, code: ErrorCode = "proposal_not_pending"): WebEvent {
+  return { ...base(seq), type: "SystemNotice", data: { code, message: "Ya no se puede." } };
 }
 
 export function toolCalled(seq: number, name = "search_products"): WebEvent {

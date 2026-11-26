@@ -57,6 +57,10 @@ export interface ConversationState {
   inFlight: InFlight;
   error: PageError | null;
   customerLines: number;
+  /** Proposals the host cleared on this page's cancel: none of them can be confirmed again. */
+  cancelledProposalIds: string[];
+  /** The host answered `conversation_not_found`: nothing goes to that id until a create replaces it. */
+  conversationGone: boolean;
 }
 
 export const initialState: ConversationState = {
@@ -69,6 +73,8 @@ export const initialState: ConversationState = {
   inFlight: "none",
   error: null,
   customerLines: 0,
+  cancelledProposalIds: [],
+  conversationGone: false,
 };
 
 export type Action =
@@ -76,6 +82,28 @@ export type Action =
   | { type: "request_started"; kind: "message"; text: string }
   | { type: "envelope_received"; envelope: ResponseEnvelope }
   | { type: "request_failed"; failure: ClientFailure };
+
+export type ProposalStatus = "current" | "confirmed" | "cancelled" | "superseded";
+
+/**
+ * Where one proposal stands, from what this page has seen: an `OrderConfirmed` for its id means
+ * confirmed; a cancel the host answered means cancelled; the host's pending id is the current one
+ * (the one Dale confirms); any other is an older one that no press can reach.
+ */
+export function proposalStatus(
+  facts: Pick<ConversationState, "chat" | "pendingProposalId" | "cancelledProposalIds">,
+  proposalId: string,
+): ProposalStatus {
+  const confirmed = facts.chat.some(
+    (item) =>
+      item.kind === "event" &&
+      item.event.type === "OrderConfirmed" &&
+      item.event.data.proposal_id === proposalId,
+  );
+  if (confirmed) return "confirmed";
+  if (facts.cancelledProposalIds.includes(proposalId)) return "cancelled";
+  return facts.pendingProposalId === proposalId ? "current" : "superseded";
+}
 
 /**
  * The Dale button rule: a press is possible only for a summary the page actually rendered whose
@@ -104,7 +132,7 @@ function canStart(state: ConversationState, action: Extract<Action, { type: "req
     case "create":
       return true;
     case "message":
-      return state.conversationId !== null;
+      return state.conversationId !== null && !state.conversationGone;
     case "press":
       return canPressDale(state);
     case "cancel":
@@ -142,37 +170,69 @@ function applyEvent(state: ConversationState, event: WebEvent): ConversationStat
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A summary drives the Dale button, so it must carry what the page reads from it. */
-function summaryData(data: Record<string, unknown>): boolean {
-  const total = data["total"];
-  return (
-    typeof data["proposal_id"] === "string" &&
-    typeof data["delivery_date"] === "string" &&
-    isObject(total) &&
-    Number.isInteger(total["cents"]) &&
-    Array.isArray(data["lines"]) &&
-    data["lines"].every(isObject)
-  );
-}
+const isString = (value: unknown): value is string => typeof value === "string";
+/** Whole numbers a script can add and compare without rounding: nothing past 2^53 is a price. */
+const isSafeCount = (value: unknown, least: number): boolean =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= least;
+const isMoney = (value: unknown) => isObject(value) && isSafeCount(value["cents"], 0);
+const isLine = (value: unknown, named: boolean) =>
+  isObject(value) &&
+  isString(value["product_id"]) &&
+  (!named || isString(value["name"])) &&
+  isSafeCount(value["quantity"], 1) &&
+  isMoney(value["unit_price"]) &&
+  isMoney(value["line_total"]);
+const allStrings = (data: Record<string, unknown>, keys: string[]) =>
+  keys.every((key) => isString(data[key]));
+const linesOf = (data: Record<string, unknown>, named: boolean) =>
+  Array.isArray(data["lines"]) && data["lines"].every((line) => isLine(line, named));
+
+/**
+ * What each chat component reads from its event's data. A summary also drives the Dale button.
+ * Types the chat does not render (the panels' events) are checked where their slice renders them.
+ */
+const dataChecks: Record<string, (data: Record<string, unknown>) => boolean> = {
+  AssistantText: (data) => isString(data["text"]),
+  ProposalSummary: (data) =>
+    allStrings(data, ["proposal_id", "delivery_date"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, true),
+  OrderConfirmed: (data) =>
+    allStrings(data, ["order_id", "proposal_id", "delivery_date", "message"]) &&
+    isMoney(data["total"]) &&
+    linesOf(data, false),
+  OrderRejected: (data) => allStrings(data, ["code", "proposal_id", "message"]),
+  HandoffNotice: (data) => allStrings(data, ["message"]),
+  SystemNotice: (data) => allStrings(data, ["code", "message"]),
+};
 
 /**
  * The boundary check for one event: the client passes events through unchecked (v1 is
  * additive), so anything that is not an object with an integer `seq`, a string `type` and an
- * object `data` is dropped here, never thrown on and never stored.
+ * object `data`, or whose data lacks what its component reads, is dropped here, never thrown on
+ * and never stored.
  */
 function wellFormed(event: unknown): event is WebEvent {
   if (!isObject(event)) return false;
   const data = event["data"];
-  if (!Number.isInteger(event["seq"]) || typeof event["type"] !== "string" || !isObject(data)) {
-    return false;
-  }
-  return event["type"] !== "ProposalSummary" || summaryData(data);
+  const type = event["type"];
+  if (!Number.isInteger(event["seq"]) || !isString(type) || !isObject(data)) return false;
+  return Object.hasOwn(dataChecks, type) ? (dataChecks[type]?.(data) ?? false) : true;
+}
+
+/** An error body the page can show: a string code and message, or the page's own error. */
+function shownError(error: ResponseEnvelope["error"]): PageError | null {
+  if (error === null) return null;
+  const body: unknown = error;
+  if (isObject(body) && isString(body["code"]) && isString(body["message"])) return error;
+  return { code: "malformed_response", message: null };
 }
 
 const usable = (event: unknown, state: ConversationState): event is WebEvent =>
   wellFormed(event) && event.seq > state.lastSeq && event.conversation_id === state.conversationId;
 
 function receive(state: ConversationState, envelope: ResponseEnvelope): ConversationState {
+  const cancelling = state.inFlight === "cancel" ? state.pendingProposalId : null;
   const named = envelope.conversation_id;
   const other = named !== null && state.conversationId !== null && named !== state.conversationId;
   if (other && state.inFlight !== "create") {
@@ -186,7 +246,7 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
     ...from,
     conversationId: from.conversationId ?? named,
     inFlight: "none",
-    error: envelope.error,
+    error: shownError(envelope.error),
   };
   for (const event of envelope.events as unknown[]) {
     if (usable(event, next)) {
@@ -196,8 +256,18 @@ function receive(state: ConversationState, envelope: ResponseEnvelope): Conversa
   if (named !== null && envelope.seq >= next.lastSeq) {
     next = { ...next, pendingProposalId: envelope.pending_proposal_id };
   }
-  if (envelope.error?.code === "conversation_not_found") {
-    next = { ...next, pendingProposalId: null }; // a gone conversation has nothing to press
+  if (next.error?.code === "conversation_not_found") {
+    // A gone conversation has nothing to press and takes nothing more until a create replaces it.
+    next = { ...next, pendingProposalId: null, conversationGone: true };
+  }
+  if (
+    cancelling !== null &&
+    next.error === null &&
+    named !== null &&
+    next.pendingProposalId === null
+  ) {
+    // The host answered a cancel without error and holds nothing as pending: it cleared this one.
+    next = { ...next, cancelledProposalIds: [...next.cancelledProposalIds, cancelling] };
   }
   return next;
 }

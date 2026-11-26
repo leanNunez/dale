@@ -8,6 +8,7 @@ export type { SendMessage } from "./generated/SendMessage";
 export type {
   AssistantTextEvent,
   ErrorBody,
+  ErrorCode,
   HandoffNoticeEvent,
   OrderConfirmedEvent,
   OrderRejectedEvent,
