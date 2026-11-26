@@ -174,10 +174,12 @@ def test_the_option_needs_the_cache_provider(pytester: pytest.Pytester) -> None:
 
 
 def priced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *models: str) -> None:
-    """A price file with the shipped Haiku table, copied for each model named: the shipped file
-    has no Sonnet table until its prices are read from the live page."""
-    table = pricing.PRICING_FILE.read_text(encoding="utf-8")
-    text = "".join(table.replace("claude-haiku-5-5", model) for model in models)
+    """A price file with only the shipped Haiku table, copied for each model named, so a test
+    picks which models are priced whatever the shipped file holds."""
+    shipped = pricing.PRICING_FILE.read_text(encoding="utf-8")
+    haiku = shipped[shipped.index('[models."claude-haiku-5-5"]') :]
+    haiku = haiku.split('[models."claude-sonnet-5-5"]')[0]
+    text = "".join(haiku.replace("claude-haiku-5-5", model) for model in models)
     (tmp_path / "pricing.toml").write_text(text, encoding="utf-8")
     monkeypatch.setattr(pricing, "PRICING_FILE", tmp_path / "pricing.toml")
 

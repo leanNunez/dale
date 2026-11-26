@@ -66,6 +66,14 @@ def test_every_priced_model_has_all_four_prices_for_both_tiers_and_its_source() 
         assert date.fromisoformat(str(source["retrieved"]))
 
 
+def test_sonnet_has_its_own_prices_and_no_long_context_tier() -> None:
+    """Task 9.4: read from the live page; Sonnet 5.5 bills its whole window at one price."""
+    sonnet = load_pricing("claude-sonnet-5-5")
+    assert sonnet.standard == sonnet.long_context != PRICING.standard
+    assert (sonnet.standard.input, sonnet.standard.cache_read) == (Decimal(2), Decimal("0.1"))
+    assert request_cost(Usage(input_tokens=1_000_000), sonnet) == Decimal(2)
+
+
 TWO_MODELS = """
 [models."model-a"]
 long_context_threshold_tokens = 10
@@ -128,8 +136,8 @@ def test_the_pricing_values_are_the_recorded_ones_and_name_the_model_in_use() ->
         Decimal("0.10"),
         Decimal("2.5"),
     )
-    assert PRICING.retrieved == date(2026, 11, 16)
-    assert "live page on 2026-11-16" in PRICING.note and "5-minute" in PRICING.note
+    assert PRICING.retrieved == date(2026, 11, 26)
+    assert "live page on 2026-11-26" in PRICING.note and "5-minute" in PRICING.note
 
 
 def test_no_price_has_more_than_three_decimals_so_nine_places_are_exact() -> None:

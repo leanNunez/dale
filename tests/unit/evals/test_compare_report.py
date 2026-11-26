@@ -18,6 +18,7 @@ from evals.harness.compare import (
     render_comparison,
 )
 from evals.harness.models import HAIKU, SONNET
+from evals.harness.pricing import load_pricing
 from evals.harness.report_files import report_paths
 from tests.unit.evals.test_compare import model_report
 
@@ -88,7 +89,10 @@ def test_the_markdown_names_exactly_one_outcome() -> None:
         selected
     )
     assert "| 2 / 2 | 3 | $0.0009 | $0.0003 |" in selected
-    assert "checked 2026-11-16" in selected and "- k = 3, effort medium, mode record" in selected
+    assert (
+        f"checked {load_pricing(HAIKU).retrieved}" in selected
+        and "- k = 3, effort medium, mode record" in selected
+    )
 
 
 def test_a_default_with_false_confirmations_is_said_to_be_unshippable() -> None:
