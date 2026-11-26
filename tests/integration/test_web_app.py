@@ -15,7 +15,7 @@ from dale.apps import web
 from dale.apps.verifier_runner import run_verifier
 from dale.brain.infrastructure import tables as brain
 from dale.channels.web.app import create_app
-from dale.channels.web.conversations import BackendUnavailableError, WebBackend
+from dale.channels.web.conversations import BackendUnavailableError, InMemoryRegistry, WebBackend
 from dale.channels.web.guard import AllowList
 from dale.shared.clock import FrozenClock
 from dale.shared.customer_input import CustomerText, Key, KeyPress
@@ -26,13 +26,15 @@ from tests.conftest import role_url
 from tests.integration.test_proposals import NOW
 from tests.integration.test_terminal_app import SCRIPT, never_built
 from tests.unit.brain.test_loop import ScriptedModel
+from tests.unit.channels.web.test_conversations import FakeBackend
 from tests.unit.test_web_app import FakeServer
 
 pytestmark = pytest.mark.integration
 
 
 def health(engine: Engine) -> tuple[int, str | None]:
-    app = create_app(AllowList.loopback(8000), web.database_ready(engine), None)
+    registry = InMemoryRegistry(FakeBackend)
+    app = create_app(AllowList.loopback(8000), web.database_ready(engine), None, registry)
     with TestClient(app, base_url="http://127.0.0.1:8000") as client:
         response = client.get("/health")
     error = response.json()["error"]
@@ -59,7 +61,8 @@ def test_the_host_starts_only_for_a_seeded_customer(
     app: Engine, monkeypatch: pytest.MonkeyPatch, company: str, customer: str, code: int
 ) -> None:
     env = {"DALE_WEB_COMPANY": company, "DALE_WEB_CUSTOMER": customer}
-    for name, value in {**env, "DALE_APP_DATABASE_URL": role_url("dale_app")}.items():
+    env |= {"DALE_APP_DATABASE_URL": role_url("dale_app")}
+    for name, value in {**env, "DALE_VERIFIER_DATABASE_URL": role_url("dale_verifier")}.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(uvicorn, "Server", FakeServer)
     FakeServer.started.clear()

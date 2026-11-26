@@ -8,8 +8,9 @@ Settings come from the environment: `DALE_WEB_PORT` (default 8000), `DALE_WEB_CO
 extra allowed names in `DALE_WEB_ALLOWED_HOSTS` and `DALE_WEB_ALLOWED_ORIGINS` (comma-separated;
 the loopback names on the port are always allowed). The company and the customer are resolved
 through `erp_sim.public` at start, so a wrong one stops the host (exit 2) before it serves.
-`DALE_VERIFIER_DATABASE_URL` is not read yet: the verifier call arrives with the press route
-(slice 5), which makes it required.
+`DALE_VERIFIER_DATABASE_URL` is required: the verifier process runs as that read-only role after
+every press and after a turn that showed a confirmation (W13). Each conversation gets its own
+composed backend and model (`backends`).
 
 `web_verdict` maps the runner's verdict onto the channel's own `VerdictIssued`, which the web
 channel cannot build itself because it never imports `dale.apps` (import contract 11).
@@ -21,6 +22,7 @@ import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Final, cast, get_args
 from uuid import UUID
@@ -29,14 +31,16 @@ import sqlalchemy as sa
 import uvicorn
 from starlette.types import ASGIApp
 
+from dale.apps import verifier_runner
 from dale.apps.compose import ChannelBackend, Verifier, compose
-from dale.apps.verifier_runner import StoredOrder, VerifierVerdict
+from dale.apps.verifier_runner import StoredOrder, VerifierVerdict, run_verifier
 from dale.brain.application.model_port import ModelPort
 from dale.brain.application.take_turn import TurnResult
+from dale.brain.infrastructure.anthropic_model import AnthropicModel
 from dale.channels.web import contract
 from dale.channels.web.app import Ready, create_app
 from dale.channels.web.contract import VerdictIssued, VerdictReason
-from dale.channels.web.conversations import BackendUnavailableError, WebBackend
+from dale.channels.web.conversations import BackendUnavailableError, InMemoryRegistry, WebBackend
 from dale.channels.web.guard import AllowList
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.public import ErpFacade
@@ -53,7 +57,7 @@ PORT_VARIABLE, DEFAULT_PORT = "DALE_WEB_PORT", 8000
 COMPANY_VARIABLE, URL_VARIABLE = "DALE_WEB_COMPANY", "DALE_APP_DATABASE_URL"
 CUSTOMER_VARIABLE, DEFAULT_CUSTOMER = "DALE_WEB_CUSTOMER", "C-001"
 HOSTS_VARIABLE, ORIGINS_VARIABLE = "DALE_WEB_ALLOWED_HOSTS", "DALE_WEB_ALLOWED_ORIGINS"
-REQUIRED = (COMPANY_VARIABLE, URL_VARIABLE)
+REQUIRED = (COMPANY_VARIABLE, URL_VARIABLE, verifier_runner.URL_VARIABLE)
 CONNECT_TIMEOUT: Final = 3  # seconds: a black-holed database fails the health probe fast
 PAGE = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"  # in a source checkout
 REASONS: Final = frozenset(get_args(VerdictReason))
@@ -69,6 +73,7 @@ class WebSettings:
     company: str
     customer: str
     database_url: str
+    verifier_url: str
     allow: AllowList
 
 
@@ -81,7 +86,8 @@ def settings(env: Mapping[str, str]) -> WebSettings:
     port, hosts, origins = int(raw), _names(env, HOSTS_VARIABLE), _names(env, ORIGINS_VARIABLE)
     customer = env.get(CUSTOMER_VARIABLE) or DEFAULT_CUSTOMER
     allow = AllowList.loopback(port, hosts, origins)
-    return WebSettings(port, env[COMPANY_VARIABLE], customer, env[URL_VARIABLE], allow)
+    urls = env[URL_VARIABLE], env[verifier_runner.URL_VARIABLE]
+    return WebSettings(port, env[COMPANY_VARIABLE], customer, *urls, allow)
 
 
 def _names(env: Mapping[str, str], variable: str) -> list[str]:
@@ -229,7 +235,11 @@ def main(argv: Sequence[str] | None = None, erp: Callable[[sa.Engine], ErpFacade
         if failed := startup_error(erp(engine), config):
             print(failed[1], file=sys.stderr)
             return failed[0]
-        app = create_app(config.allow, database_ready(engine), PAGE)
+        verifier = partial(run_verifier, database_url=config.verifier_url)
+        build = backends(
+            engine, config.company, config.customer, AnthropicModel, SystemClock(), verifier
+        )
+        app = create_app(config.allow, database_ready(engine), PAGE, InMemoryRegistry(build))
         uvicorn.Server(server_config(app, config.port)).run()
     finally:
         engine.dispose()

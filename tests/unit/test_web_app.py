@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 import uvicorn
 from starlette.testclient import TestClient
+from starlette.types import ASGIApp
 
 from dale.apps import web
 from dale.apps.verifier_runner import (
@@ -23,24 +24,32 @@ from dale.apps.verifier_runner import (
     unverifiable,
 )
 from dale.channels.web.app import create_app
-from dale.channels.web.conversations import PRESS_WAIT
+from dale.channels.web.conversations import PRESS_WAIT, InMemoryRegistry
 from dale.erp_sim.public import ErpFacade, SessionCustomer
 from dale.shared.errors import ErrorCode, Failure, Ok, Result
 from dale.shared.ids import CompanyId, CustomerId
 from dale.shared.money import Money
+from tests.unit.channels.web.test_conversations import FakeBackend
 
 REQUIRED = {
     "DALE_WEB_COMPANY": "el-hornero",
     "DALE_APP_DATABASE_URL": "postgresql+psycopg://app:s3cr3t@127.0.0.1/dale",
+    "DALE_VERIFIER_DATABASE_URL": "postgresql+psycopg://verifier:s3cr3t@127.0.0.1/dale",
 }
 P, ORDER, C, ITEM = (UUID(int=n) for n in (1, 2, 3, 4))
+
+
+def app_for(page: Path | None) -> ASGIApp:
+    return create_app(
+        web.settings(REQUIRED).allow, lambda: True, page, InMemoryRegistry(FakeBackend)
+    )
 
 
 def test_the_bind_host_is_loopback_and_nothing_changes_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """S1.1: no flag, no variable (ours or uvicorn's) moves the host off 127.0.0.1."""
     for name in ("DALE_WEB_HOST", "UVICORN_HOST", "HOST"):
         monkeypatch.setenv(name, "0.0.0.0")
-    config = web.server_config(create_app(web.settings(REQUIRED).allow, lambda: True, None), 8000)
+    config = web.server_config(app_for(None), 8000)
     assert web.HOST == config.host == "127.0.0.1" and config.workers == 1
     assert "host" not in inspect.signature(web.server_config).parameters
     with pytest.raises(SystemExit) as exited:
@@ -50,7 +59,7 @@ def test_the_bind_host_is_loopback_and_nothing_changes_it(monkeypatch: pytest.Mo
 
 def test_no_timeout_is_changed_from_uvicorn_defaults() -> None:
     """D17, B6: uvicorn has no request timeout, and the host sets none of its timeouts."""
-    app = create_app(web.settings(REQUIRED).allow, lambda: True, None)
+    app = app_for(None)
     ours, default = web.server_config(app, 8000), uvicorn.Config(app)
     names = [n for n in inspect.signature(uvicorn.Config).parameters if n.startswith("timeout")]
     assert names and all(getattr(ours, n) == getattr(default, n) for n in names)
@@ -60,6 +69,7 @@ def test_no_timeout_is_changed_from_uvicorn_defaults() -> None:
 def test_the_settings_default_to_the_fixed_customer_and_loopback() -> None:
     s = web.settings(REQUIRED)
     assert (s.port, s.company, s.customer) == (8000, "el-hornero", "C-001")
+    assert s.verifier_url == REQUIRED["DALE_VERIFIER_DATABASE_URL"]
     assert s.allow.hosts == {"127.0.0.1:8000", "localhost:8000"}
     assert s.allow.origins == {"http://127.0.0.1:8000", "http://localhost:8000"}
 
@@ -77,7 +87,11 @@ def test_extra_allowed_names_add_to_loopback() -> None:
 @pytest.mark.parametrize(
     ("env", "error"),
     [
-        ({}, "DALE_WEB_COMPANY, DALE_APP_DATABASE_URL must be set"),
+        ({}, "DALE_WEB_COMPANY, DALE_APP_DATABASE_URL, DALE_VERIFIER_DATABASE_URL must be set"),
+        (
+            {k: v for k, v in REQUIRED.items() if k != "DALE_VERIFIER_DATABASE_URL"},
+            "DALE_VERIFIER_DATABASE_URL must be set",
+        ),
         ({**REQUIRED, "DALE_WEB_PORT": "80a"}, "DALE_WEB_PORT must be a port number"),
         ({**REQUIRED, "DALE_WEB_PORT": "70000"}, "DALE_WEB_PORT must be a port number"),
         ({**REQUIRED, "DALE_WEB_PORT": "٨٠"}, "DALE_WEB_PORT must be a port number"),
@@ -140,7 +154,6 @@ def test_an_unknown_company_or_customer_stops_the_host(
 def test_a_known_customer_starts_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, value in REQUIRED.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("DALE_VERIFIER_DATABASE_URL", raising=False)  # not read until slice 5
     monkeypatch.setattr(uvicorn, "Server", FakeServer)
     FakeServer.started.clear()
     assert web.main([], erp=lambda engine: cast(ErpFacade, FakeErp())) == 0
@@ -164,7 +177,7 @@ def test_the_database_engine_has_a_short_connect_timeout() -> None:
 def test_no_route_sends_a_cors_header(tmp_path: Path) -> None:
     """S1.2: the composed host, page included, never answers with Access-Control-*."""
     (tmp_path / "index.html").write_text("<!doctype html>", encoding="utf-8")
-    app = create_app(web.settings(REQUIRED).allow, lambda: True, tmp_path)
+    app = app_for(tmp_path)
     headers = {"origin": "https://evil.example", "content-type": "application/json"}
     with TestClient(app, base_url="http://localhost:8000") as client:
         responses = [client.get(p, headers=headers) for p in ("/", "/health", "/v1/contract", "/x")]
