@@ -263,7 +263,8 @@ Covers: R13 (S13.3), R16 (S16.2-S16.8), D24. Model hint: Opus high.
 - [x] 8b.6 Write `docs/decisions/0007-model-comparison-rule.md`: the rule verbatim from the proposal plus D24's mechanics, dated. Test: structural readback.
 - [x] 8b.7 Verify no Sonnet recording exists yet: `git ls-files evals/recordings` lists only the Haiku directory. Record the result in the PR body.
   - Done 2026-11-23: `git ls-files evals/recordings` lists only `claude-haiku-5-5/`.
-- [ ] 8b.8 **GATED (user)**: the user commits ADR 0007 (and the slice carrying it) before any Sonnet recording exists. This is the proof for S16.1 and it blocks tasks 9.7-9.9. Never automated.
+- [x] 8b.8 **GATED (user)**: the user commits ADR 0007 (and the slice carrying it) before any Sonnet recording exists. This is the proof for S16.1 and it blocks tasks 9.7-9.9. Never automated.
+  - Done 2026-11-23: the user committed ADR 0007 in `49f1e5a`; `git ls-files evals/recordings` lists only `claude-haiku-5-5/`.
 - [ ] 8b.9 Closing: blind review (focus: gate definitions match R16 exactly), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
 
 ## Phase 9: Case set, fresh recordings and the comparison (slice 9, ~300 authored lines)
