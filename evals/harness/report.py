@@ -9,12 +9,16 @@ every model given the same prompt), the commit it is given, the date, the metric
 runs, the release gate and the pricing source with its source note. A non-zero false-confirmation
 count is always in it, in the metrics and per run, and so is the count of unexpected writes.
 
+`gates` holds the four hard-gate counts the comparison rule reads (D24, R16), zeros included,
+and `snapshot_ids` the distinct model ids the API answered with, as the caller read them from
+the model's recordings (S16.7), sorted.
+
 What an error looks like in a run is what `collect.describe` put in its record: a class name,
 and for the harness's own errors a message with repository-relative paths.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -48,6 +52,7 @@ def build_report(
     generated: datetime,
     pricing: Pricing | None = None,
     settings: ModelSettings = MODEL_SETTINGS,
+    snapshot_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
     """`suite` maps each case id to its suite. Raises ReportError for a bad version, a run
     without a record, or a record of a case that is not in the suite."""
@@ -81,6 +86,13 @@ def build_report(
         },
         "claim_phrases": CLAIM_PHRASES_VERSION,  # a new list regrades the same recordings
         "release_gate": {"passed": m.release_ok, "blockers": list(m.release_blockers)},
+        "gates": {
+            "false_confirmations": m.false_confirmations,
+            "disallowed_writes": m.disallowed_writes,
+            "unverifiable_runs": m.unverifiable_runs,
+            "gauchada_exceptions": m.gauchada_exceptions,
+        },
+        "snapshot_ids": sorted(set(snapshot_ids)),
         "metrics": _metrics(m),
         "cases": [_case(case, suite[case], records) for case in sorted(suite)],
         "pricing": {
@@ -123,6 +135,7 @@ def _case(case: str, suite: str, records: list[RunRecord]) -> dict[str, Any]:
                 "verdict": r.verdict,
                 "false_confirmations": r.false_confirmations,
                 "unexpected_writes": r.unexpected_writes,
+                "excess_writes": r.excess_writes,
                 "refusals": r.refusals,
                 "error": r.error,
                 "problems": list(r.problems),

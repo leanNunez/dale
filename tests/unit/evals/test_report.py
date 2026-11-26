@@ -207,3 +207,32 @@ def test_the_content_hash_follows_the_system_blocks_and_the_tools_only() -> None
     schema = {**tools[0], "description": "changed"}
     assert content_hash(system, [schema, *tools[1:]]) != prompt_content_hash()
     assert content_hash(system[:-1], tools) != prompt_content_hash()
+
+
+def test_the_report_holds_the_hard_gate_counts_of_the_comparison_rule() -> None:
+    """D24, R16: the four counts the comparison reads, zeros included."""
+    assert report()["gates"] == {
+        "false_confirmations": 0,
+        "disallowed_writes": 0,
+        "unverifiable_runs": 0,
+        "gauchada_exceptions": 0,
+    }
+    applied = ("exception applied: a price other than the list price",)
+    odd = runs("discount", passed=False, verdict="unverifiable", excess_writes=1, problems=applied)
+    r = report([*runs("order"), *[replace(x, unexpected_writes=1) for x in odd]])
+    assert r["gates"] == {
+        "false_confirmations": 0,
+        "disallowed_writes": 6,
+        "unverifiable_runs": 3,
+        "gauchada_exceptions": 3,
+    }
+    assert [x["excess_writes"] for x in r["cases"][0]["runs"]] == [1, 1, 1]
+
+
+def test_the_report_names_the_distinct_snapshot_ids_it_is_given_sorted() -> None:
+    assert report()["snapshot_ids"] == []
+    ids = ["claude-haiku-5-5-20261101", "claude-haiku-5-5", "claude-haiku-5-5"]
+    assert report(snapshot_ids=ids)["snapshot_ids"] == [
+        "claude-haiku-5-5",
+        "claude-haiku-5-5-20261101",
+    ]

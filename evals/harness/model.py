@@ -27,7 +27,7 @@ absolute one, because the report prints it.
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -86,6 +86,26 @@ def recordings_dir(model: str, root: Path = RECORDINGS) -> Path:
 
 def recording_path(root: Path, case: str, run: int) -> Path:
     return root / case / f"run-{run}.jsonl"
+
+
+def snapshot_ids(root: Path, cases: Iterable[str]) -> list[str]:
+    """The distinct `message.model` of the recorded calls of runs 1 to 3 of these cases under
+    `root`, sorted: the model snapshot the API answered with (S16.7). A missing file, or a line
+    that is not JSON with a string `message.model`, names nothing; replay fails such a run."""
+    found = set[str]()
+    for case in cases:
+        for run in (1, 2, 3):
+            try:
+                lines = recording_path(root, case, run).read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    model = json.loads(line)["message"]["model"]
+                except (ValueError, KeyError, TypeError):
+                    continue
+                found |= {model} if isinstance(model, str) else set()
+    return sorted(found)
 
 
 def request_fingerprint(request: ModelRequest, settings: ModelSettings = MODEL_SETTINGS) -> str:

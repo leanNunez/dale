@@ -192,8 +192,11 @@ def fake(
     report: str | None,
     worker: dict[str, Any] | None = None,
     model: str = DEFAULT_MODEL,
+    *,
+    live: bool = False,
+    record: bool = False,
 ) -> Any:
-    options = {"--report": report, "--live": False, "--record": False, "--model": model}
+    options = {"--report": report, "--live": live, "--record": record, "--model": model}
     config = SimpleNamespace(
         getoption=options.__getitem__,
         cache=SimpleNamespace(mkdir=lambda name: tmp / name),
@@ -277,3 +280,38 @@ def test_the_report_is_built_for_the_model_the_session_ran(
     assert [(r["model"], r["prompt"]["fingerprint"]) for r in written] == [
         (SONNET, prompt_fingerprint(settings_for(SONNET)))
     ]
+
+
+@pytest.mark.parametrize(
+    ("live", "record", "read"), [(False, False, True), (True, True, True), (True, False, False)]
+)
+def test_the_report_names_the_snapshots_of_the_model_s_recordings_unless_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live: bool, record: bool, read: bool
+) -> None:
+    """S16.7: replay and record name what the recordings hold; a live run writes none, so its
+    report names no snapshot rather than an older recording's (B114)."""
+    asked: list[tuple[Path, list[str]]] = []
+    written: list[dict[str, Any]] = []
+
+    def snapshots(root: Path, cases: Any) -> list[str]:
+        asked.append((root, sorted(cases)))
+        return ["snap-1"]
+
+    def write(report: dict[str, Any]) -> tuple[Path, Path]:
+        written.append(report)
+        return tmp_path / "a.json", tmp_path / "a.md"
+
+    monkeypatch.setattr(hooks, "snapshot_ids", snapshots)
+    monkeypatch.setattr(hooks, "write_report", write)
+    session = fake(tmp_path, "v9.9", live=live, record=record)
+    sink = hooks._sink(session.config)
+    assert sink is not None
+    for case, suite in (("fixture-order", "core"), ("fixture-discount", "gauchadas")):
+        for n in (1, 2, 3):
+            sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
+    session.config.stash[hooks.COMMIT] = "a" * 40
+    hooks.pytest_sessionfinish(session)
+    assert session.exitstatus == pytest.ExitCode.OK
+    root = Path(hooks.__file__).parent / "recordings" / DEFAULT_MODEL
+    assert asked == ([(root, ["fixture-discount", "fixture-order"])] if read else [])
+    assert [r["snapshot_ids"] for r in written] == [["snap-1"] if read else []]
