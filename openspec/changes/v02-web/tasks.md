@@ -207,7 +207,8 @@ Covers: W5 (S5.3 generation), W10 (S10.3 lint), W18 (S18.1, S18.2), D20, D21, D2
 - [x] 6.8 Update `scripts/check_pr_size.py` to exclude `apps/web/package-lock.json` and `apps/web/src/contract/generated/`, with unit-test cases.
 - [x] 6.9 Append the frontend stack, Node pins and any install-script exception to ADR 0006 (D21, D22). Test: structural readback.
   - Done 2026-11-20 (6.1-6.9): commits cd8ca21 (6.8, 30 lines, first so the lockfile and generated types leave the count), 73f0ab9 (6.1, 6.2, 345), 42befba (6.6, 126), fcbc817 (6.3, 130), 3096b3f (6.7, 75), d3ba536 (6.4, 302), fd1a578 and e869c41 (6.5 reducer 319 and pending rule 97), 428f75b (6.5 button rule and hook, 314), then 6.9 with this log. The slice counts 1805 / 400, so it needs a split (B74): PRs 6a 375, 6b 331, 6c 302, 6d 319, 6e 97, 6f 391. 66 Vitest tests, 1453 pytest tests, 54 evals, schemas regenerate clean. `npm ci --ignore-scripts` works with no exception (B68, ADR 0006). Smoke through the Python host: `/` serves the built `index.html` with the CSP, both assets 200, headless Chrome renders the page with no CSP violation; the dev proxy gave 201 same-origin and 403 for a foreign Origin (B69). 6.10 (branch protection) waits for the user; 6.11 is the orchestrator's.
-- [ ] 6.10 **GATED (user)**: after the `web` job has run green on this PR, the user adds `web` as a required check in branch protection (`main` and `dev`). Never automated.
+- [x] 6.10 **GATED (user)**: after the `web` job has run green on this PR, the user adds `web` as a required check in branch protection (`main` and `dev`). Never automated.
+  - Done 2026-11-26 by the orchestrator with the user's authorization (B140): `web` required on `main` and `dev` after #116 (the fix that made it green) reached dev.
 - [x] 6.11 Closing: blind review (focus: pins and lockfile reviewed even though excluded from the size guard), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
   - Done 2026-11-20: blind review (Opus) gave 1 blocker (60 locked packages inside the two-week cooldown) and 5 should-fix plus nits, all fixed (B75-B81); lockfile regenerated with --before=2026-11-06 (newest entry 2026-11-05), Node 24.22.2; split into 7 PRs (B82). 1455 pytest, 119 vitest; built page loads under the CSP. Known pending: typescript-eslint 8.73 and Node 24.22.3 once two weeks old; per-type checks of shown-event data beyond the summary (slice 7a). 6.10 waits for the user after the web job runs on GitHub. Push and PR wait for the user.
 
@@ -247,7 +248,8 @@ Covers: R13 (S13.1, S13.2, S13.4, S13.5, S13.8, S13.9), R14 (S14.1-S14.4), D23, 
 - [x] 8a.5 Report naming: `--report v0.2 --model X` writes `evals/reports/v0.2-<model>.{json,md}`; test that two compared models yield two named reports (S14.3).
 - [x] 8a.6 CI: add the `evals` job (Postgres service, matrix `model`, Haiku only for now) and remove the `pytest evals` step from `test`; test CI offline: the suite passes with no network call to the model API (S13.4, `pytest-socket`). Satisfies D23.
 - [x] 8a.7 Extend `tests/unit/test_ci_workflow.py` for the `evals` job, its matrix and the removed `test` step (S18.2 pattern).
-- [ ] 8a.8 **GATED (user)**: add `evals (claude-haiku-5-5)` as a required check on `main` and `dev` in branch protection after it runs green on the 8a3 PR and BEFORE merging 8a3, because 8a3 removes the replay step from the required `test` job; remove nothing without the user. Never automated.
+- [x] 8a.8 **GATED (user)**: add `evals (claude-haiku-5-5)` as a required check on `main` and `dev` in branch protection after it runs green on the 8a3 PR and BEFORE merging 8a3, because 8a3 removes the replay step from the required `test` job; remove nothing without the user. Never automated.
+  - Done 2026-11-26 by the orchestrator with the user's authorization (B140): `evals (claude-haiku-5-5)` required on `main` and `dev` right before merging #110.
 - [x] 8a.9 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings excluded).
   - Done 2026-11-21: blind review (Opus) gave 4 should-fix and 1 nit, fixed (B109-B112): report labelled with the chosen model already in 8a1; paid runs refused before they start for a partial selection, an unreadable commit and maxfail; model-independent prompt content hash in the report; required-check ordering for 8a.8. 1504 pytest, 54 evals replay, 54 recordings renamed at 100%. PR sizes 387, 393, 333 (B113). Known pending: a refused partial selection still deletes that version-model's old report at session start. Push and PR wait for the user.
 
@@ -300,8 +302,10 @@ Covers: R13 (S13.6, S13.7), R14, R16 (S16.1, S16.7), D23, D24. Recordings and re
   - Done: outcome `select:claude-haiku-5-5` (pass^3 37 vs 40 differ by less than 4; Haiku at least 20% cheaper). `MODEL_SETTINGS` unchanged.
 - [x] 9.13 Add Sonnet to the `evals` matrix; run both models offline and check the `test` job and each `evals` job stay under 15 minutes (R13, S13.4). Update the workflow unit test.
   - Done: matrix `[claude-haiku-5-5, claude-sonnet-5-5]`; local offline replay 41 s and 48 s; CI times in the PR.
-- [ ] 9.14 **GATED (user)**: add `evals (<sonnet-id>)` as a required check in branch protection after it runs green. Never automated.
-- [ ] 9.15 Closing: blind review (focus: case quality, negative counterparts, gauchada grading), PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings and reports excluded).
+- [x] 9.14 **GATED (user)**: add `evals (<sonnet-id>)` as a required check in branch protection after it runs green. Never automated.
+  - Done 2026-11-26 by the orchestrator with the user's authorization (B140): `evals (claude-sonnet-5-5)` required on `main` and `dev` after #120 reached dev.
+- [x] 9.15 Closing: blind review (focus: case quality, negative counterparts, gauchada grading), PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings and reports excluded).
+  - Done 2026-11-26: blind reviews of the case set (#117, #118), the claim detector fix (#119) and the docs (#121); PR bodies carry "Known pending items" and the size guard result.
 
 ## Phase 10: Default model, docs, release (slice 10, ~200 lines)
 
