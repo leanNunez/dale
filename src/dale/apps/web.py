@@ -12,7 +12,8 @@ through `erp_sim.public` at start, so a wrong one stops the host (exit 2) before
 (slice 5), which makes it required.
 
 `web_verdict` maps the runner's verdict onto the channel's own `VerdictIssued`, which the web
-channel cannot build itself because it never imports `dale.apps` (import contract 11)."""
+channel cannot build itself because it never imports `dale.apps` (import contract 11).
+`ComposedBackend` is the channel's `WebBackend` over one composed conversation (B44, B55)."""
 
 import argparse
 import logging
@@ -28,20 +29,26 @@ import sqlalchemy as sa
 import uvicorn
 from starlette.types import ASGIApp
 
+from dale.apps.compose import ChannelBackend, Verifier, compose
 from dale.apps.verifier_runner import StoredOrder, VerifierVerdict
+from dale.brain.application.model_port import ModelPort
+from dale.brain.application.take_turn import TurnResult
 from dale.channels.web import contract
 from dale.channels.web.app import Ready, create_app
 from dale.channels.web.contract import VerdictIssued, VerdictReason
+from dale.channels.web.conversations import BackendUnavailableError, WebBackend
 from dale.channels.web.guard import AllowList
 from dale.erp_sim.infrastructure.facade import SqlErpFacade
 from dale.erp_sim.public import ErpFacade
-from dale.shared.clock import SystemClock
+from dale.shared.clock import Clock, SystemClock
+from dale.shared.customer_input import CustomerText, KeyPress
 from dale.shared.errors import ErrorCode, Failure, message_for
 from dale.shared.ids import ProductId
 from dale.shared.money import Money
-from dale.shared.shown_events import ShownLine
+from dale.shared.shown_events import ShownEvent, ShownLine
 
 HOST: Final = "127.0.0.1"
+CHANNEL: Final = "web"
 PORT_VARIABLE, DEFAULT_PORT = "DALE_WEB_PORT", 8000
 COMPANY_VARIABLE, URL_VARIABLE = "DALE_WEB_COMPANY", "DALE_APP_DATABASE_URL"
 CUSTOMER_VARIABLE, DEFAULT_CUSTOMER = "DALE_WEB_CUSTOMER", "C-001"
@@ -97,7 +104,6 @@ def sql_erp(engine: sa.Engine) -> ErpFacade:
     return SqlErpFacade(engine, SystemClock())
 
 
-# Slice 5a's press route is the caller: it maps the verifier's verdict for the page.
 def web_verdict(verdict: VerifierVerdict, subject: UUID | None) -> VerdictIssued:
     """Cents become `Money`; a reason outside the closed set (`exit_<n>`, an exception class
     name) becomes `verifier_error`. A verdict the web type cannot carry is `unverifiable`."""
@@ -143,6 +149,47 @@ def _stored(order: StoredOrder) -> contract.StoredOrder:
         delivery_date=order.delivery_date,
         received_at=order.received_at,
     )
+
+
+class ComposedBackend:
+    """The channel's `WebBackend` over one composed conversation: its own `TakeTurn`, never
+    shared with another conversation (B55). A turn returns its whole result, trace and failure
+    included; a verdict is the runner's, mapped by `web_verdict` (B44)."""
+
+    def __init__(self, backend: ChannelBackend) -> None:
+        self._backend = backend
+
+    def take_turn(self, said: CustomerText) -> TurnResult:
+        self._backend.take_turn(said)
+        return self._backend.turns.pop()  # the harness keeps them; a page conversation need not
+
+    def confirm(self, press: KeyPress) -> ShownEvent:
+        return self._backend.confirm(press)
+
+    def verify(self, shown: Sequence[ShownEvent], subject: UUID | None) -> VerdictIssued:
+        return web_verdict(self._backend.verify(shown), subject)
+
+
+def backends(
+    engine: sa.Engine,
+    company: str,
+    customer: str,
+    model: Callable[[], ModelPort],
+    clock: Clock,
+    verifier: Verifier,
+) -> Callable[[], WebBackend]:
+    """A fresh backend for each new conversation, on the `web` channel. A customer that cannot
+    be resolved now (the database is down) creates no conversation."""
+
+    def build() -> WebBackend:
+        composed = compose(
+            engine, company, customer, model, clock, verifier=verifier, channel=CHANNEL
+        )
+        if isinstance(composed, Failure):
+            raise BackendUnavailableError(composed.code)
+        return ComposedBackend(composed.value)
+
+    return build
 
 
 def database_engine(url: str) -> sa.Engine:
