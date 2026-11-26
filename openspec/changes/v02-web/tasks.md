@@ -307,17 +307,25 @@ Covers: R13 (S13.6, S13.7), R14, R16 (S16.1, S16.7), D23, D24. Recordings and re
 
 Covers: R16 (S16.8), proposal Success Criteria, D23, §9 ADR 0008, §12. Nothing here is automated past 10.8; 10.1, 10.9 and 10.10 wait for the user.
 
-- [ ] 10.1 **GATED (user)**: the user reads `v0.2-comparison.md` and decides the default model per the rule's outcome (Sonnet if selected, otherwise Haiku stays; "inconclusive" keeps Haiku). Never decided by the orchestrator.
-- [ ] 10.2 Write `docs/decisions/0008-default-model-after-comparison.md`: the outcome, the report link, and the `MODEL_SETTINGS` change or none. Test: structural readback.
-- [ ] 10.3 If and only if the outcome selects Sonnet: change the one-constant `MODEL_SETTINGS` and its pinned fingerprint expectation; test that `MODEL_SETTINGS` names the model the outcome selects and that the shipped default has 0 false confirmations in the comparison run (S16.8, R16). Otherwise record "no change" in ADR 0008.
-- [ ] 10.4 Update `README.md` and `README.es.md`: run instructions for the web host and page, the three panels, the model result, and the fiction notice stays. Test: read both end to end.
-- [ ] 10.5 Write the v0.2 release notes: scope, comparison outcome, known pending list, and a line for the informal one-minute walkthrough result (filled by 10.6).
+- [x] 10.1 **GATED (user)**: the user reads `v0.2-comparison.md` and decides the default model per the rule's outcome (Sonnet if selected, otherwise Haiku stays; "inconclusive" keeps Haiku). Never decided by the orchestrator.
+  - Done 2026-11-26 by the user: read `v0.2-comparison.md` and confirmed `select:claude-haiku-5-5` (pass^3 37 vs 40 of 40 differ by less than 4; Haiku at least 20% cheaper, USD 0.062 vs 0.94 for the whole run; both 0 false confirmations, all hard gates pass). Haiku stays the default.
+- [x] 10.2 Write `docs/decisions/0008-default-model-after-comparison.md`: the outcome, the report link, and the `MODEL_SETTINGS` change or none. Test: structural readback.
+  - Done 2026-11-26: `c85dcde`, structural readback.
+- [x] 10.3 If and only if the outcome selects Sonnet: change the one-constant `MODEL_SETTINGS` and its pinned fingerprint expectation; test that `MODEL_SETTINGS` names the model the outcome selects and that the shipped default has 0 false confirmations in the comparison run (S16.8, R16). Otherwise record "no change" in ADR 0008.
+  - Done 2026-11-26: the outcome does not select Sonnet, so `MODEL_SETTINGS` is unchanged and ADR 0008 says "no change". Test in `tests/unit/evals/test_models.py` (`c85dcde`): `MODEL_SETTINGS` names the committed comparison's `default_model` and outcome, and the shipped default's `v0.2-claude-haiku-5-5.json` counts 0 false confirmations (S16.8, R16).
+- [x] 10.4 Update `README.md` and `README.es.md`: run instructions for the web host and page, the three panels, the model result, and the fiction notice stays. Test: read both end to end.
+  - Done 2026-11-26: `3d17b1e`. Both read end to end; the fiction notice stays in both. Adds the web host and page run instructions, the three panels, the comparison result with numbers and link, and the v0.2 eval section (recordings and replay per model, the record procedure). The Spanish README also drops a stale "Zellij sigue pendiente" the English one had already fixed.
+- [x] 10.5 Write the v0.2 release notes: scope, comparison outcome, known pending list, and a line for the informal one-minute walkthrough result (filled by 10.6).
+  - Done 2026-11-26: `docs/releases/v0.2.md` (`4af98e0`; v0.1 notes were a GitHub release only, B137). The 10.6 line is a marked placeholder.
 - [ ] 10.6 **GATED (user)**: one informal walkthrough with one person who does not program, one minute on the page; the user records what that person described. Not a study.
-- [ ] 10.7 Live suite before release (R13): confirm the shipped model's comparison run is on the release code (no prompt, tool or brain change since); if anything changed, the user runs a new live run. Result and 0 false confirmations noted in the release notes.
+- [x] 10.7 Live suite before release (R13): confirm the shipped model's comparison run is on the release code (no prompt, tool or brain change since); if anything changed, the user runs a new live run. Result and 0 false confirmations noted in the release notes.
+  - Done 2026-11-26: `git diff f9db72a HEAD -- src/` is empty (only recordings, reports, the Sonnet CI replay, docs and one test changed) and `prompt_fingerprint()` equals the pin `d7db359b...`, so no new live run is needed. Result and "0 false confirmations" are in the release notes.
 - [ ] 10.8 Run the full suite: `uv run pytest`, `uv run lint-imports`, ruff, mypy strict, and the `web` job commands locally; all CI jobs green on the slice PR.
+  - Local half done 2026-11-26 on the slice head: pytest 1701 passed; evals replay 120 passed for each of claude-haiku-5-5 and claude-sonnet-5-5; lint-imports 15 kept; ruff check, ruff format --check and mypy strict clean; in `apps/web` typecheck, lint, Vitest 408 passed, build, and `gen:contract` with no drift. The CI half (all jobs green on the slice PR) waits for the PR.
 - [ ] 10.9 **GATED (user)**: open and merge the release PR `dev` to `main` (exempt from the size guard). The user approves.
 - [ ] 10.10 **GATED (user)**: tag `v0.2` on `main`, only after the comparison report and ADR 0008 exist. The user creates the tag.
-- [ ] 10.11 Closing: blind review of the docs diff, PR body with "Known pending items", commit with the slice title (before 10.9), check the PR size guard output.
+- [x] 10.11 Closing: blind review of the docs diff, PR body with "Known pending items", commit with the slice title (before 10.9), check the PR size guard output.
+  - Done 2026-11-26: blind review of the docs diff (1 should-fix: the record-commit procedure vs what v0.2 did; 7 nits) fixed in the commits that introduced them; the discarded Haiku run 1 kept as evidence (B139); size guard in the PR body.
 
 ---
 
