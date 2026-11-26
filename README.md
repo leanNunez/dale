@@ -221,7 +221,7 @@ false confirmations, unexpected writes, unverifiable runs and runs that raised.
   recorded in the decision log and the apply-progress notes.
 - A decision log records every choice and why:
   `openspec/changes/archive/2026-11-18-v01-core/decision-log.md` (v0.1) and
-  `openspec/changes/v02-web/decision-log.md` (v0.2).
+  `openspec/changes/archive/2026-11-26-v02-web/decision-log.md` (v0.2).
 
 ## License
 
