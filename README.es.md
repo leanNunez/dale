@@ -105,11 +105,11 @@ uv run pytest evals --live --record   # además escribe las grabaciones
 uv run pytest evals --live --record --report v0.1-run5
 ```
 
-Las grabaciones de `evals/recordings/` vienen de la corrida del release `v0.1-run4` (2026-11-16,
+Las grabaciones de `evals/recordings/claude-haiku-5-5/` vienen de la corrida del release `v0.1-run4` (2026-11-16,
 `claude-haiku-5-5`). Cada corrida del release vuelve a grabar toda la suite; las
 transcripciones de las corridas anteriores están en el historial de git. Una corrida que
 falla se commitea tal como se grabó, sin repetirla hasta que pase:
-`evals/recordings/known_misses.toml` la lista con su motivo y el sha256 de su grabación, y el
+`evals/recordings/claude-haiku-5-5/known_misses.toml` la lista con su motivo y el sha256 de su grabación, y el
 replay verifica que siga fallando igual y que nunca confirme nada.
 
 ## Resultados

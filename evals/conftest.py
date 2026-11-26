@@ -1,5 +1,7 @@
 """Eval options. Default: replay, no network (S13.4). `--live` calls the live model and never
 writes; `--live --record` also writes the recordings (14.9). `--record` alone is refused.
+`--model` picks the compared model the session replays, records or runs live (default
+`MODEL_SETTINGS.model`, D23).
 
 The socket policy follows the mode. pyproject's addopts pass pytest-socket `--disable-socket
 --allow-hosts=127.0.0.1,localhost`, which blocks the model API. Replay keeps that restriction.
@@ -33,9 +35,11 @@ from typing import Any
 
 import pytest
 
+from dale.brain.application.model_port import ModelSettings
 from evals.harness.case import load_cases
 from evals.harness.collect import CASES_DIR
 from evals.harness.model import Mode, mode_from_flags
+from evals.harness.models import COMPARED, DEFAULT_MODEL, settings_for
 from evals.harness.report import VERSION, ReportError, build_report
 from evals.harness.report_files import commit_label, report_paths, write_report
 from evals.harness.sink import RunSink, SinkSession
@@ -47,6 +51,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--live", action="store_true", help="call the live model (spends money)")
     group.addoption("--record", action="store_true", help="with --live, write the recordings")
     group.addoption("--report", metavar="VERSION", help="write the release report for VERSION")
+    group.addoption(
+        "--model",
+        default=DEFAULT_MODEL,
+        choices=sorted(COMPARED),
+        help="the model to replay, record or run live (default: the shipped model)",
+    )
 
 
 def _mode(config: pytest.Config) -> Mode:
@@ -77,6 +87,12 @@ def pytest_configure(config: pytest.Config) -> None:
 @pytest.fixture(scope="session")
 def mode(request: pytest.FixtureRequest) -> Mode:
     return _mode(request.config)
+
+
+@pytest.fixture(scope="session")
+def model_settings(request: pytest.FixtureRequest) -> ModelSettings:
+    """The settings of the model under test: the shipped ones with only the model replaced."""
+    return settings_for(request.config.getoption("--model"))
 
 
 SESSION = pytest.StashKey[SinkSession]()
@@ -142,6 +158,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
             mode=_session(config).mode,
             commit=config.stash[COMMIT],
             generated=datetime.now(UTC),
+            settings=settings_for(config.getoption("--model")),
         )
         message = "report written: " + ", ".join(str(p) for p in write_report(report))
     except (ValueError, KeyError, TypeError, OSError) as error:
