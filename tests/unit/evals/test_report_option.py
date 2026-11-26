@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 
 import evals.conftest as hooks
-from evals.harness import report_files
+from dale.brain.application.model_port import MODEL_SETTINGS
+from evals.harness import pricing, report_files
 from evals.harness.metrics import RunRecord
 from evals.harness.model import prompt_fingerprint
 from evals.harness.models import DEFAULT_MODEL, SONNET, settings_for
@@ -19,6 +20,7 @@ from evals.harness.pricing import load_pricing
 from evals.harness.report import build_report
 
 pytest_plugins = ["pytester"]
+STEM = f"v9.9-{MODEL_SETTINGS.model}"  # a report is named for its version and its model (S14.3)
 FIXTURE_CASES = Path(__file__).parents[2] / "fixtures" / "evals" / "cases"
 INNER = """
 import pytest
@@ -66,9 +68,9 @@ def test_a_complete_session_writes_the_report_from_every_run(
 ) -> None:
     result = run(inner(pytester), "--report", "v9.9")
     result.assert_outcomes(passed=6)
-    result.stdout.fnmatch_lines(["report written: *v9.9.json, *v9.9.md"])
-    assert reports(tmp_path) == ["v9.9.json", "v9.9.md"] and result.ret == pytest.ExitCode.OK
-    text = (tmp_path / "reports" / "v9.9.json").read_text()
+    result.stdout.fnmatch_lines([f"report written: *{STEM}.json, *{STEM}.md"])
+    assert reports(tmp_path) == [f"{STEM}.json", f"{STEM}.md"] and result.ret == pytest.ExitCode.OK
+    text = (tmp_path / "reports" / f"{STEM}.json").read_text()
     assert '"mode": "replay"' in text and '"verified": 3' in text
 
 
@@ -79,7 +81,7 @@ def test_the_commit_is_the_one_at_session_start_not_dirtied_by_what_the_run_writ
         ["git", "rev-parse", "HEAD"], cwd=inner(pytester).path, capture_output=True, text=True
     ).stdout.strip()
     run(pytester, "--report", "v9.9")
-    assert f'"commit": "{sha}"' in (tmp_path / "reports" / "v9.9.json").read_text()
+    assert f'"commit": "{sha}"' in (tmp_path / "reports" / f"{STEM}.json").read_text()
     assert (pytester.path / "written-by-the-run.txt").exists()  # written after the label was read
 
 
@@ -102,21 +104,22 @@ def test_a_report_that_cannot_be_written_never_leaves_an_older_one_in_place(
     pytester: pytest.Pytester, tmp_path: Path
 ) -> None:  # B91 (2)
     (tmp_path / "reports").mkdir()
-    for name in ("v9.9.json", "v9.9.md", "v1.0.json"):
+    for name in (f"{STEM}.json", f"{STEM}.md", "v1.0.json", "v9.9-claude-sonnet-5-5.json"):
         (tmp_path / "reports" / name).write_text("Release gate: PASS")
     result = run(inner(pytester), "--report", "v9.9", "-k", "fixture-order")  # runs missing
     assert result.ret == pytest.ExitCode.TESTS_FAILED
-    assert reports(tmp_path) == ["v1.0.json"]  # the stale pair of this version is gone, no other
+    # the stale pair of this version and model is gone, no other (not another model's either)
+    assert reports(tmp_path) == ["v1.0.json", "v9.9-claude-sonnet-5-5.json"]
 
 
 def test_without_the_option_nothing_is_written_nor_deleted(
     pytester: pytest.Pytester, tmp_path: Path
 ) -> None:
     (tmp_path / "reports").mkdir()
-    (tmp_path / "reports" / "v9.9.json").write_text("old")
+    (tmp_path / "reports" / f"{STEM}.json").write_text("old")
     result = run(inner(pytester))
     result.assert_outcomes(passed=6)
-    assert reports(tmp_path) == ["v9.9.json"] and "report" not in result.stdout.str().lower()
+    assert reports(tmp_path) == [f"{STEM}.json"] and "report" not in result.stdout.str().lower()
 
 
 def test_the_sink_directory_of_the_session_is_removed_at_its_end(
@@ -138,6 +141,45 @@ def test_the_option_needs_the_cache_provider(pytester: pytest.Pytester) -> None:
     result = run(inner(pytester), "--report", "v9.9", "-p", "no:cacheprovider")
     assert result.ret == pytest.ExitCode.USAGE_ERROR
     assert "cache provider" in result.stderr.str()
+
+
+def priced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *models: str) -> None:
+    """A price file with the shipped Haiku table, copied for each model named: the shipped file
+    has no Sonnet table until its prices are read from the live page."""
+    table = pricing.PRICING_FILE.read_text(encoding="utf-8")
+    text = "".join(table.replace("claude-haiku-5-5", model) for model in models)
+    (tmp_path / "pricing.toml").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(pricing, "PRICING_FILE", tmp_path / "pricing.toml")
+
+
+def test_each_model_writes_its_own_report_and_never_the_others(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S14.3: the same version for two compared models gives two named pairs."""
+    priced(tmp_path, monkeypatch, "claude-haiku-5-5", "claude-sonnet-5-5")
+    inner(pytester)
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        assert run(pytester, "--report", "v9.9", "--model", model).ret == 0
+    assert reports(tmp_path) == [
+        "v9.9-claude-haiku-5-5.json",
+        "v9.9-claude-haiku-5-5.md",
+        "v9.9-claude-sonnet-5-5.json",
+        "v9.9-claude-sonnet-5-5.md",
+    ]
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        text = (tmp_path / "reports" / f"v9.9-{model}.json").read_text()
+        assert f'"model": "{model}"' in text and f'"effort": "{MODEL_SETTINGS.effort}"' in text
+
+
+def test_a_model_with_no_prices_is_a_usage_error_before_any_run(
+    pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S14.4: nothing runs, so no paid run can end with a report that cannot be written."""
+    priced(tmp_path, monkeypatch, "claude-haiku-5-5")
+    result = run(inner(pytester), "--report", "v9.9", "--model", "claude-sonnet-5-5")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "no pricing table for claude-sonnet-5-5" in result.stderr.str()
+    assert reports(tmp_path) == [] and not (pytester.path / "written-by-the-run.txt").exists()
 
 
 class Terminal:
@@ -195,13 +237,13 @@ def test_a_worker_neither_deletes_a_report_nor_writes_one(tmp_path: Path) -> Non
         for n in (1, 2, 3):
             sink.write(RunRecord(case, n, suite, True, True, "verified", 0, True, 0, ()))
     (tmp_path / "reports").mkdir()
-    (tmp_path / "reports" / "v9.9.md").write_text("kept")
+    (tmp_path / "reports" / f"{STEM}.md").write_text("kept")
     worker = fake(
         tmp_path, "v9.9", {hooks.WORKER_KEY: {"id": "x", "mode": "replay", "fingerprint": "f"}}
     )
     hooks.pytest_sessionstart(worker)
     hooks.pytest_sessionfinish(worker)
-    assert reports(tmp_path) == ["v9.9.md"]
+    assert reports(tmp_path) == [f"{STEM}.md"]
 
 
 def test_the_report_is_built_for_the_model_the_session_ran(
@@ -212,7 +254,9 @@ def test_the_report_is_built_for_the_model_the_session_ran(
     written: list[dict[str, Any]] = []
 
     def build(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        return build_report(*args, pricing=replace(load_pricing(), model=SONNET), **kwargs)
+        return build_report(
+            *args, pricing=replace(load_pricing(DEFAULT_MODEL), model=SONNET), **kwargs
+        )
 
     def write(report: dict[str, Any]) -> tuple[Path, Path]:
         written.append(report)

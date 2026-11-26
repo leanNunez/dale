@@ -27,7 +27,7 @@ absolute one, because the report prints it.
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -95,6 +95,20 @@ def request_fingerprint(request: ModelRequest, settings: ModelSettings = MODEL_S
 def prompt_fingerprint(settings: ModelSettings = MODEL_SETTINGS) -> str:
     """The fingerprint of the real request prefix: the settings, the system blocks and the tools."""
     return fingerprint(settings, system_blocks(el_hornero.NAME), TOOL_SCHEMAS)
+
+
+def content_hash(system: Sequence[Any], tools: Sequence[Any]) -> str:
+    """sha256 of the system blocks and the tools as canonical JSON, without the model settings:
+    two models given the same prompt and tools have the same hash and different fingerprints."""
+    text = json.dumps(
+        [list(system), list(tools)], ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def prompt_content_hash() -> str:
+    """The content hash of the real request prefix (the counterpart of `prompt_fingerprint`)."""
+    return content_hash(system_blocks(el_hornero.NAME), TOOL_SCHEMAS)
 
 
 def messages_digest(request: ModelRequest) -> str:

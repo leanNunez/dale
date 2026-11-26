@@ -94,11 +94,11 @@ named `dale_test`; the `dale` database above is not touched.
 
 ```bash
 # replay (recorded model, no network, no key); needs Postgres; CI runs this on every PR
-uv run pytest evals
+uv run pytest evals                   # --model <id> picks the model; default: the shipped one
 uv run pytest evals --live            # calls the live model, spends money
 uv run pytest evals --live --record   # also writes the recordings
 # release run (after `ant auth login`), as v0.1-run4 was made: re-records the whole suite
-# and writes evals/reports/<name>.{json,md}; reusing a name overwrites that committed report
+# and writes evals/reports/<name>-<model>.{json,md}; reusing a name overwrites that report
 uv run pytest evals --live --record --report v0.1-run5
 ```
 
