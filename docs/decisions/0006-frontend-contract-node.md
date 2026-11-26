@@ -22,7 +22,7 @@ summarized here.
 | Components | `COMPONENTS` maps each event type to one typed UI component (`ChatText`, `OrderSummary`, `OrderConfirmation`, `Notice`, `HandoffNotice`, `ToolTrace`, `Verdict`) and is written to `components.json`. The page switches over it exhaustively |
 | Generation | `python -m dale.channels.web.schema_gen` writes `contracts/v1/<Type>.schema.json` and `components.json`: sorted keys, 2-space indent, trailing newline, `additionalProperties: false` on every object that does not already describe its extra keys. Output types use serialization mode with defaulted fields (`v`, `type`) required; commands use validation mode, so a defaulted field is optional to send. The output is committed |
 | Drift checks | A golden test in the `test` job fails when regeneration differs from the committed files, including a missing or extra file; renaming or removing a field changes the output. TypeScript generation and its `git diff --exit-code` check arrive with the page |
-| Versioning (W5) | v1 is additive-only: optional fields and event types may be added, none removed or changed in meaning. Responses and events carry `v: 1`; commands carry no `v` and are versioned by the `/v1` path. `GET /v1/contract` (planned, slice 5) reports `v: 1`. The published schemas are closed, so an addition changes them; the page uses the TypeScript types at compile time, does not reject a response at runtime against the schema, and ignores an unknown event type (planned, slice 7) |
+| Versioning (W5) | v1 is additive-only: optional fields and event types may be added, none removed or changed in meaning. Responses and events carry `v: 1`; commands carry no `v` and are versioned by the `/v1` path. `GET /v1/contract` reports `v: 1`. The published schemas are closed, so an addition changes them; the page uses the TypeScript types at compile time, does not reject a response at runtime against the schema, and ignores an unknown event type (planned, slice 7) |
 | English identifiers | Property names, definition names and enum values are English (a test scans them); Spanish appears only in message text |
 | Samples | `contracts/v1/samples/` holds one authored JSON per event type plus commands and an envelope. Tests round-trip them; the page's type test (planned, slice 7) compiles over them |
 | Size guard | Generated `contracts/**/*.schema.json` and `contracts/v1/components.json` are excluded from the PR size count; the samples, this record and the source types still count |
@@ -30,7 +30,7 @@ summarized here.
 ## Alternatives rejected
 
 - `openapi-typescript` from FastAPI's OpenAPI would tie the types to the routes, and OpenAPI is
-  to be disabled (planned, slice 4) so the route table stays exact.
+  disabled so the route table stays exact.
 - Hand-written TypeScript types drift from the Python ones without any check failing.
 - Importing pydantic into `dale.shared` to describe the shown events would break the shared
   kernel's import rule; the web channel describes them instead.
