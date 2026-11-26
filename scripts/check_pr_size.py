@@ -1,9 +1,11 @@
 """PR size guard: fail when a diff changes more than 400 authored lines.
 
 Counts ``git diff --numstat`` additions + deletions, skipping ``openspec/``, the generated
-eval files (``evals/recordings/`` and ``evals/reports/``), ``uv.lock`` and the generated contract
+eval files (``evals/recordings/`` and ``evals/reports/``), ``uv.lock``, the generated contract
 files (``contracts/**/*.schema.json`` and ``contracts/v1/components.json``; the authored samples
-under ``contracts/v1/samples/`` still count). The release PR
+under ``contracts/v1/samples/`` still count) and the page's lockfile and generated types
+(``apps/web/package-lock.json`` and ``apps/web/src/contract/generated/``; ``package.json`` still
+counts, so a dependency change is always reviewed). The release PR
 (``dev`` of this same repository into ``main``) is skipped: it carries slices that were already
 reviewed. A fork's ``dev`` is not.
 """
@@ -16,8 +18,13 @@ import sys
 from pathlib import PurePosixPath
 
 LIMIT = 400
-EXCLUDED_PREFIXES = ("openspec/", "evals/recordings/", "evals/reports/")
-EXCLUDED_FILES = ("uv.lock", "contracts/v1/components.json")
+EXCLUDED_PREFIXES = (
+    "openspec/",
+    "evals/recordings/",
+    "evals/reports/",
+    "apps/web/src/contract/generated/",
+)
+EXCLUDED_FILES = ("uv.lock", "contracts/v1/components.json", "apps/web/package-lock.json")
 
 
 def is_generated_schema(path: str) -> bool:
