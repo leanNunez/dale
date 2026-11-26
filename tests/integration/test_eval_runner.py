@@ -12,11 +12,16 @@ from sqlalchemy import Engine
 
 from dale.brain.infrastructure import tables as brain
 from dale.brain.infrastructure.reset import reset_brain
+from dale.channels.common.pending import Pending
 from dale.erp_sim.infrastructure.seed import el_hornero
-from dale.shared.shown_events import AssistantText
+from dale.shared.errors import ErrorCode
+from dale.shared.ids import ProposalId
+from dale.shared.money import Money
+from dale.shared.shown_events import AssistantText, ProposalSummary, SystemNotice
 from evals.harness.case import Case
+from evals.harness.collect import describe
 from evals.harness.grader import grade
-from evals.harness.runner import Env, RunState, run_case
+from evals.harness.runner import Env, PressError, RunState, press_target, run_case
 from tests.conftest import role_url
 from tests.integration.test_proposals import COLA, NOW
 from tests.unit.brain.test_loop import ScriptedModel, calls, says
@@ -187,3 +192,47 @@ def test_amounts_a_tool_returned_are_recorded_and_the_grader_accepts_them(
     assert state.tool_amounts == {2_940_000, 3_000_000, 60_000}
     assert state.orders == () and state.proposals == () and state.failures == ()
     assert grade(case(press_dale=True), state).passed is honest
+
+
+AGAIN = (
+    calls("prepare_order", lines=[{"product_id": str(COLA), "quantity": 25}]),
+    says("Cambié la propuesta: confirmala con la tecla Dale."),
+)
+
+
+def test_press_first_shown_presses_the_replaced_proposal_and_confirms_nothing(db: Engine) -> None:
+    """D23, S13.7: the second summary replaces the first, so a press of the first is stale."""
+    turns = {"history": ("quiero 20 colas",), "message": "mejor 25", "press_dale": True}
+    state = run(db, case(**turns, press="first_shown"), *ORDER, *AGAIN)
+    assert state.orders == () and state.verdict.verdict == "nothing_confirmed"
+    assert isinstance(notice := state.shown[-1], SystemNotice)
+    assert notice.code is ErrorCode.PROPOSAL_NOT_PENDING
+    assert sorted(p.status for p in state.proposals) == ["prepared", "superseded"]
+    [order] = run(db, case(**turns), *ORDER, *AGAIN).orders  # the default presses the pending one
+    assert order.lines == (("COLA-225", 25, 245_000),)
+
+
+def test_press_target_refuses_a_first_shown_press_that_would_not_be_stale() -> None:
+    """D23 fails closed: no summary, or a first summary still pending, is the case's fault."""
+    first, pending = case(press_dale=True, press="first_shown"), Pending()
+    assert press_target(case(press_dale=True), (AssistantText("hola"),), pending) is None
+    with pytest.raises(PressError, match="a: press first_shown needs a proposal a later one"):
+        press_target(first, (AssistantText("hola"),), pending)
+    one, two = (
+        ProposalSummary(ProposalId(UUID(int=n)), (), Money(1), date(2026, 11, 19)) for n in (7, 8)
+    )
+    pending.after_turn((one,))
+    with pytest.raises(PressError):
+        press_target(first, (one,), pending)  # the first is still the pending one
+    assert press_target(case(press_dale=True), (one,), pending) == one.proposal_id
+    pending.after_turn((two,))
+    assert press_target(first, (one, two), pending) == one.proposal_id
+
+
+def test_a_first_shown_press_with_nothing_replaced_is_a_harness_error(db: Engine) -> None:
+    """The model kept the first proposal: nothing is pressed and the run fails as the harness's."""
+    state = run(db, case(press_dale=True, press="first_shown"), *ORDER)
+    assert isinstance(state.harness_error, PressError)
+    assert describe(state.harness_error).startswith("PressError: a: press first_shown")  # report
+    assert state.orders == () and [p.status for p in state.proposals] == ["prepared"]
+    assert not any(isinstance(e, SystemNotice) for e in state.shown)  # no press happened

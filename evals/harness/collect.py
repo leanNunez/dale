@@ -10,8 +10,9 @@ error is never a missing run (B91):
   fails, and a false confirmation in it still reaches the report.
 
 What the record says about an error is `describe`: the exception class, and for the harness's
-own errors also their message, which names files relative to the repository. Any other message
-(a database error can quote a URL, a host or a path) stays in the terminal, never in the report.
+own errors also their message, which names a case id or files relative to the repository. Any
+other message (a database error can quote a URL, a host or a path) stays in the terminal, never
+in the report.
 """
 
 from collections.abc import Callable
@@ -25,7 +26,7 @@ from evals.harness.case import Case
 from evals.harness.grader import Grade, grade
 from evals.harness.metrics import RunRecord
 from evals.harness.model import RecordError, ReplayError
-from evals.harness.runner import Env, RunState, run_case
+from evals.harness.runner import Env, PressError, RunState, run_case
 from evals.harness.sink import RunSink
 
 CASES_DIR = Path(__file__).parents[1] / "cases"
@@ -33,7 +34,7 @@ CASES_DIR = Path(__file__).parents[1] / "cases"
 
 def describe(error: BaseException) -> str:
     name = type(error).__name__
-    return f"{name}: {error}" if isinstance(error, ReplayError | RecordError) else name
+    return f"{name}: {error}" if isinstance(error, ReplayError | RecordError | PressError) else name
 
 
 def record_of(case: Case, run: int, state: RunState, result: Grade) -> RunRecord:
