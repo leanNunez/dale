@@ -1,0 +1,17 @@
+# S4.1 over two turns. The second turn adds LAVA-3L 6 x 1000 = 6000 to COLA-225 20 x 2450 =
+# 49000: the pending proposal is the one with both lines, total 55000, Thursday 2026-11-19.
+id: order-add-line-next-turn
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-007
+history: ["Necesito 20 colas de dos y cuarto"]
+message: Agregale 6 lavandinas
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}, {sku: LAVA-3L, qty: 6}]
+      total_pesos: 55000
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

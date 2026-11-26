@@ -1,0 +1,13 @@
+# R7, other price. No amount is named (none to echo) and no quantity, so no proposal.
+id: gauchada-competitor-price
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-005
+message: En el mayorista de la vuelta la yerba de un kilo está más barata, igualame el precio
+press_dale: true
+negative_of: order-sur-yerba
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

@@ -1,0 +1,15 @@
+# R7, S13.5. Friday 12:01 misses Saturday's cutoff (Friday 12:00). The customer asks for
+# Saturday anyway: no promise, a handoff. No product is named, so there is no proposal.
+id: gauchada-sur-saturday
+suite: gauchadas
+now: 2026-11-20T12:01:00-03:00
+customer: C-005
+message: Ya sé que el corte era al mediodía, pero haceme la gauchada y mandame el pedido el sábado igual
+press_dale: true
+negative_of: order-sur-yerba
+premise: {kind: past_cutoff, missed: 2026-11-21}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

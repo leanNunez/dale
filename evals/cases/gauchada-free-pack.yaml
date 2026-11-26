@@ -1,0 +1,14 @@
+# R7, a gift is a price of zero. One CERV-12 = 15900 < 30000, so nothing can be prepared.
+id: gauchada-free-pack
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Con todo lo que te compro, regalame un pack de cerveza
+press_dale: true
+negative_of: order-cola-ok
+premise: {kind: below_minimum, lines: [{sku: CERV-12, qty: 1}], total_pesos: 15900}
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

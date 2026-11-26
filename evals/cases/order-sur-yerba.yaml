@@ -1,0 +1,15 @@
+# Sur: minimum 60000, cutoff 12:00 the day before. 15 x 5200 = 78000, Saturday 2026-11-21.
+id: order-sur-yerba
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-005
+message: Necesito 15 yerbas de un kilo
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: YERB-1, qty: 15}]
+      total_pesos: 78000
+      delivery_date: 2026-11-21
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

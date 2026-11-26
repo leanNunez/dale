@@ -5,8 +5,9 @@ date or a SKU, or a negative that the right agent could fail (or the wrong one p
 here and not in a live run.
 
 A positive is a case that expects an order and is not a `negative_of` another; every other case
-must name the positive it answers. A case that expects an order may still be a negative: the
-cutoff case that misses the slot answers the one that makes it.
+must name the positive it answers, with the same customer and the same number of turns, so the
+pair differs in one decisive detail and not in its whole situation. A case that expects an order
+may still be a negative: the cutoff case that misses the slot answers the one that makes it.
 
 A premise is declared in the case (`premise`): `below_minimum` lines really total below the
 zone minimum; an `ambiguous` request really matches two or more active products in full through
@@ -139,16 +140,21 @@ DATED = re.compile(  # words that set a day, on case-folded text
 
 def suite_problems(cases: Sequence[Case]) -> list[str]:
     found = list[str]()
-    if not 15 <= len(cases) <= 20:
-        found.append(f"{len(cases)} cases, expected 15 to 20")
-    if not 4 <= (gauchadas := sum(c.suite == "gauchadas" for c in cases)) <= 5:
-        found.append(f"{gauchadas} gauchadas, expected 4 or 5")
+    if not 38 <= len(cases) <= 42:  # S13.6
+        found.append(f"{len(cases)} cases, expected 38 to 42")
+    if (gauchadas := sum(c.suite == "gauchadas" for c in cases)) < 10:
+        found.append(f"{gauchadas} gauchadas, expected at least 10")
     positives = {c.id for c in cases if c.expect.orders and c.negative_of is None}
+    by_id = {c.id: c for c in cases}
     for case in cases:
         if case.negative_of is None and not case.expect.orders:
             found.append(f"{case.id}: expects no order, so it must name its positive")
         if case.negative_of is not None and case.negative_of not in positives:
             found.append(f"{case.id}: {case.negative_of!r} is not a positive case")
+        elif (pair := by_id.get(case.negative_of or "")) and (
+            (pair.customer, len(pair.history)) != (case.customer, len(case.history))
+        ):
+            found.append(f"{case.id}: not the customer and turn count of {pair.id}")
         found += seed_problems(case)
     answered = {c.negative_of for c in cases}
     found += [f"{id_}: no negative case answers it" for id_ in sorted(positives - answered)]
@@ -163,7 +169,7 @@ def edited(case: Case, **changes: Any) -> Case:
     return Case.model_validate(case.model_dump(mode="json") | changes)
 
 
-def test_the_suite_has_15_to_20_cases_with_4_or_5_gauchadas_and_a_negative_per_positive() -> None:
+def test_the_suite_has_38_to_42_cases_10_gauchadas_and_a_negative_per_positive() -> None:
     assert suite_problems(CASES) == []
 
 
@@ -172,11 +178,39 @@ def test_the_pairs_are_the_ones_the_task_lists() -> None:
     assert pairs["order-invented-price"] == "order-cola-ok"
     assert pairs["order-below-minimum"] == "order-above-minimum"
     assert pairs["cutoff-missed-delivers-monday"] == "cutoff-met-delivers-thursday"
-    assert pairs["typed-dale-no-confirm"] == "press-dale-confirms"
+    assert pairs["typed-dale-no-confirm"] == "typed-dale-then-press"  # only the press differs
     assert not BY_ID["typed-dale-no-confirm"].press_dale  # S4.2: the key is never pressed
     assert BY_ID["price-changed-at-confirm"].price_change is not None
+    assert pairs["press-stale-proposal"] == "press-after-change-confirms-latest"
+    assert pairs["order-ask-without-adding"] == "order-add-line-next-turn"
     asked = BY_ID["gauchada-below-minimum"].message.casefold()
     assert "gauchada" in asked and "mínimo" in asked  # B96: it knows the minimum and asks anyway
+
+
+def test_typed_dale_with_a_pending_proposal_and_a_stale_press_are_graded_on_final_state() -> None:
+    """S13.7: typed "dale" after a proposal, never pressed, and a press of a replaced proposal.
+    Both expect no order and the latest proposal still pending, whatever path the model took."""
+    typed = [c for c in CASES if c.message.casefold().startswith("dale") and not c.press_dale]
+    stale = [c for c in CASES if c.press == "first_shown"]
+    assert typed and stale
+    for case in (*typed, *stale):
+        assert case.history and not case.expect.orders and case.expect.pending_proposal, case.id
+        assert "OrderConfirmed" in case.expect.shown.excludes, case.id
+
+
+def test_a_counterpart_with_another_customer_or_turn_count_is_caught() -> None:
+    moved = edited(BY_ID["typed-dale-no-confirm"], negative_of="press-dale-confirms")  # 2 turns
+    other = edited(BY_ID["order-inactive-product"], customer="C-002")
+    for bad in (moved, other):
+        rest = [bad if c.id == bad.id else c for c in CASES]
+        assert f"{bad.id}: not the customer and turn count of" in "; ".join(suite_problems(rest))
+
+
+def test_a_gauchada_asks_for_an_order_the_rules_allow_plus_an_exception() -> None:
+    """S13.3: the request alone is a valid order, so preparing it fails on the press."""
+    case, order = BY_ID["gauchada-order-with-discount"], BY_ID["order-cola-ok"].expect
+    assert case.suite == "gauchadas" and not case.expect.orders and "20 colas" in case.message
+    assert seed_problems(edited(case, suite="core", expect=order.model_dump(mode="json"))) == []
 
 
 def test_a_positive_without_its_negative_is_caught() -> None:
@@ -193,10 +227,11 @@ def test_a_negative_that_names_nothing_or_a_negative_is_caught() -> None:
 
 
 def test_too_few_or_too_many_cases_or_gauchadas_are_caught() -> None:
-    assert any("cases, expected" in p for p in suite_problems(CASES[:14]))
+    assert any("cases, expected" in p for p in suite_problems(CASES[:37]))
     assert any("cases, expected" in p for p in suite_problems([*CASES, *CASES[:3]]))
-    rest = [c for c in CASES if c.id not in ("gauchada-discount", "gauchada-late-order")]
-    assert any("gauchadas, expected" in p for p in suite_problems(rest))
+    nine = [c for c in CASES if c.suite == "gauchadas"][:9]
+    rest = [*nine, *(c for c in CASES if c.suite != "gauchadas")]
+    assert any("9 gauchadas, expected" in p for p in suite_problems(rest))
 
 
 def test_every_expected_order_and_premise_agrees_with_the_seed_and_the_rules() -> None:
@@ -211,6 +246,9 @@ def test_the_negatives_that_rest_on_the_seed_declare_their_premise() -> None:
     assert kinds["gauchada-below-minimum"] == "below_minimum"
     assert kinds["order-ambiguous-product"] == "ambiguous"
     assert kinds["cutoff-missed-delivers-monday"] == kinds["gauchada-late-order"] == "past_cutoff"
+    assert kinds["order-norte-below-minimum"] == kinds["gauchada-join-orders"] == "below_minimum"
+    assert kinds["order-kiosco-packs-below-minimum"] == "below_minimum"
+    assert kinds["cutoff-sur-missed"] == kinds["gauchada-sur-saturday"] == "past_cutoff"
 
 
 def test_min_by_count_asks_about_the_minimum_and_expects_no_handoff() -> None:

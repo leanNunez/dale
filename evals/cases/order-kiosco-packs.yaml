@@ -1,0 +1,16 @@
+# S1.1, two packs for another Centro customer. AGUA-6X2 5 x 6200 = 31000 and CERV-12 3 x 15900 =
+# 47700, total 78700. Wednesday 09:00: Thursday 2026-11-19.
+id: order-kiosco-packs
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-002
+message: Mandame 5 packs de agua sin gas y 3 packs de cerveza
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: AGUA-6X2, qty: 5}, {sku: CERV-12, qty: 3}]
+      total_pesos: 78700
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}
