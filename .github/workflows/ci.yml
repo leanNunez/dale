@@ -55,6 +55,8 @@ jobs:
       DALE_OWNER_DATABASE_URL: postgresql+psycopg://dale_owner@127.0.0.1:5432/dale
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # test_rule_precedes_data reads the history (S16.1)
       - uses: astral-sh/setup-uv@v6
       - run: psql -v ON_ERROR_STOP=1 -f db/roles.sql
       - run: createdb --owner=dale_owner dale

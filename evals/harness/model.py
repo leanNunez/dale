@@ -84,6 +84,22 @@ def recordings_dir(model: str, root: Path = RECORDINGS) -> Path:
     return root / settings_for(model).model
 
 
+def unrecorded(mode: Mode, root: Path, case: str) -> bool:
+    """Replay of a case with no recording directory at all under this model's `root`: a case
+    added since the model's last record run. The suite skips it by name instead of failing the
+    replay job until the user's record run (B122). A directory with a missing run, step or line
+    still fails the run, and live and record never skip."""
+    return mode is Mode.REPLAY and not (root / case).is_dir()
+
+
+def orphan_recordings(root: Path, cases: Iterable[str]) -> list[str]:
+    """The directories under `root` that name no case, sorted. Replay skips a case with no
+    recording, so a recording whose case was renamed or removed would otherwise lie unread."""
+    known = set(cases)
+    entries = root.iterdir() if root.is_dir() else iter(())
+    return sorted(p.name for p in entries if p.is_dir() and p.name not in known)
+
+
 def recording_path(root: Path, case: str, run: int) -> Path:
     return root / case / f"run-{run}.jsonl"
 

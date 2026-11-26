@@ -23,6 +23,8 @@ from dale.brain.application.model_port import (
 from dale.brain.application.prompt import fingerprint, system_blocks
 from dale.brain.application.tools import TOOL_SCHEMAS
 from evals.conftest import lifts_host_restriction
+from evals.harness.case import load_cases
+from evals.harness.collect import CASES_DIR
 from evals.harness.model import (
     REPO_ROOT,
     Mode,
@@ -33,12 +35,16 @@ from evals.harness.model import (
     messages_digest,
     mode_from_flags,
     model_factory,
+    orphan_recordings,
     prompt_fingerprint,
     recording_path,
+    recordings_dir,
     request_fingerprint,
     shown_path,
     snapshot_ids,
+    unrecorded,
 )
+from evals.harness.models import COMPARED
 from tests.unit.brain.test_model_port import SEARCH, message
 
 REQUEST = ModelRequest(system_blocks("Distribuidora El Hornero"), TOOL_SCHEMAS, ({"role": "user"},))
@@ -353,3 +359,25 @@ def test_the_haiku_recordings_name_one_snapshot() -> None:
     root = REPO_ROOT / "evals" / "recordings" / MODEL_SETTINGS.model
     cases = [path.name for path in root.iterdir() if path.is_dir()]
     assert snapshot_ids(root, cases) == [MODEL_SETTINGS.model]
+
+
+def test_only_replay_of_a_case_with_no_recording_directory_is_unrecorded(tmp_path: Path) -> None:
+    """B122: a new case waits for its record run; a recorded case with a missing run fails."""
+    write(tmp_path, [FIRST], case="recorded", run=2)
+    assert unrecorded(Mode.REPLAY, tmp_path, "new")
+    assert not unrecorded(Mode.REPLAY, tmp_path, "recorded")  # run 1 is missing: replay fails
+    assert not any(unrecorded(mode, tmp_path, "new") for mode in (Mode.LIVE, Mode.RECORD))
+
+
+@pytest.mark.parametrize("model", sorted(COMPARED))
+def test_every_recording_directory_names_a_case(model: str) -> None:
+    """B122's other direction: a renamed or removed case leaves no recording skipped forever."""
+    assert orphan_recordings(recordings_dir(model), (c.id for c in load_cases(CASES_DIR))) == []
+
+
+def test_a_recording_directory_with_no_case_is_an_orphan(tmp_path: Path) -> None:
+    write(tmp_path, [FIRST], case="kept")
+    write(tmp_path, [FIRST], case="renamed")
+    (tmp_path / "known_misses.toml").write_text("", encoding="utf-8")  # a file, not a case
+    assert orphan_recordings(tmp_path, ["kept"]) == ["renamed"]
+    assert orphan_recordings(tmp_path / "missing", ["kept"]) == []
