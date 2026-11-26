@@ -135,17 +135,15 @@ uv run pytest evals --live --model <id>   # calls the live model, spends money
 
 A run that fails is committed as recorded, not re-run until it passes:
 `evals/recordings/<model>/known_misses.toml` lists it with its reason and the sha256 of its
-recording, and replay checks that it still fails the same way and never confirms anything. A model
-with no failing run has no such file (`claude-sonnet-5-5` in v0.2).
+recording, and replay checks that it still fails the same way and never confirms anything.
 
 A record run (after `ant auth login`) spends money, so it follows a fixed procedure:
 
 1. On the run day, re-check both price tables against the live pricing page, update
-   `evals/pricing.toml` (`retrieved` and the notes) and commit it before any record run. That
-   commit is the record commit, unless a fix forces a re-record the same day: then the record
-   commit is the fix's head, with `evals/pricing.toml` unchanged since the check. In v0.2 the
-   prices were checked in `7d3a4f0` and both models recorded on `f9db72a`, after the claim
-   detector fix.
+   `evals/pricing.toml` (`retrieved` and the notes) and commit it before any record run. That is
+   the record commit, unless a fix forces a re-record that day: then it is the fix's head, with
+   `evals/pricing.toml` unchanged. In v0.2 the prices were checked in `7d3a4f0` and both models
+   recorded on `f9db72a`, after the claim detector fix.
 2. Record both models on that commit, the same day, with nothing committed in between (a record
    run ignores only `evals/recordings/` and `evals/reports/` when it checks for a clean tree):
 

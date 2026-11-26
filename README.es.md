@@ -139,8 +139,7 @@ uv run pytest evals --live --model <id>   # llama al modelo en vivo, gasta diner
 
 Una corrida que falla se commitea tal como se grabó, sin repetirla hasta que pase:
 `evals/recordings/<modelo>/known_misses.toml` la lista con su motivo y el sha256 de su
-grabación, y el replay verifica que siga fallando igual y que nunca confirme nada. Un modelo
-sin corridas fallidas no tiene ese archivo (`claude-sonnet-5-5` en v0.2).
+grabación, y el replay verifica que siga fallando igual y que nunca confirme nada.
 
 Una corrida de grabación (tras `ant auth login`) gasta dinero, así que sigue un procedimiento fijo:
 
