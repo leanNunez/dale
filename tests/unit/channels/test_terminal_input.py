@@ -11,9 +11,9 @@ from prompt_toolkit.input.typeahead import store_typeahead
 from prompt_toolkit.key_binding import KeyPress as Stroke
 from prompt_toolkit.output import DummyOutput
 
+from dale.channels.common.pending import Pending
 from dale.channels.terminal import keys
 from dale.channels.terminal.keys import TEXT_FIRST, TerminalInput
-from dale.channels.terminal.pending import Pending
 from dale.shared.customer_input import CustomerInput, CustomerText, Key, KeyPress
 from dale.shared.errors import ErrorCode, message_for
 from dale.shared.ids import OrderId, ProposalId

@@ -19,8 +19,8 @@ from sqlalchemy import Engine
 from dale.apps import terminal
 from dale.apps.verifier_runner import Finding, VerifierVerdict, run_verifier
 from dale.brain.application.model_port import ModelPort
+from dale.channels.common.pending import Pending
 from dale.channels.terminal.keys import TerminalInput
-from dale.channels.terminal.pending import Pending
 from dale.channels.terminal.session import TerminalSession
 from dale.erp_sim.infrastructure import tables as erp
 from dale.shared.clock import FrozenClock
