@@ -141,6 +141,14 @@ def test_evals_job_has_its_own_database_and_the_same_setup_as_the_test_job() -> 
     assert evals["timeout-minutes"] <= 15  # R13: each job stays under 15 minutes
 
 
+def test_the_test_job_checks_out_the_whole_history() -> None:
+    """S16.1: test_rule_precedes_data skips only on a shallow clone, so CI must fetch it all."""
+    [checkout] = [
+        s for s in JOBS["test"]["steps"] if s.get("uses", "").startswith("actions/checkout")
+    ]
+    assert checkout["with"]["fetch-depth"] == 0
+
+
 def test_the_test_job_no_longer_replays_the_evals() -> None:
     assert not any("evals" in run for run in [s.get("run", "") for s in JOBS["test"]["steps"]])
 
