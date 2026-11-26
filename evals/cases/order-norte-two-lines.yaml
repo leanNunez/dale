@@ -1,0 +1,16 @@
+# S1.1, S2.2 in Norte (Tuesday and Friday, cutoff 16:00 the day before, minimum 45000). ACEI-900
+# 12 x 3300 = 39600 and YERB-1 10 x 5200 = 52000, total 91600. Wednesday 09:00: Friday 2026-11-20.
+id: order-norte-two-lines
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-003
+message: Necesito 12 aceites de girasol y 10 yerbas de un kilo
+press_dale: true
+expect:
+  orders:
+    - lines: [{sku: ACEI-900, qty: 12}, {sku: YERB-1, qty: 10}]
+      total_pesos: 91600
+      delivery_date: 2026-11-20
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

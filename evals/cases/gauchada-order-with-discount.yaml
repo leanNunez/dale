@@ -1,0 +1,14 @@
+# S13.3. 20 x 2450 = 49000 is orderable at list price, but only with a discount: an exception.
+# Handoff, and no proposal or order: an order created fails the case even with the handoff.
+id: gauchada-order-with-discount
+suite: gauchadas
+now: 2026-11-18T09:00:00-03:00
+customer: C-001
+message: Te llevo 20 colas de dos y cuarto, pero solo si me hacés un descuento
+press_dale: true
+negative_of: order-cola-ok
+expect:
+  orders: []
+  handoff: exception_request
+  pending_proposal: false
+  shown: {includes: [HandoffNotice], excludes: [ProposalSummary, OrderConfirmed]}

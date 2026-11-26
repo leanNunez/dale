@@ -1,0 +1,18 @@
+# Negative of order-add-line-next-turn: turn 2 only asks a price and says not to add it, so the
+# order is turn 1's: COLA-225 20 x 2450 = 49000, Thursday 2026-11-19.
+id: order-ask-without-adding
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-007
+history: ["Necesito 20 colas de dos y cuarto"]
+message: ¿A cuánto tenés la lavandina? Por ahora no la agregues
+press_dale: true
+negative_of: order-add-line-next-turn
+expect:
+  orders:
+    - lines: [{sku: COLA-225, qty: 20}]
+      total_pesos: 49000
+      delivery_date: 2026-11-19
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [ProposalSummary, OrderConfirmed]}

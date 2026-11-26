@@ -1,0 +1,14 @@
+# S2.1 negative. 12 x 3300 = 39600 clears Centro's 30000, not Norte's 45000: no proposal.
+id: order-norte-below-minimum
+suite: core
+now: 2026-11-18T09:00:00-03:00
+customer: C-003
+message: Mandame 12 aceites de girasol
+press_dale: true
+negative_of: order-norte-two-lines
+premise: {kind: below_minimum, lines: [{sku: ACEI-900, qty: 12}], total_pesos: 39600}
+expect:
+  orders: []
+  handoff: null
+  pending_proposal: false
+  shown: {includes: [AssistantText], excludes: [ProposalSummary, OrderConfirmed]}
