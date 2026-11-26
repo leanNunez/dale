@@ -1,13 +1,17 @@
 // The only container (D21): it owns the conversation through the hook and hands plain values and
 // callbacks to presentational components. It decides nothing about orders; the Dale button's
-// state is `canPress`, the reducer's rule, shown as it is.
+// state is `canPress`, the reducer's rule, shown as it is. The panels beside the chat show what
+// the host sent: the tools, the verifier's stored order and its verdict.
 import type { Api } from "../api/client";
 import { CancelButton } from "../components/CancelButton";
 import { ChatPane } from "../components/ChatPane";
 import { Composer } from "../components/Composer";
 import { DaleButton } from "../components/DaleButton";
 import { Notice } from "../components/Notice";
+import { OrderPanel } from "../components/OrderPanel";
 import { PendingStatus } from "../components/PendingStatus";
+import { TracePanel } from "../components/TracePanel";
+import { VerdictPanel } from "../components/VerdictPanel";
 import { es } from "../i18n/es";
 import { type ConversationState } from "../state/reducer";
 import { useConversation } from "../state/useConversation";
@@ -36,11 +40,8 @@ export function ConversationContainer({ api }: { api?: Api }) {
   const waiting = state.inFlight !== "none";
   const error = errorText(state);
   return (
-    <section
-      aria-labelledby="chat-title"
-      className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
-    >
-      <div className="flex flex-col gap-4">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <section aria-labelledby="chat-title" className="flex flex-col gap-4">
         <h2 id="chat-title" className="text-lg font-semibold">
           {es.chat.title}
         </h2>
@@ -77,7 +78,13 @@ export function ConversationContainer({ api }: { api?: Api }) {
           {/* Cancel and Dale share one rule: the proposal one can reach, the other can discard. */}
           <CancelButton enabled={canPress} onCancel={cancel} />
         </div>
+      </section>
+      {/* The three panels: what the agent used, the order as the database holds it, the verdict. */}
+      <div className="flex flex-col gap-4">
+        <TracePanel trace={state.trace} />
+        <OrderPanel verdicts={state.verdicts} chat={state.chat} />
+        <VerdictPanel verdicts={state.verdicts} chat={state.chat} trace={state.trace} />
       </div>
-    </section>
+    </div>
   );
 }

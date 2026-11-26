@@ -54,8 +54,12 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 7a4 | `feat(web): add the composer that keeps the customer's text` | `v02-slice-07a4-composer` | `v02-slice-07a3-dale` | 236 | 7a3 | yes (button state) | Sonnet high |
 | 7a5 | `feat(web): wire the conversation container and the page layout` | `v02-slice-07a5-container` | `v02-slice-07a4-composer` | 395 | 7a4 | yes (button state) | Sonnet high |
 | 7a6 | `feat(web): add the cancel control and hold a retired conversation` | `v02-slice-07a6-cancel` | `v02-slice-07a5-container` | 355 | 7a5 | yes (button state) | Sonnet high |
-| 7b | `feat(web): add the tool, order and verdict panels` | `v02-slice-07b-panels` | `v02-slice-07a6-cancel` | 230 | 7a6 | no | Sonnet high |
-| 8a | `feat(evals): add the model dimension, per-model recordings and the evals job` | `v02-slice-08a-eval-model` | `v02-slice-07b-panels` | 300 | 1 | no | Sonnet high |
+| 7b1 | `feat(web): check tool and verdict events at the boundary` | `v02-slice-07b1-boundary` | `v02-slice-07a6-cancel` | 269 | 7a6 | no | Sonnet high |
+| 7b2 | `feat(web): add the tool trace panel` | `v02-slice-07b2-trace` | `v02-slice-07b1-boundary` | 343 | 7b1 | no | Sonnet high |
+| 7b3 | `feat(web): add the verdict panel` | `v02-slice-07b3-verdict` | `v02-slice-07b2-trace` | 375 | 7b2 | no | Sonnet high |
+| 7b4 | `feat(web): add the stored order panel` | `v02-slice-07b4-order` | `v02-slice-07b3-verdict` | 267 | 7b3 | no | Sonnet high |
+| 7b5 | `feat(web): wire the three panels and check the page against the contract samples` | `v02-slice-07b5-layout` | `v02-slice-07b4-order` | 306 | 7b4 | no | Sonnet high |
+| 8a | `feat(evals): add the model dimension, per-model recordings and the evals job` | `v02-slice-08a-eval-model` | `v02-slice-07b5-layout` | 300 | 1 | no | Sonnet high |
 | 8b | `feat(evals): add gate counts and the pre-registered comparison rule` | `v02-slice-08b-compare` | `v02-slice-08a-eval-model` | 300 | 8a | yes (rule) | Opus high |
 | 9 | `feat(evals): add the v0.2 case set, fresh recordings for both models and the comparison` | `v02-slice-09-cases-runs` | `v02-slice-08b-compare` | 300 | 8b, 2 | no | Sonnet high |
 | 10 | `docs: add ADR 0008, release notes and READMEs for v0.2` | `v02-slice-10-release` | `v02-slice-09-cases-runs` | 200 | 9, 7b | no | Sonnet medium |
@@ -222,11 +226,13 @@ Covers: W10 (S10.2, S10.3), W15 (S15.4, S15.5), W16 (S16.1 chat parts), D21, §6
 
 Covers: W4 (S4.3 page side), W5 (S5.3 type test), W15 (S15.1, S15.2, S15.3), W16 (S16.1), D19, §6. Model hint: Sonnet high.
 
-- [ ] 7b.1 RED tests from sample envelopes (`contracts/v1/samples`): trace panel lists each tool with summary and ok or error code as text (S15.1); verified press shows lines and total from the verdict's stored order (S15.2); a non-verified verdict shows "not verified" with a Spanish label plus an icon (never color alone) and the order panel shows the stored order as read, not the one shown in chat (S15.3); no stored order shows "No hay un pedido guardado en la base".
-- [ ] 7b.2 GREEN: `TracePanel` with `ToolTrace`, `VerdictPanel` with `Verdict`, `OrderPanel` (latest verdict for `subject_proposal_id`; product names from that proposal's summary lines, else the short id; D19).
-- [ ] 7b.3 GREEN: exhaustive switch over the components map (a new event type fails typecheck and a test); type test that compiles the generated TS types over the sample JSON from S3.1 (S5.3, S4.3).
-- [ ] 7b.4 Layout: chat plus three panels, Spanish panel titles (S16.1); manual smoke against a running host with the replay model (documented in the PR, work-unit table).
-- [ ] 7b.5 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+- [x] 7b.1 RED tests from sample envelopes (`contracts/v1/samples`): trace panel lists each tool with summary and ok or error code as text (S15.1); verified press shows lines and total from the verdict's stored order (S15.2); a non-verified verdict shows "not verified" with a Spanish label plus an icon (never color alone) and the order panel shows the stored order as read, not the one shown in chat (S15.3); no stored order shows "No hay un pedido guardado en la base".
+- [x] 7b.2 GREEN: `TracePanel` with `ToolTrace`, `VerdictPanel` with `Verdict`, `OrderPanel` (latest verdict for `subject_proposal_id`; product names from that proposal's summary lines, else the short id; D19).
+- [x] 7b.3 GREEN: exhaustive switch over the components map (a new event type fails typecheck and a test); type test that compiles the generated TS types over the sample JSON from S3.1 (S5.3, S4.3).
+- [x] 7b.4 Layout: chat plus three panels, Spanish panel titles (S16.1); manual smoke against a running host with the replay model (documented in the PR, work-unit table).
+  - Done 2026-11-20 (7b.1-7b.4): five commits (B99). RED first: the boundary checks for `ToolCalled` and `VerdictIssued` (26 tests failed with the checks removed); the panels were written with their tests from the sample envelopes (`src/test/samples.ts` reads `contracts/v1/samples`). `TracePanel` + `ToolTrace` (B94), `VerdictPanel` + `Verdict` (B97), `OrderPanel` (B98); `SURFACE` and the `never` default give the exhaustive switch, and `scripts/contract-types.test.ts` compiles every sample against the generated types (B96). Decisions B94-B99 (the review fixes: B100-B103). Smoke: the built page served by the Python host on a throwaway database (roles, migrations, seed, dropped afterwards) renders the chat and the three panels with their empty states, no inline style, stacked at 420 px and side by side at 1280 px in headless Chrome; no model call and no message sent. Over HTTP the host answered one press before any turn (a fake proposal id): `proposal_not_found` plus `unverifiable` with `verifier_error` and a null subject, which a Vitest test feeds through the page (B62). Not exercised end to end: a real turn, a verified press and a mismatch from the host (they need the live model); those run in Vitest with the sample envelopes.
+- [x] 7b.5 Closing: blind review, PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+  - Done 2026-11-20: blind review (Opus) gave 4 should-fix (stale order panel, verifier_error wording, prototype-key crash, trace overflow) and 4 nits, all fixed (B100-B103). 408 vitest, 1455 pytest; no sideways scroll at 1280 and 1024 px with a 96-character tool name (stub host). Not exercised end to end: a real turn and a verified press (need the live model). Known pending: real screen-reader check of the live regions. Push and PR wait for the user.
 
 ## Phase 8a: Model dimension in the eval harness (slice 8a, ~300 lines)
 
