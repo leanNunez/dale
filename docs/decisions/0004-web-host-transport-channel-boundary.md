@@ -9,7 +9,7 @@ v0.2 adds a local web channel next to the terminal, over the same brain and veri
 runs blocking code: SQLAlchemy, the Anthropic SDK and the verifier subprocess. The brain's
 `TakeTurn` keeps its history in memory and is not thread-safe. This record fixes the channel
 boundary, the host shape, the transport and the limits that follow. Design decisions D11 to D13,
-D16, D17 and D25 are summarized here; the confirmation safety rules will be in record 0005, planned for the slice that adds the press route.
+D16, D17 and D25 are summarized here; the confirmation safety rules are in record 0005.
 
 ## Decision
 
