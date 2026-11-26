@@ -35,6 +35,8 @@ locked in `uv.lock`; `pyproject.toml` pins them with `==`.
 | httpx2 (dev, the transport of Starlette's `TestClient`, which imports `httpx2` first; added 2026-11-19, v0.2) | 2.16.0 |
 | types-pyyaml (typing stubs) | 6.0.12.20261111 |
 | PostgreSQL service image | `postgres:17` (major tag; CI and local) |
+| Node (the page, added 2026-11-20, v0.2) | 24.22.2 (`apps/web/.nvmrc` and `engines`) |
+| npm packages of the page (added 2026-11-20, v0.2) | exact versions in `apps/web/package.json` and `apps/web/package-lock.json`, listed with their dates in 0006 |
 
 ## Notes
 

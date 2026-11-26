@@ -41,8 +41,14 @@ The Review Workload Forecast and the Coverage check are at the end of this file.
 | 5b3 | `feat(web): add the confirm and cancel routes, the only press path` | `v02-slice-05b3-confirm` | `v02-slice-05b2-messages` | 304 | 5b2 | yes (confirmation) | Opus high |
 | 5b4 | `test(web): prove end to end that only one Dale press confirms` | `v02-slice-05b4-e2e` | `v02-slice-05b3-confirm` | 288 | 5b3 | yes (confirmation) | Opus high |
 | 5b5 | `test(web): prove the terminal key and the web button confirm by the same rule` | `v02-slice-05b5-same-rule` | `v02-slice-05b4-e2e` | 140 | 5b4 | yes (confirmation) | Opus high |
-| 6 | `feat(web): scaffold the React app with codegen, state and the web CI job` | `v02-slice-06-frontend` | `v02-slice-05b5-same-rule` | 350 | 3c, 5b5 | no | Sonnet high |
-| 7a | `feat(web): add the chat pane, composer and Dale button` | `v02-slice-07a-chat` | `v02-slice-06-frontend` | 230 | 5b, 6 | yes (button state) | Sonnet high |
+| 6a | `feat(web): scaffold the React app with exact pins and a locked install` | `v02-slice-06a-scaffold` | `v02-slice-05b5-same-rule` | 281 | 5b5 | no | Sonnet high |
+| 6b | `feat(web): proxy the dev server to loopback and lint every raw HTML sink` | `v02-slice-06b-lint` | `v02-slice-06a-scaffold` | 380 | 6a | no | Sonnet high |
+| 6c | `feat(web): generate the contract types and add the web CI job` | `v02-slice-06c-codegen-ci` | `v02-slice-06b-lint` | 205 | 6b | no | Sonnet high |
+| 6d | `feat(web): add the same-origin API client` | `v02-slice-06d-client` | `v02-slice-06c-codegen-ci` | 330 | 6c | no | Sonnet high |
+| 6e | `feat(web): add the pure conversation reducer` | `v02-slice-06e-reducer` | `v02-slice-06d-client` | 319 | 6d | no | Sonnet high |
+| 6f | `feat(web): add the boundary, pending and Dale button rules` | `v02-slice-06f-rules` | `v02-slice-06e-reducer` | 315 | 6e | no | Sonnet high |
+| 6g | `feat(web): add the conversation hook and the frontend ADR appendix` | `v02-slice-06g-hook` | `v02-slice-06f-rules` | 379 | 6f | no | Sonnet high |
+| 7a | `feat(web): add the chat pane, composer and Dale button` | `v02-slice-07a-chat` | `v02-slice-06g-hook` | 230 | 5b5, 6g | yes (button state) | Sonnet high |
 | 7b | `feat(web): add the tool, order and verdict panels` | `v02-slice-07b-panels` | `v02-slice-07a-chat` | 230 | 7a | no | Sonnet high |
 | 8a | `feat(evals): add the model dimension, per-model recordings and the evals job` | `v02-slice-08a-eval-model` | `v02-slice-07b-panels` | 300 | 1 | no | Sonnet high |
 | 8b | `feat(evals): add gate counts and the pre-registered comparison rule` | `v02-slice-08b-compare` | `v02-slice-08a-eval-model` | 300 | 8a | yes (rule) | Opus high |
@@ -180,17 +186,19 @@ Covers: W2 (S2.1), W3 (S3.2, S3.3, S3.4), W4, W6 (S6.2, S6.3), W7, W13 (S13.1, S
 
 Covers: W5 (S5.3 generation), W10 (S10.3 lint), W18 (S18.1, S18.2), D20, D21, D22, §6, §8. Assumption to validate here: Vite, Rollup and Tailwind native packages install with `--ignore-scripts`; if one does not, ADR 0006 names the exception.
 
-- [ ] 6.1 Scaffold `apps/web`: React 19, TypeScript strict, Vite (dev proxy with no `proxyTimeout`, D17, B6), Tailwind 4 via CSS file, Vitest with Testing Library and jsdom, exact versions only, `.nvmrc`, `engines` with `engine-strict`, `.npmrc` with `save-exact`. Commit `package-lock.json`. Satisfies D22.
-- [ ] 6.2 RED then GREEN: `tests/unit/test_web_pins.py` fails on any non-exact version in `apps/web/package.json` and on missing `.nvmrc`/`engines`. Satisfies D22.
-- [ ] 6.3 Add the `gen:contract` script (`json-schema-to-typescript` over `contracts/v1`) writing `src/contract/generated/`, committed. Test: regeneration leaves `git diff --exit-code` clean (S5.3).
-- [ ] 6.4 RED then GREEN: `src/api/client.ts` (same-origin `fetch`, JSON, no timeout, parses any status into `ResponseEnvelope`). Vitest with a mocked `fetch`: success, error envelope, non-JSON failure.
-- [ ] 6.5 RED then GREEN: `src/state/reducer.ts` and `useConversation.ts` (`useReducer` over envelopes; drops events with `seq ≤ lastSeq`; applies `pendingProposalId` only when envelope `seq ≥ lastSeq`; `inFlight` states). Vitest, no DOM: dedupe, replayed press body does not change the button state (D21).
-- [ ] 6.6 ESLint with typescript-eslint, `react/no-danger` and a ban on `innerHTML`; a test or lint fixture proves a raw HTML sink fails lint (S10.3).
-- [ ] 6.7 CI: add the `web` job to `.github/workflows/ci.yml` (`actions/setup-node` with `node-version-file: apps/web/.nvmrc`, `npm ci --ignore-scripts`, `gen:contract` with `git diff --exit-code`, typecheck, lint, `vitest --run`, build, with a timeout); extend `tests/unit/test_ci_workflow.py` to assert the job and its steps (S18.1, S18.2).
-- [ ] 6.8 Update `scripts/check_pr_size.py` to exclude `apps/web/package-lock.json` and `apps/web/src/contract/generated/`, with unit-test cases.
-- [ ] 6.9 Append the frontend stack, Node pins and any install-script exception to ADR 0006 (D21, D22). Test: structural readback.
+- [x] 6.1 Scaffold `apps/web`: React 19, TypeScript strict, Vite (dev proxy with no `proxyTimeout`, D17, B6), Tailwind 4 via CSS file, Vitest with Testing Library and jsdom, exact versions only, `.nvmrc`, `engines` with `engine-strict`, `.npmrc` with `save-exact`. Commit `package-lock.json`. Satisfies D22.
+- [x] 6.2 RED then GREEN: `tests/unit/test_web_pins.py` fails on any non-exact version in `apps/web/package.json` and on missing `.nvmrc`/`engines`. Satisfies D22.
+- [x] 6.3 Add the `gen:contract` script (`json-schema-to-typescript` over `contracts/v1`) writing `src/contract/generated/`, committed. Test: regeneration leaves `git diff --exit-code` clean (S5.3).
+- [x] 6.4 RED then GREEN: `src/api/client.ts` (same-origin `fetch`, JSON, no timeout, parses any status into `ResponseEnvelope`). Vitest with a mocked `fetch`: success, error envelope, non-JSON failure.
+- [x] 6.5 RED then GREEN: `src/state/reducer.ts` and `useConversation.ts` (`useReducer` over envelopes; drops events with `seq ≤ lastSeq`; applies `pendingProposalId` only when envelope `seq ≥ lastSeq`; `inFlight` states). Vitest, no DOM: dedupe, replayed press body does not change the button state (D21).
+- [x] 6.6 ESLint with typescript-eslint, `react/no-danger` and a ban on `innerHTML`; a test or lint fixture proves a raw HTML sink fails lint (S10.3).
+- [x] 6.7 CI: add the `web` job to `.github/workflows/ci.yml` (`actions/setup-node` with `node-version-file: apps/web/.nvmrc`, `npm ci --ignore-scripts`, `gen:contract` with `git diff --exit-code`, typecheck, lint, `vitest --run`, build, with a timeout); extend `tests/unit/test_ci_workflow.py` to assert the job and its steps (S18.1, S18.2).
+- [x] 6.8 Update `scripts/check_pr_size.py` to exclude `apps/web/package-lock.json` and `apps/web/src/contract/generated/`, with unit-test cases.
+- [x] 6.9 Append the frontend stack, Node pins and any install-script exception to ADR 0006 (D21, D22). Test: structural readback.
+  - Done 2026-11-20 (6.1-6.9): commits cd8ca21 (6.8, 30 lines, first so the lockfile and generated types leave the count), 73f0ab9 (6.1, 6.2, 345), 42befba (6.6, 126), fcbc817 (6.3, 130), 3096b3f (6.7, 75), d3ba536 (6.4, 302), fd1a578 and e869c41 (6.5 reducer 319 and pending rule 97), 428f75b (6.5 button rule and hook, 314), then 6.9 with this log. The slice counts 1805 / 400, so it needs a split (B74): PRs 6a 375, 6b 331, 6c 302, 6d 319, 6e 97, 6f 391. 66 Vitest tests, 1453 pytest tests, 54 evals, schemas regenerate clean. `npm ci --ignore-scripts` works with no exception (B68, ADR 0006). Smoke through the Python host: `/` serves the built `index.html` with the CSP, both assets 200, headless Chrome renders the page with no CSP violation; the dev proxy gave 201 same-origin and 403 for a foreign Origin (B69). 6.10 (branch protection) waits for the user; 6.11 is the orchestrator's.
 - [ ] 6.10 **GATED (user)**: after the `web` job has run green on this PR, the user adds `web` as a required check in branch protection (`main` and `dev`). Never automated.
-- [ ] 6.11 Closing: blind review (focus: pins and lockfile reviewed even though excluded from the size guard), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+- [x] 6.11 Closing: blind review (focus: pins and lockfile reviewed even though excluded from the size guard), PR body with "Known pending items", commit with the slice title, check the PR size guard output.
+  - Done 2026-11-20: blind review (Opus) gave 1 blocker (60 locked packages inside the two-week cooldown) and 5 should-fix plus nits, all fixed (B75-B81); lockfile regenerated with --before=2026-11-06 (newest entry 2026-11-05), Node 24.22.2; split into 7 PRs (B82). 1455 pytest, 119 vitest; built page loads under the CSP. Known pending: typescript-eslint 8.73 and Node 24.22.3 once two weeks old; per-type checks of shown-event data beyond the summary (slice 7a). 6.10 waits for the user after the web job runs on GitHub. Push and PR wait for the user.
 
 ## Phase 7a: Chat, composer and Dale button (slice 7a, ~230 lines) [critical: button state]
 
