@@ -286,14 +286,20 @@ Covers: R13 (S13.6, S13.7), R14, R16 (S16.1, S16.7), D23, D24. Recordings and re
   - Done 2026-11-26: `prompt_fingerprint()` = `d7db359bbb5c67a09edcef0a370c75531554e5e500de0124b2d3e36db3dce4c9`, the 2.3 pin; the pin test passes. Pin kept, prompt unchanged.
 - [x] 9.7 Verify the rule precedes the data: ADR 0007's commit is an ancestor of this branch and no Sonnet recording exists yet (`git merge-base --is-ancestor`). Add `test_rule_precedes_data` asserting that the commit adding the rule precedes the first commit adding Sonnet recordings (skipped on shallow clones). (S16.1)
   - Done 2026-11-26: `49f1e5a` is an ancestor of the branch; `git ls-files evals/recordings` lists only `claude-haiku-5-5/`. `test_rule_precedes_data` in `tests/unit/evals/test_rule_order.py` (`14878a4`) also proves the rule is not touched with or after the first Sonnet recording; it skips only when git reports a shallow clone, and the CI `test` job now fetches the whole history (B131).
-- [ ] 9.8 **GATED (user, spends API credit)**: the user runs the live Haiku recording on the record commit: fresh recordings for all cases, k = 3, effort medium. The run uses the user's own credentials; evals never read `ANTHROPIC_API_KEY`, `.env` or `~/.config/anthropic/`. Replaces the moved v0.1 Haiku recordings.
+- [x] 9.8 **GATED (user, spends API credit)**: the user runs the live Haiku recording on the record commit: fresh recordings for all cases, k = 3, effort medium. The run uses the user's own credentials; evals never read `ANTHROPIC_API_KEY`, `.env` or `~/.config/anthropic/`. Replaces the moved v0.1 Haiku recordings.
+  - Done 2026-11-26 on `f9db72a` (user said "hazlo"): run 1 on `7d3a4f0` had 4 claim-detector false positives and was discarded (B134); run 2: 115/120, 0 false confirmations, USD 0.062.
   - Note 2026-11-26: run on the record commit of task 9.4 (the committed run-day price re-check), with a clean tree; never edit `evals/pricing.toml` between 9.8 and 9.9 (B130).
-- [ ] 9.9 **GATED (user, spends API credit)**: after 8b.8 is done, the user runs the live Sonnet recording on the same record commit, same k and effort. Never before the rule is committed.
+- [x] 9.9 **GATED (user, spends API credit)**: after 8b.8 is done, the user runs the live Sonnet recording on the same record commit, same k and effort. Never before the rule is committed.
+  - Done 2026-11-26 on the same commit `f9db72a`: 120/120, 0 false confirmations, USD 0.94.
   - Note 2026-11-26: same record commit and same day as 9.8, nothing committed in between (B130); `test_rule_precedes_data` must still pass after the Sonnet recordings are committed.
-- [ ] 9.10 Per-model `known_misses.toml` from the live runs (sha256 values per model, each with its `model` key); flaky cases and known misses count as failures for both models (S16.6).
-- [ ] 9.11 Generate `evals/reports/v0.2-<model>.{json,md}` for both models with `gates` and `snapshot_ids` (S14.1, S14.3, S16.7).
-- [ ] 9.12 Run `python -m evals.harness.compare v0.2` to write `evals/reports/v0.2-comparison.{json,md}` with exactly one outcome (S16.2-S16.7). Do not change `MODEL_SETTINGS` here.
-- [ ] 9.13 Add Sonnet to the `evals` matrix; run both models offline and check the `test` job and each `evals` job stay under 15 minutes (R13, S13.4). Update the workflow unit test.
+- [x] 9.10 Per-model `known_misses.toml` from the live runs (sha256 values per model, each with its `model` key); flaky cases and known misses count as failures for both models (S16.6).
+  - Done: Haiku lists 5 misses (gauchada-norte-other-day x3, gauchada-join-orders run 2, cutoff-missed-delivers-monday run 2); Sonnet has none.
+- [x] 9.11 Generate `evals/reports/v0.2-<model>.{json,md}` for both models with `gates` and `snapshot_ids` (S14.1, S14.3, S16.7).
+  - Done: `evals/reports/v0.2-claude-haiku-5-5.*` and `v0.2-claude-sonnet-5-5.*`, both commit `f9db72a`.
+- [x] 9.12 Run `python -m evals.harness.compare v0.2` to write `evals/reports/v0.2-comparison.{json,md}` with exactly one outcome (S16.2-S16.7). Do not change `MODEL_SETTINGS` here.
+  - Done: outcome `select:claude-haiku-5-5` (pass^3 37 vs 40 differ by less than 4; Haiku at least 20% cheaper). `MODEL_SETTINGS` unchanged.
+- [x] 9.13 Add Sonnet to the `evals` matrix; run both models offline and check the `test` job and each `evals` job stay under 15 minutes (R13, S13.4). Update the workflow unit test.
+  - Done: matrix `[claude-haiku-5-5, claude-sonnet-5-5]`; local offline replay 41 s and 48 s; CI times in the PR.
 - [ ] 9.14 **GATED (user)**: add `evals (<sonnet-id>)` as a required check in branch protection after it runs green. Never automated.
 - [ ] 9.15 Closing: blind review (focus: case quality, negative counterparts, gauchada grading), PR body with "Known pending items", commit with the slice title, check the PR size guard output (recordings and reports excluded).
 
