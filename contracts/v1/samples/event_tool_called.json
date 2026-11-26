@@ -1,0 +1,1 @@
+{"v":1,"seq":7,"conversation_id":"00000000-0000-4000-8000-000000000001","type":"ToolCalled","data":{"name":"search_products","summary":"{\"query\":\"harina 000\"}","ok":true,"code":null}}

@@ -39,7 +39,7 @@ class SummaryLine:
 
 @dataclass(frozen=True, slots=True)
 class ProposalSummary:
-    """Built from the stored proposal, re-read after the write (S3.3)."""
+    """Built from the stored proposal, re-read after the write."""  # S3.3
 
     proposal_id: ProposalId
     lines: tuple[SummaryLine, ...]
