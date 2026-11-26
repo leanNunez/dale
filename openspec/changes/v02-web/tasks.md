@@ -321,7 +321,8 @@ Covers: R16 (S16.8), proposal Success Criteria, D23, §9 ADR 0008, §12. Nothing
   - Done 2026-11-26: `3d17b1e`. Both read end to end; the fiction notice stays in both. Adds the web host and page run instructions, the three panels, the comparison result with numbers and link, and the v0.2 eval section (recordings and replay per model, the record procedure). The Spanish README also drops a stale "Zellij sigue pendiente" the English one had already fixed.
 - [x] 10.5 Write the v0.2 release notes: scope, comparison outcome, known pending list, and a line for the informal one-minute walkthrough result (filled by 10.6).
   - Done 2026-11-26: `docs/releases/v0.2.md` (`4af98e0`; v0.1 notes were a GitHub release only, B137). The 10.6 line is a marked placeholder.
-- [ ] 10.6 **GATED (user)**: one informal walkthrough with one person who does not program, one minute on the page; the user records what that person described. Not a study.
+- [x] 10.6 **GATED (user)**: one informal walkthrough with one person who does not program, one minute on the page; the user records what that person described. Not a study.
+  - Closed 2026-11-26 by user decision: skipped for v0.2; the release notes say it was not done (B141).
 - [x] 10.7 Live suite before release (R13): confirm the shipped model's comparison run is on the release code (no prompt, tool or brain change since); if anything changed, the user runs a new live run. Result and 0 false confirmations noted in the release notes.
   - Done 2026-11-26: `git diff f9db72a HEAD -- src/` is empty (only recordings, reports, the Sonnet CI replay, docs and one test changed) and `prompt_fingerprint()` equals the pin `d7db359b...`, so no new live run is needed. Result and "0 false confirmations" are in the release notes.
 - [x] 10.8 Run the full suite: `uv run pytest`, `uv run lint-imports`, ruff, mypy strict, and the `web` job commands locally; all CI jobs green on the slice PR.
