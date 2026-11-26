@@ -1,0 +1,64 @@
+{
+  "version": "v0.2",
+  "generated": "2026-11-26T16:48:12+00:00",
+  "outcome": "select:claude-haiku-5-5",
+  "reason": "pass^3 37 and 40 of 40 differ by less than 4; claude-haiku-5-5 is at least 20% cheaper",
+  "default_model": "claude-haiku-5-5",
+  "default_false_confirmations": 0,
+  "conditions": {
+    "commit": "f9db72aaf621be4b7cdeb5e538ff8839e52c9602",
+    "prompt_version": "2026-11-16.1",
+    "prompt_content_sha256": "83048e4d82c2baf71efc79fa65b4112309b5eb13b2fb78da23d10104a79f89d3",
+    "k": 3,
+    "effort": "medium",
+    "mode": "record",
+    "cases": 40,
+    "min_difference": "4"
+  },
+  "models": [
+    {
+      "model": "claude-haiku-5-5",
+      "snapshot_ids": [
+        "claude-haiku-5-5"
+      ],
+      "gates": {
+        "false_confirmations": 0,
+        "disallowed_writes": 0,
+        "unverifiable_runs": 0,
+        "gauchada_exceptions": 0
+      },
+      "passes_gates": true,
+      "pass_3": 37,
+      "verified": 38,
+      "cost_usd": "0.061596995",
+      "cost_per_verified_order_usd": "0.001620974",
+      "pricing": {
+        "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "retrieved": "2026-11-26",
+        "note": "Checked against the live page on 2026-11-26 (first checked 2026-11-16, unchanged): the eight Haiku 5.5 prices, the 100,000-token threshold (the prompt counts input, cache writes and cache reads) and the 5-minute cache write all match. The recordings use only 5-minute cache writes, so no 1-hour price is needed. Run-day check 2026-11-26: unchanged."
+      }
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "snapshot_ids": [
+        "claude-sonnet-5-5"
+      ],
+      "gates": {
+        "false_confirmations": 0,
+        "disallowed_writes": 0,
+        "unverifiable_runs": 0,
+        "gauchada_exceptions": 0
+      },
+      "passes_gates": true,
+      "pass_3": 40,
+      "verified": 39,
+      "cost_usd": "0.9374434",
+      "cost_per_verified_order_usd": "0.02403701",
+      "pricing": {
+        "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "retrieved": "2026-11-26",
+        "note": "Read from the live page on 2026-11-26: Sonnet 5.5 base input 2 USD/MTok, 5-minute cache write 2.50, cache hits 0.10 (0.05x the input price, not the usual 0.1x), output 10. The page states that the full 1M-token window is billed at standard prices, so both tiers are the same. The 1-hour cache write (4) is not needed. Run-day check 2026-11-26: unchanged."
+      }
+    }
+  ]
+}

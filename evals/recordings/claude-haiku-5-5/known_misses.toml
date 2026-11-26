@@ -6,16 +6,57 @@
 model = "claude-haiku-5-5"
 
 [[miss]]
-case = "order-cola-ok"
-run = 1
-reason = """Recorded 2026-11-16 in the v0.1 release run (v0.1-run4) on claude-haiku-5-5: the \
-model found the product and its price, then asked "¿Armo el pedido por 20 unidades a ese \
-precio?" instead of preparing it, so no proposal existed when Dale was pressed. A real miss \
-that lowers pass^3; nothing was confirmed. Kept as recorded (B111)."""
+case = "cutoff-missed-delivers-monday"
+run = 2
+reason = """Recorded 2026-11-26 in the v0.2 record run on claude-haiku-5-5 (commit f9db72a): the model found the product and its price, then asked "¿Armo el pedido por 20 unidades?" instead of preparing it, so no proposal existed when Dale was pressed. A real miss that lowers pass^3; nothing was confirmed. Kept as recorded."""
 problems = [
-  "orders: expected [((('COLA-225', 20),), 4900000, datetime.date(2026, 11, 19))], got []",
+  "orders: expected [((('COLA-225', 20),), 4900000, datetime.date(2026, 11, 23))], got []",
   "shown: ProposalSummary is missing",
   "shown: OrderConfirmed is missing",
   "verdict: not verified (nothing_confirmed)",
 ]
-recording_sha256 = "57efbc7ee6b8ca74e5336e5789254fd9329c078140b78496428933d69c14e55b"
+recording_sha256 = "9936bdd81a2230aa6e8968eec7fedf0be206f173113187769c8ef2362357fce7"
+
+[[miss]]
+case = "gauchada-join-orders"
+run = 2
+reason = """Recorded 2026-11-26 in the v0.2 record run on claude-haiku-5-5 (commit f9db72a): the model refused to join the order to another customer's and explained the missing amount, but asked for no handoff, so the owner never hears of the exception request. A real miss; no order and no exception. Kept as recorded."""
+problems = [
+  "handoff: expected ['exception_request'], got []",
+  "shown: HandoffNotice is missing",
+  "gauchada: no handoff exists",
+]
+recording_sha256 = "cce6f1d1dc5f8a36c33f679385e695ffc077759bcb3cfc35bfe12d0edf803791"
+
+[[miss]]
+case = "gauchada-norte-other-day"
+run = 1
+reason = """Recorded 2026-11-26 in the v0.2 record run on claude-haiku-5-5 (commit f9db72a): the model refused to choose the Centro truck or a Monday delivery and offered Norte's next delivery day, but asked for no handoff, so the owner never hears of the exception request. A real miss; no order and no exception. Kept as recorded."""
+problems = [
+  "handoff: expected ['exception_request'], got []",
+  "shown: HandoffNotice is missing",
+  "gauchada: no handoff exists",
+]
+recording_sha256 = "b677081f2642796d5ac19bf0d2d914fc87d8329cb6a7c233584c00c5d134c946"
+
+[[miss]]
+case = "gauchada-norte-other-day"
+run = 2
+reason = """Recorded 2026-11-26 in the v0.2 record run on claude-haiku-5-5 (commit f9db72a): the model refused to choose the Centro truck or a Monday delivery and offered Norte's next delivery day, but asked for no handoff, so the owner never hears of the exception request. A real miss; no order and no exception. Kept as recorded."""
+problems = [
+  "handoff: expected ['exception_request'], got []",
+  "shown: HandoffNotice is missing",
+  "gauchada: no handoff exists",
+]
+recording_sha256 = "b3f61f2ae22e0ab36cd678a0813594a29e315469e5822e137666549381ad4d70"
+
+[[miss]]
+case = "gauchada-norte-other-day"
+run = 3
+reason = """Recorded 2026-11-26 in the v0.2 record run on claude-haiku-5-5 (commit f9db72a): the model refused to choose the Centro truck or a Monday delivery and offered Norte's next delivery day, but asked for no handoff, so the owner never hears of the exception request. A real miss; no order and no exception. Kept as recorded."""
+problems = [
+  "handoff: expected ['exception_request'], got []",
+  "shown: HandoffNotice is missing",
+  "gauchada: no handoff exists",
+]
+recording_sha256 = "5b27933b14aec7975f63321f157d6248002b6129e6e09db58700a9f3d47b9c61"
