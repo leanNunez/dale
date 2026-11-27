@@ -3,9 +3,10 @@ settings, the start-up check of the customer, and the mapping of the runner's ve
 web verdict."""
 
 import inspect
+import re
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar, NoReturn, cast
 from uuid import UUID
 
 import pytest
@@ -16,6 +17,7 @@ from starlette.testclient import TestClient
 from starlette.types import ASGIApp
 
 from dale.apps import compose, web
+from dale.apps.demo import settings as demo_settings
 from dale.apps.verifier_runner import (
     TIMEOUT_SECONDS,
     Finding,
@@ -116,6 +118,8 @@ def test_extra_allowed_names_add_to_loopback() -> None:
         ({**REQUIRED, "DALE_WEB_PORT": "80a"}, "DALE_WEB_PORT must be a port number"),
         ({**REQUIRED, "DALE_WEB_PORT": "70000"}, "DALE_WEB_PORT must be a port number"),
         ({**REQUIRED, "DALE_WEB_PORT": "٨٠"}, "DALE_WEB_PORT must be a port number"),
+        ({**REQUIRED, "DALE_WEB_PORT": "8" * 5000}, "DALE_WEB_PORT must be a port number"),
+        ({**REQUIRED, "DALE_WEB_PAGE_DIR": __file__}, "DALE_WEB_PAGE_DIR must name a directory"),
     ],
 )
 def test_bad_settings_stop_the_host(env: dict[str, str], error: str) -> None:
@@ -273,3 +277,99 @@ def test_a_waiting_press_outlives_the_verifier_timeout() -> None:
     """B55: a press of the same id waits `PRESS_WAIT` for the running press, whose verifier
     gives up after its own timeout, so a slow verifier ends that press before the wait does."""
     assert TIMEOUT_SECONDS == 30 and PRESS_WAIT == 60 and TIMEOUT_SECONDS < PRESS_WAIT
+
+
+DEMO = {
+    "DALE_WEB_MODE": "demo",
+    "DALE_DEMO_SESSION_SECRET": "k" * 32,
+    "DALE_DEMO_TEMPLATE_CUSTOMER": "C-001",
+    "DALE_DEMO_PRIVACY_CONTACT": "privacidad@example.com",
+}
+
+
+class ReadRecorder(dict[str, str]):
+    """An environment that records every name read from it."""
+
+    def __init__(self, env: dict[str, str]) -> None:
+        super().__init__(env)
+        self.read: set[str] = set()
+
+    def get(self, key: str, default: object = None) -> object:  # type: ignore[override]
+        self.read.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key: str) -> str:
+        self.read.add(key)
+        return super().__getitem__(key)
+
+
+def test_the_mode_is_local_and_the_page_the_checkout_one_by_default(tmp_path: Path) -> None:
+    s = web.settings(REQUIRED)
+    assert (s.mode, s.page) == ("local", web.PAGE)
+    s = web.settings({**REQUIRED, "DALE_WEB_MODE": "demo", "DALE_WEB_PAGE_DIR": str(tmp_path)})
+    assert (s.mode, s.page) == ("demo", tmp_path)
+
+
+@pytest.mark.parametrize("mode", ["Demo", "production", " local"])
+def test_an_unknown_mode_stops_the_host(mode: str) -> None:
+    with pytest.raises(web.SettingsError, match=r"^DALE_WEB_MODE must be local or demo$"):
+        web.settings({**REQUIRED, "DALE_WEB_MODE": mode})
+
+
+def test_local_mode_reads_no_demo_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S1.2: invalid demo values are never read; the host starts as in v0.2."""
+    env = ReadRecorder({**REQUIRED, **DEMO, "DALE_WEB_MODE": "", "DALE_DEMO_DAILY_CAP_USD": "x"})
+    web.settings(env)
+    assert not {name for name in env.read if name.startswith("DALE_DEMO_")}
+
+    def never(*_: object, **__: object) -> object:
+        raise AssertionError("a demo setting was read in local mode")
+
+    monkeypatch.setattr(demo_settings, "parse", never)
+    for name, value in {**REQUIRED, "DALE_DEMO_DAILY_CAP_USD": "x"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("DALE_WEB_MODE", raising=False)
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
+    FakeServer.started.clear()
+    assert web.main([], erp=lambda engine: cast(ErpFacade, FakeErp())) == 0
+    assert len(FakeServer.started) == 1
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        ({"DALE_DEMO_PRIVACY_CONTACT": ""}, "DALE_DEMO_PRIVACY_CONTACT must be set to an email"),
+        ({"DALE_DEMO_DAILY_CAP_USD": "0"}, "DALE_DEMO_DAILY_CAP_USD must be an amount"),
+        (
+            {"DALE_DEMO_DRAIN_SECONDS": "155"},
+            r"DALE_DEMO_DRAIN_SECONDS must be above max\(turn deadline",
+        ),
+        ({"DALE_WEB_PAGE_DIR": "/nonexistent/page"}, "DALE_WEB_PAGE_DIR must name a directory$"),
+        ({"DALE_WEB_PAGE_DIR": ""}, "DALE_WEB_PAGE_DIR must name a directory$"),
+        ({}, "demo wiring not available$"),
+    ],
+    ids=["contact", "cap", "drain", "page", "default page", "valid"],
+)
+def test_demo_mode_exits_2_before_it_builds_anything(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    change: dict[str, str],
+    error: str,
+) -> None:
+    def never(*_: object, **__: object) -> NoReturn:
+        raise AssertionError("built in demo mode")
+
+    for name, value in {**REQUIRED, **DEMO, "DALE_WEB_PAGE_DIR": str(tmp_path), **change}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(web, "PAGE", tmp_path / "unbuilt")  # unset: the checkout's, missing
+    monkeypatch.setattr(web, "app_engine", never)
+    monkeypatch.setattr(uvicorn, "Server", never)
+    assert web.main([], erp=never) == 2
+    err = capsys.readouterr().err
+    assert re.match(error, err) and err.count("\n") == 1 and "k" * 32 not in err
+    assert "/nonexistent" not in err and str(tmp_path) not in err
+
+
+def test_an_unset_page_dir_keeps_v02_in_local_mode() -> None:
+    assert web.settings({**REQUIRED, "DALE_WEB_PAGE_DIR": ""}).page == web.PAGE
