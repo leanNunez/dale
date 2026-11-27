@@ -1,7 +1,7 @@
 # 0005. Web confirmation safety
 
 Date: 2026-11-19
-Status: accepted (host guard, envelope and loopback binding in place; the press route lands with the conversation slices)
+Status: accepted (host guard, envelope and loopback binding in place; the press route lands with the conversation slices). Amended by ADR 0010 (cookie session, CSRF), for the rows it changes only
 
 ## Context
 

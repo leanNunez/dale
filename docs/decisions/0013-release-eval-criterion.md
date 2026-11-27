@@ -53,7 +53,7 @@ commit does not precede the commit that adds the first v0.3 live report (G3 S3.1
 case-set size differs from 40 (G3 S3.2), when either write counter is above 0 (G3 S3.7), and when
 a measured path changed after this commit with no decision record added in between (G3 S3.5). The
 other release checks (report freshness, price table, image, deploy) are in
-decision 0012 (hosting, release and deploy, planned in the same change).
+[decision 0012](0012-hosting-release-deploy.md) (hosting, release and deploy).
 
 ## What stays manual
 
