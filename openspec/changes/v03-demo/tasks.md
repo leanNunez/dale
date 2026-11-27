@@ -1,6 +1,6 @@
 # Tasks: Dale v0.3 "Probalo vos" (change `v03-demo`)
 
-Sources: `specs/web-channel/spec.md` (delta W5, W8, W11, W14, W17, W19), `specs/verified-order/spec.md` (delta R9), `specs/demo-operations/spec.md` (O1-O11), `specs/release-gate/spec.md` (G1-G9), `design.md` (DD26-DD46, §1-§16), `proposal.md` and `decision-log.md` (D1-D19 binding; D14 pending).
+Sources: `specs/web-channel/spec.md` (delta W5, W8, W11, W14, W17, W19), `specs/verified-order/spec.md` (delta R9), `specs/demo-operations/spec.md` (O1-O11), `specs/release-gate/spec.md` (G1-G9), `design.md` (DD26-DD46, §1-§16), `proposal.md` and `decision-log.md` (D1-D20 binding; D14 pending).
 Preflight: execution_mode auto, artifact_store hybrid, delivery_strategy ask-on-risk, review_budget_lines 400, strict_tdd false (every behavior task still names its test, and RED comes before GREEN).
 The Review Workload Forecast is right below; the Coverage check is at the end of this file.
 
@@ -39,9 +39,9 @@ Note: the slices with the least slack are 1b, 2c, 6b, 9b, 11a, 13b and 14 (330 e
 | # | Conventional-commit title | Branch | Base | Est. lines | Depends on | Critical | Model hint |
 |---|---|---|---|---|---|---|---|
 | 0 | `docs(openspec): add the v03-demo tasks` | `v03-demo-planning` (exists) | `dev` | 0 | none | no | Sonnet medium |
-| 1a | `docs(decisions): add ADR 0013 on the release criterion and ADR 0011 on the turn deadline` | `v03-slice-01a-adr-criterion` | `v03-demo-planning` | 220 | 0 | yes (criterion first) | Sonnet high |
-| 1b | `docs(decisions): add ADRs 0009, 0010 and 0012 on the public demo` | `v03-slice-01b-adr-demo` | `v03-slice-01a-adr-criterion` | 330 | 1a | no | Sonnet high |
-| 2a | `feat(brain): add the turn deadline value and the turn_deadline_exceeded code` | `v03-slice-02a-deadline` | `v03-slice-01b-adr-demo` | 240 | 1a | yes (fingerprint) | Opus high |
+| 1a | `docs(decisions): add ADR 0013 on the release criterion and ADR 0011 on the turn deadline` | `v03-slice-01a-criterion` | `v03-demo-planning` | 220 | 0 | yes (criterion first) | Sonnet high |
+| 1b | `docs(decisions): add ADRs 0009, 0010 and 0012 on the public demo` | `v03-slice-01b-records` | `v03-slice-01a-criterion` | 330 | 1a | no | Sonnet high |
+| 2a | `feat(brain): add the turn deadline value and the turn_deadline_exceeded code` | `v03-slice-02a-deadline` | `v03-slice-01b-records` | 240 | 1a | yes (fingerprint) | Opus high |
 | 2b | `feat(brain): end a turn at its deadline and validate the setting at startup` | `v03-slice-02b-turn-check` | `v03-slice-02a-deadline` | 300 | 2a | yes (no partial confirmation) | Opus high |
 | 2c | `feat(brain): bound model retries by the turn deadline` | `v03-slice-02c-retry` | `v03-slice-02b-turn-check` | 330 | 2b | yes (unbounded wait) | Opus high |
 | 2d | `feat(brain): add the attempt gate port and a statement timeout on the app engine` | `v03-slice-02d-gate-engine` | `v03-slice-02c-retry` | 280 | 2c | no | Opus high |
@@ -163,10 +163,10 @@ Model hint: Opus high.
 
 ## Phase 2b: Turn check and the startup setting (slice 2b, ~300 lines) [critical: no partial confirmation]
 
-Covers: R9 (S9.3, S9.7, S9.8, S9.11), B75.
+Covers: R9 (S9.3, S9.7, S9.8, S9.11), v0.1 B75.
 Model hint: Opus high.
 
-- [ ] 2b.1 RED in `tests/unit/brain/test_take_turn_deadline.py`: with a fake model whose every call advances a fake clock by 40 s, a turn needing four calls ends at or before 90 s with `turn_deadline_exceeded`, no order and no `OrderConfirmed` (S9.3); completed exchanges are kept (B75); a `DeadlineExceededError` from the model maps to `turn_deadline_exceeded`, caught before `ModelUnavailableError`; every `ModelRequest` carries the turn's deadline.
+- [ ] 2b.1 RED in `tests/unit/brain/test_take_turn_deadline.py`: with a fake model whose every call advances a fake clock by 40 s, a turn needing four calls ends at or before 90 s with `turn_deadline_exceeded`, no order and no `OrderConfirmed` (S9.3); completed exchanges are kept (v0.1 B75); a `DeadlineExceededError` from the model maps to `turn_deadline_exceeded`, caught before `ModelUnavailableError`; every `ModelRequest` carries the turn's deadline.
 - [ ] 2b.2 GREEN in `src/dale/brain/application/take_turn.py`: `turn_seconds` and `monotonic` parameters, the check before each model call, and `_failed(TURN_DEADLINE_EXCEEDED, …)`.
 - [ ] 2b.3 RED then GREEN in `tests/integration/test_deadline_confirm.py`: a turn that showed a proposal summary and then hit the deadline; typed "dale" confirms nothing, and the Dale action revalidates and confirms (S9.8).
 - [ ] 2b.4 RED then GREEN: `turn_deadline(env)` in `src/dale/apps/compose.py` reads `DALE_TURN_DEADLINE_SECONDS` (default 90) and exits 2 when the value is invalid or not greater than the verifier's 30 s; `src/dale/apps/terminal.py` and `src/dale/apps/web.py` call it and pass `turn_seconds` to `TakeTurn`. Test in `tests/unit/apps/test_turn_deadline_setting.py` (S9.11).

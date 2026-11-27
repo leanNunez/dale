@@ -1,6 +1,6 @@
 # Design: Dale v0.3 "Probalo vos"
 
-v0.3 turns the v0.2 loopback host into a public demo that is safe to link from a CV. It adds a demo mode, a turn deadline, visitor customers, limits, a spend cap, a kill switch, transcripts, a nightly reset, packaging and a release gate. The brain changes only for the deadline. Sources: `proposal.md`, `decision-log.md` (D1-D19 binding, D14 pending), `exploration.md`, the delta specs (`web-channel` W5/W8/W11/W14/W17/W19, `verified-order` R9, `demo-operations` O1-O11, `release-gate` G1-G9), and the v0.2 design (D11-D25, still in force). Facts below were re-read in the code at `f4dfa20`.
+v0.3 turns the v0.2 loopback host into a public demo that is safe to link from a CV. It adds a demo mode, a turn deadline, visitor customers, limits, a spend cap, a kill switch, transcripts, a nightly reset, packaging and a release gate. The brain changes only for the deadline. Sources: `proposal.md`, `decision-log.md` (D1-D20 binding, D14 pending), `exploration.md`, the delta specs (`web-channel` W5/W8/W11/W14/W17/W19, `verified-order` R9, `demo-operations` O1-O11, `release-gate` G1-G9), and the v0.2 design (D11-D25, still in force). Facts below were re-read in the code at `f4dfa20`.
 
 **Numbering.** Design decisions use the prefix `DD` and continue the design series (v0.1 D1-D10, v0.2 D11-D25), so they start at DD26. The decision log's `D1`-`D19` are cited as "log D4" and so on, so neither series is mistaken for the other.
 
@@ -62,7 +62,7 @@ There are 15 contracts today. Contract 4 changes and the other 14 stay as they a
 
 ## 3. Turn deadline (R9)
 
-- `TakeTurn(..., turn_seconds: float | None, monotonic=time.monotonic)`. Each `__call__` builds `Deadline.after(turn_seconds)` and puts it in every `ModelRequest`. Before each model call, an expired deadline returns `_failed(TURN_DEADLINE_EXCEEDED, ...)`, which keeps the completed exchanges (B75). `DeadlineExceededError` (a subclass of `ModelUnavailableError`) is caught before its parent, so `RecordingModel`'s `except ModelUnavailableError` still marks a failed run.
+- `TakeTurn(..., turn_seconds: float | None, monotonic=time.monotonic)`. Each `__call__` builds `Deadline.after(turn_seconds)` and puts it in every `ModelRequest`. Before each model call, an expired deadline returns `_failed(TURN_DEADLINE_EXCEEDED, ...)`, which keeps the completed exchanges (v0.1 B75). `DeadlineExceededError` (a subclass of `ModelUnavailableError`) is caught before its parent, so `RecordingModel`'s `except ModelUnavailableError` still marks a failed run.
 - Adapter: before each attempt, if `remaining < 1 s`, it raises `DeadlineExceededError` (nothing is sent and nothing is reserved). Otherwise: `gate.admit(request)`, then `with_options(timeout=min(60, remaining), max_retries=0)`, then `gate.settle(ticket, usage | None)` in `finally`. A retryable failure waits only when `wait < remaining - 1`. Otherwise it raises `DeadlineExceededError` if time ran out, or `ModelUnavailableError` once the 3 attempts are used (S9.4-S9.6).
 - The bound is honest about httpx: `timeout` bounds each I/O phase, not the total. A non-streamed reply arrives in one piece, so in practice the read phase is the whole wait. This is a residual risk (§13).
 - Startup: `turn_deadline(env)` reads `DALE_TURN_DEADLINE_SECONDS` (default 90) and exits 2 unless the value is greater than `verifier_runner.TIMEOUT_SECONDS` (30), on the terminal and on the web (S9.11).
@@ -259,6 +259,9 @@ Each figure is an upper bound of authored lines including tests; generated files
 | 1b | ADRs 0009, 0010, 0012 | 1a | 330 |
 | 2a | `Deadline`, the `ModelRequest` field, `TakeTurn` checks, tests | 1a | 300 |
 | 2b | `TURN_DEADLINE_EXCEEDED` (catalog, 504, message), contract regeneration, `turn_deadline` startup validation (web and terminal) | 2a | 220 |
+
+`tasks.md` refines 2a and 2b so each passes CI alone: the error code lands in 2a with the `Deadline` value (240), and the `TakeTurn` check moves to 2b with the startup setting (300).
+
 | 2c | Adapter loop (DD29); fake-clock and SDK-error tests | 2b | 330 |
 | 2d | `AttemptGate` port (unused yet), `app_engine` (DD30), S9.10, B61 comments and pins | 2c | 280 |
 | 3 | `VisitorCustomers` port, application, SQL, integration tests | — | 300 |
@@ -293,7 +296,7 @@ Each figure is an upper bound of authored lines including tests; generated files
 | 16b | `deploy.sh`, smoke check, stub-based tests | 16a | 320 |
 | 17 | README, runbook, `docs/releases/v0.3.md`, notice and privacy text approval. Then the user gates: live report, merge, tag, deploy | all | 250 |
 
-At most about 10,400 lines in 37 PRs. Since each figure is a ceiling, the expected total is about 8,500-10,000, inside the proposal's forecast. **400-line budget risk: High** per slice. Slices 3, 13a-13c, 14 and 15a-15b can run in parallel with the main chain.
+At most about 10,400 lines in 37 implementation slices (38 PRs with the planning slice 0). Since each figure is a ceiling, the expected total is about 8,500-10,000, inside the proposal's forecast. **400-line budget risk: High** per slice. Slices 3, 13a-13c, 14 and 15a-15b can run in parallel with the main chain.
 
 ## 16. Open questions
 

@@ -2,7 +2,7 @@
 
 Base: `openspec/specs/verified-order/spec.md` (R1-R16). Modified blocks are complete replacements. Behavior only; mechanics are decided in design. Keywords follow RFC 2119. All data is fictitious ("Distribuidora El Hornero").
 
-Terms added: **turn deadline** = the wall-clock limit on one conversation turn, on every channel. **Failed turn** = a turn that ends with a catalog code instead of a reply; what it completed stays, as decided in v0.2 (decision-log B75).
+Terms added: **turn deadline** = the wall-clock limit on one conversation turn, on every channel. **Failed turn** = a turn that ends with a catalog code instead of a reply; what it completed stays, as decided in v0.2 (decision-log v0.1 B75).
 
 ## MODIFIED Requirements
 
