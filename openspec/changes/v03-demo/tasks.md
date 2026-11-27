@@ -53,7 +53,8 @@ Note: the slices with the least slack are 1b, 2c, 6b, 9b, 11a, 13b and 14 (330 e
 | 5a | `feat(db): add the demo schema` | `v03-slice-05a-demo-schema` | `v03-slice-04b-web-mode` | 250 | 4 | yes (grants) | Opus high |
 | 5b | `test(db): pin the demo grants and keep migrations additive` | `v03-slice-05b-grants` | `v03-slice-05a-demo-schema` | 180 | 5a | yes (grants) | Opus high |
 | 6a | `feat(apps): add the runtime price table and the reservation bound` | `v03-slice-06a-prices` | `v03-slice-05b-grants` | 300 | 5a | yes (spend cap) | Opus high |
-| 6b | `feat(apps): add the spend ledger as the attempt gate` | `v03-slice-06b-ledger` | `v03-slice-06a-prices` | 330 | 6a, 2d | yes (spend cap) | Opus high |
+| 6a2 | `test(apps): check the reservation bound against every recording` (split, log D43) | `v03-slice-06a2-replay-bound` | `v03-slice-06a-prices` | 100 | 6a | yes (spend cap) | Opus high |
+| 6b | `feat(apps): add the spend ledger as the attempt gate` | `v03-slice-06b-ledger` | `v03-slice-06a2-replay-bound` | 330 | 6a, 2d | yes (spend cap) | Opus high |
 | 7a | `feat(apps): add the kill switch and the pause and resume commands` | `v03-slice-07a-control` | `v03-slice-06b-ledger` | 260 | 5a | yes (kill switch) | Opus high |
 | 7b | `feat(apps): add the operator status command` | `v03-slice-07b-status` | `v03-slice-07a-control` | 200 | 7a | no | Sonnet high |
 | 8a | `feat(web): add the demo codes, the start command and the demo contract field` | `v03-slice-08a-demo-contract` | `v03-slice-07b-status` | 300 | 4 | no | Sonnet high |
@@ -288,9 +289,14 @@ Model hint: Opus high.
 Covers: O4 (worst-case cost), G4 (S4.6 unit side), DD38, DD39.
 Model hint: Opus high.
 
-- [ ] 6a.1 RED in `tests/unit/apps/demo/test_prices.py`: `PRICES` equals the eval pricing file loaded through the eval harness's `load_pricing` (same model set, tiers, threshold and `retrieved`) (S4.6).
-- [ ] 6a.2 GREEN: `src/dale/apps/demo/prices.py` (Decimal values per model).
-- [ ] 6a.3 RED then GREEN in `src/dale/apps/demo/ledger.py` (pure functions): `prompt_bound` (UTF-8 bytes of canonical JSON of system, tools and messages, plus 2,000), `reserve_micros` at the tier the bound selects with `max(input, cache_write_5m)` and `max_tokens × output`, rounded up; `cost_micros(usage)`; the reference request. Table tests include the tier threshold boundary.
+- [x] 6a.1 RED in `tests/unit/apps/demo/test_prices.py`: `PRICES` equals the eval pricing file loaded through the eval harness's `load_pricing` (same model set, tiers, threshold and `retrieved`) (S4.6).
+  - Done 2026-11-27 in `f85ed9e` (RED and GREEN in one commit; RED seen with Haiku's cache write at 0.12): the model set equals the file's `models` table; for Haiku and Sonnet the threshold, both tiers field by field and `retrieved` equal `load_pricing`; every price is a `Decimal`; a drifted output price is seen; `prices_for` raises `NoPriceError` for an unknown model (the 9e startup check, S4.8); the tier changes only above the threshold (100,000 standard, 100,001 long context).
+- [x] 6a.2 GREEN: `src/dale/apps/demo/prices.py` (Decimal values per model).
+  - Done 2026-11-27 in `f85ed9e`: `PRICES` is a read-only mapping of `ModelPrices` (threshold, `standard`, `long_context`, `retrieved`) for both compared models, with the harness's `Tier` field names. A new import contract 15 forbids `dale` to import `evals` (log D49): a probe import in `prices.py` breaks it, and `uv run lint-imports` keeps 18 contracts.
+- [x] 6a.3 RED then GREEN in `src/dale/apps/demo/ledger.py` (pure functions): `prompt_bound` (UTF-8 bytes of canonical JSON of system, tools and messages, plus 2,000), `reserve_micros` at the tier the bound selects with `max(input, cache_write_5m)` and `max_tokens × output`, rounded up; `cost_micros(usage)`; the reference request. Table tests include the tier threshold boundary.
+  - Done 2026-11-27 in `f85ed9e` (RED and GREEN in one commit): `tests/unit/apps/demo/test_reservation_bound.py` checks `cost_micros` against `request_cost` × 10^6 for nine usages on both models (the threshold, one token above it and a split long-context prompt included): an `int`, never below the exact cost and less than 1 above it; Haiku costs by hand (0.01 rounds up to 1, 50,000.5 to 50,001); the bound counts UTF-8 bytes of sorted, spaceless JSON (`ñ` is 2); the reservation by hand (8,252 Haiku, 165,025 Sonnet for an empty request); the bound at exactly 100,000 and 100,001 picks each tier; any usage split inside the bound costs at most the reservation; the reference request is the first turn of a 2,000-character message as the brain fences it, and an empty day has room for it. Arithmetic in a 40-digit `Decimal` context, rounded up once (log D44).
+Split (log D43): slice 6a counted 430 / 400 with the replay check, so 6a.4 moves to slice 6a2 (`v03-slice-06a2-replay-bound`, `test(apps): check the reservation bound against every recording`), stacked on this branch; slice 6b stacks on 6a2. This branch counts 331 / 400.
+
 - [ ] 6a.4 RED then GREEN in `tests/unit/apps/demo/test_reservation_bound.py`: for every committed recording, the reservation is at least the actual cost from `message.usage` (design §13 assumption).
 - [ ] 6a.5 Closing: blind review (focus: rounding always up, integer micro-USD), PR body with "Known pending items", size guard output.
 

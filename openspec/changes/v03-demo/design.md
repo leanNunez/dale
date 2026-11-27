@@ -59,6 +59,7 @@ There are 15 contracts today. Contract 4 changes and the other 14 stay as they a
 | 4 | `forbidden_modules` gains `dale.apps.demo`: the verifier stays independent of demo code |
 | 13 (new) | `forbidden`: `dale.apps.demo` → `dale.channels`, `dale.apps.web`, `dale.apps.web_demo`. The CLI and the reset never load the web stack; channel codes are mapped in `apps.web_demo` |
 | 14 (new) | `forbidden`: `dale.brain`, `dale.erp_sim` → `dale.apps` (no contract forbids it today). The gate and the deadline enter the brain only through its own ports |
+| 15 (new, slice 6a, log D49) | `forbidden`: `dale` → `evals`. The runtime price table lives inside `dale` (DD39); 18 contracts from slice 6a |
 
 ## 3. Turn deadline (R9)
 
