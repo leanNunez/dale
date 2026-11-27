@@ -68,14 +68,14 @@ and log D10 and D18.
   amount. A reply that is not streamed normally arrives in one piece, so in practice the read
   phase is the whole wait, but the trickle has no hard upper bound. This is a residual risk, not
   one this record closes. The check before each attempt and the minimum of 1 s only stop a new
-  attempt from starting late. What contains it is the nightly reset's drain (decision 0009): it
+  attempt from starting late. What contains it is the nightly reset's drain ([decision 0009](0009-public-demo.md)): it
   waits a bounded time for requests in flight, and when one is still running it leaves the demo
   paused and does not reseed (fail closed). The release live run measures p50 and p95 turn time,
   and the deadline is a setting to revisit with that data (log D10, D23).
 - The 90 s default is above the verifier timeout and has no latency data behind it. It is a
   first value, not a finding.
 - An attempt the deadline refuses costs nothing: nothing is sent and, with the spend gate of
-  decision 0009 (public demo, planned in the same change), nothing is reserved.
+  [decision 0009](0009-public-demo.md) (public demo), nothing is reserved.
 - A turn cut by the deadline may have shown a proposal summary. The proposal stays confirmable
   only by the Dale action, with revalidation (R4, R5, S9.8); a typed "dale" still confirms
   nothing.
