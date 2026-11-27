@@ -20,15 +20,18 @@ Buenos Aires day's row of `demo.spend_day` in one conditional update, so two att
 both take the last room, and opens a `demo.spend_request` row; `settle` replaces the reservation
 with the cost of the usage, or keeps it when the usage is unknown (log D15). A crash between
 the two keeps the reservation. Every failure to read or write refuses (fail closed); `settle`
-never raises (log D29).
+never raises (log D29). One JSON log line per attempt: outcome, tokens, cost and times, never
+any text of the request.
 """
 
 import json
 import logging
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_CEILING, Context, Decimal, localcontext
+from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -98,6 +101,8 @@ class Reservation:
     day: date
     model: str
     reserved: int
+    admitted_at: float  # monotonic seconds
+    wait_ms: int  # how long `admit` took, waiting for the ledger included
 
 
 class SqlSpendLedger:
@@ -108,16 +113,19 @@ class SqlSpendLedger:
         clock: Clock,
         *,
         prices: Mapping[str, ModelPrices] = PRICES,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        self._engine, self._cap, self._clock, self._prices = engine, cap_micros, clock, prices
+        self._engine, self._cap, self._clock = engine, cap_micros, clock
+        self._prices, self._monotonic = prices, monotonic
 
     def admit(self, settings: ModelSettings, request: ModelRequest) -> AttemptTicket | None:
-        model = settings.model
+        started, model = self._monotonic(), settings.model
         if (prices := self._prices.get(model)) is None:
+            _log(model, "no_price")
             return None
         reserved = reserve_micros(request, settings.max_tokens, prices)
         now, row = self._clock.now(), uuid4()
-        day, taken = spend_day_of(now), None
+        day, taken, outcome = spend_day_of(now), None, "refused"
         try:
             with self._engine.begin() as conn:
                 taken = conn.execute(_reserve(day, reserved, self._cap)).scalar_one_or_none()
@@ -127,27 +135,37 @@ class SqlSpendLedger:
             # The transaction rolled back, so nothing is reserved. A COMMIT error that arrives
             # after the server committed leaves an open reservation for an unsent attempt:
             # overcounted, never undercounted.
-            taken = None
+            taken, outcome = None, "ledger_error"
             logger.error("spend ledger admit failed: %s", type(error).__name__)
+        wait = round((self._monotonic() - started) * 1000)
         if taken is None:
+            _log(model, outcome, reserved_micros=reserved, wait_ms=wait)
             return None
-        return AttemptTicket(Reservation(row, day, model, reserved))
+        return AttemptTicket(Reservation(row, day, model, reserved, started, wait))
 
     def settle(self, ticket: AttemptTicket, usage: Usage | None) -> None:
         held = ticket.reference
         if not isinstance(held, Reservation):
             logger.error("spend ledger settle got a foreign ticket")
+            _log(None, "foreign_ticket", charged=False)
             return
-        cost, outcome = held.reserved, "unknown"  # unknown usage stays at the worst case
+        cost, outcome, charged = held.reserved, "unknown", True  # unknown: the worst case
         try:
             if usage is not None:
                 cost, outcome = cost_micros(usage, self._prices[held.model]), "settled"
             with self._engine.begin() as conn:
                 closed = conn.execute(_close(held, cost, usage, outcome, self._clock.now()))
-                if closed.scalar_one_or_none() is not None:  # settled once only
+                if closed.scalar_one_or_none() is None:  # closed before: nothing charged now
+                    cost, outcome, charged = 0, "already_settled", False
+                else:
                     conn.execute(_replace(held, cost))
         except Exception as error:  # never raises (log D29): the reservation stays, overcounted
+            outcome, charged = "settle_failed", False
             logger.error("spend ledger settle failed: %s", type(error).__name__)
+        elapsed = round((self._monotonic() - held.admitted_at) * 1000)
+        times = {"wait_ms": held.wait_ms, "elapsed_ms": elapsed}
+        money = {"reserved_micros": held.reserved, "cost_micros": cost, "charged": charged}
+        _log(held.model, outcome, usage, **money, **times)
 
     def has_room(self, settings: ModelSettings, request: ModelRequest) -> bool:
         """Whether today's spend leaves room for this request; `False` when unreadable."""
@@ -205,3 +223,11 @@ def _replace(held: Reservation, cost: int) -> sa.Executable:
         .where(spend_day.c.day == held.day)
         .values(committed_micros=committed - held.reserved + cost)
     )
+
+
+def _log(model: str | None, outcome: str, usage: Usage | None = None, **fields: Any) -> None:
+    """The attempt's line: numbers and names only, never any text of the request. `charged`
+    says whether this settle changed the day's total."""
+    line: dict[str, Any] = {"event": "model_attempt", "model": model, "outcome": outcome}
+    line |= {name: getattr(usage, name) if usage else None for name in TOKENS}
+    logger.info(json.dumps(line | fields, sort_keys=True))
