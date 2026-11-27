@@ -1,7 +1,7 @@
 # 0004. Web host, transport and channel boundary
 
 Date: 2026-11-19
-Status: accepted
+Status: accepted. Amended by ADR 0011 (turn deadline), for the rows it changes only
 
 ## Context
 
