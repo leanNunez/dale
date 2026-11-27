@@ -13,6 +13,7 @@ import pytest
 
 from dale.brain.application.model_port import (
     MODEL_SETTINGS,
+    DeadlineExceededError,
     Json,
     ModelRequest,
     ModelResponse,
@@ -214,6 +215,23 @@ def test_a_run_that_fails_keeps_the_previous_recording_byte_for_byte(tmp_path: P
         broken.finish()
     assert path.read_bytes() == before
     assert [p.name for p in path.parent.iterdir()] == ["run-1.jsonl"]  # no temporary left
+
+
+class CutLive(FakeLive):
+    """Stands for AnthropicModel when the turn's deadline cuts the call (R9, ADR 0011)."""
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        raise DeadlineExceededError("under the minimum time for an attempt")
+
+
+def test_a_call_cut_by_the_deadline_fails_the_record_run(tmp_path: Path) -> None:
+    """S9.9: `DeadlineExceededError` is a `ModelUnavailableError`, so the recorder sees it."""
+    recorder = RecordingModel(CutLive(), tmp_path, "a", 1)
+    with pytest.raises(DeadlineExceededError):
+        recorder.complete(REQUEST)
+    with pytest.raises(RecordError, match="a live call failed"):
+        recorder.finish()
+    assert not recording_path(tmp_path, "a", 1).exists()
 
 
 class Built:
