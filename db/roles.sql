@@ -1,9 +1,11 @@
--- Dale database roles, for dev and CI only. Run as a superuser, then create the database
--- owned by dale_owner and migrate as dale_owner:
+-- Dale database roles. Run as a superuser, then create the database owned by dale_owner and
+-- migrate as dale_owner:
 --   psql -v ON_ERROR_STOP=1 -f db/roles.sql && createdb --owner=dale_owner dale
 --   DALE_OWNER_DATABASE_URL=postgresql+psycopg://dale_owner@127.0.0.1/dale alembic upgrade head
--- No passwords live here: dev and CI servers trust local connections. Anywhere else, set
--- them interactively with \password. Grants on the erp and brain schemas are in migrations/.
+-- No passwords live in this file. Dev and CI servers trust local connections. Production will
+-- run this same file through deploy/db/init.sh (planned, slice 14), which then sets each
+-- role's password from root-only files on the server (design DD30, §9; release-gate G9).
+-- Grants on every schema (erp, brain, demo) are in migrations/; dale_verifier gets none on demo.
 DO $$
 DECLARE
   r text;
