@@ -1,6 +1,7 @@
 // The only module that talks to the host (D21, W10). Same-origin relative URLs, JSON in and out,
-// no timeout and no abort signal: a turn may run for minutes and the page shows a pending state
-// instead (D17, B6). Any HTTP status is parsed into a ResponseEnvelope, because an error is an
+// no timeout and no abort signal: the server bounds a turn (its deadline, plus one round of tool
+// statements under the statement timeout, plus the 30 s verifier; ADR 0011) and a sync turn
+// cannot be cancelled, so the page shows a pending state instead (D17, B6). Any HTTP status is parsed into a ResponseEnvelope, because an error is an
 // envelope with `error` set; only a body that is not an envelope is a failure, and its text is
 // never kept, so a proxy's HTML page can never reach the document.
 import type { ResponseEnvelope } from "../contract";

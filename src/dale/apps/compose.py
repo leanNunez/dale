@@ -4,7 +4,8 @@ web host and the eval harness call `compose`; `channel` names the conversation's
 brain's tables, the only thing that differs between them.
 
 `turn_deadline` reads the turn deadline both hosts start with (R9 S9.11, ADR 0011); the eval
-harness passes none, so its turns run as recorded."""
+harness passes none, so its turns run as recorded. `app_engine` is the engine both hosts use:
+every statement of a turn is bounded well under the deadline (DD30, S9.10)."""
 
 import math
 from collections.abc import Callable, Mapping, Sequence
@@ -35,6 +36,24 @@ from dale.shared.shown_events import ShownEvent
 type Channel = Literal["terminal", "web"]
 type Verifier = Callable[[str], VerifierVerdict]
 DEADLINE_VARIABLE, DEFAULT_TURN_SECONDS = "DALE_TURN_DEADLINE_SECONDS", 90.0  # log D10
+CONNECT_TIMEOUT = 3  # seconds: a black-holed database fails the health probe fast
+# Milliseconds, as PostgreSQL reads them: a statement, a lock wait, an idle open transaction.
+# The proposal lock's transaction sits idle while management confirms on another connection
+# (`confirm_proposal.py`), so its bound covers several statement rounds (log D31).
+SESSION_TIMEOUTS = {
+    "statement_timeout": 5_000,
+    "lock_timeout": 3_000,
+    "idle_in_transaction_session_timeout": 30_000,
+}
+
+
+def app_engine(url: str) -> sa.Engine:
+    """The app role's engine for the terminal and the web host. The timeouts travel with the
+    connection, not with the role, so the CLI and the reseed keep their own (DD30)."""
+    options = " ".join(f"-c {name}={value}" for name, value in SESSION_TIMEOUTS.items())
+    return sa.create_engine(
+        url, connect_args={"connect_timeout": CONNECT_TIMEOUT, "options": options}
+    )
 
 
 class TurnDeadlineError(ValueError):

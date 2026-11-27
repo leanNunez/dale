@@ -55,7 +55,7 @@ describe("requests", () => {
     expect(calls(fetchFn)[0]?.[0]).toBe("/v1/conversations/a%2F..%2Fb%3Fx%3D1/messages");
   });
 
-  it("sets no timeout and no abort signal: a turn may run for minutes (D17)", async () => {
+  it("sets no timeout and no abort signal: the server bounds a turn (D17, ADR 0011)", async () => {
     const timer = vi.spyOn(globalThis, "setTimeout");
     const abortTimeout = vi.spyOn(AbortSignal, "timeout");
     const fetchFn = respond(JSON.stringify(envelope()));

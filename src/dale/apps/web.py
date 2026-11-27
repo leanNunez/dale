@@ -1,7 +1,9 @@
 """Composition root of the web host (design §4.2, D12, D17): `DALE_WEB_COMPANY=el-hornero
 python -m dale.apps.web`. It serves the API and the built page on `127.0.0.1` only, with one
 uvicorn worker, because conversation state lives in memory. No flag or variable changes the
-bind address, and no request timeout is configured: a turn may legitimately run for minutes (B6).
+bind address, and no request timeout is configured (B6, B61): a sync turn cannot be cancelled,
+so the brain bounds it instead, at its deadline plus one tool round of statements under the
+statement timeout plus the 30 s verifier (ADR 0011).
 
 Settings come from the environment: `DALE_WEB_PORT` (default 8000), `DALE_WEB_COMPANY`,
 `DALE_WEB_CUSTOMER` (the fixed seeded customer, default `C-001`), `DALE_APP_DATABASE_URL`, and
@@ -38,6 +40,7 @@ from dale.apps.compose import (
     ChannelBackend,
     TurnDeadlineError,
     Verifier,
+    app_engine,
     compose,
     turn_deadline,
 )
@@ -66,7 +69,6 @@ COMPANY_VARIABLE, URL_VARIABLE = "DALE_WEB_COMPANY", "DALE_APP_DATABASE_URL"
 CUSTOMER_VARIABLE, DEFAULT_CUSTOMER = "DALE_WEB_CUSTOMER", "C-001"
 HOSTS_VARIABLE, ORIGINS_VARIABLE = "DALE_WEB_ALLOWED_HOSTS", "DALE_WEB_ALLOWED_ORIGINS"
 REQUIRED = (COMPANY_VARIABLE, URL_VARIABLE, verifier_runner.URL_VARIABLE)
-CONNECT_TIMEOUT: Final = 3  # seconds: a black-holed database fails the health probe fast
 PAGE = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"  # in a source checkout
 REASONS: Final = frozenset(get_args(VerdictReason))
 
@@ -219,10 +221,6 @@ def backends(
     return build
 
 
-def database_engine(url: str) -> sa.Engine:
-    return sa.create_engine(url, connect_args={"connect_timeout": CONNECT_TIMEOUT})
-
-
 def database_ready(engine: sa.Engine) -> Ready:
     """The health probe (D25); the route treats a raised error as not ready."""
 
@@ -251,7 +249,7 @@ def main(argv: Sequence[str] | None = None, erp: Callable[[sa.Engine], ErpFacade
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    engine = database_engine(config.database_url)
+    engine = app_engine(config.database_url)
     try:
         if failed := startup_error(erp(engine), config):
             print(failed[1], file=sys.stderr)

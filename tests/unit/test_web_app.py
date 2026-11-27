@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 from starlette.types import ASGIApp
 
-from dale.apps import web
+from dale.apps import compose, web
 from dale.apps.verifier_runner import (
     TIMEOUT_SECONDS,
     Finding,
@@ -183,7 +183,7 @@ def test_a_known_customer_starts_the_host(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_the_database_engine_has_a_short_connect_timeout() -> None:
     """A black-holed database fails `/health` within seconds, closed (503)."""
-    engine, seen = web.database_engine(REQUIRED["DALE_APP_DATABASE_URL"]), dict[str, object]()
+    engine, seen = compose.app_engine(REQUIRED["DALE_APP_DATABASE_URL"]), dict[str, object]()
 
     @sa.event.listens_for(engine, "do_connect")
     def capture(dialect: object, record: object, args: object, params: dict[str, object]) -> None:
@@ -192,7 +192,7 @@ def test_the_database_engine_has_a_short_connect_timeout() -> None:
 
     with pytest.raises(OSError, match="not connecting"):
         engine.connect()
-    assert seen["connect_timeout"] == web.CONNECT_TIMEOUT == 3
+    assert seen["connect_timeout"] == compose.CONNECT_TIMEOUT == 3
 
 
 def test_no_route_sends_a_cors_header(tmp_path: Path) -> None:
