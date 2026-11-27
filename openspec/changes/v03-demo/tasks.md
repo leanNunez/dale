@@ -173,7 +173,8 @@ Model hint: Opus high.
   - Done 2026-11-26 in `fbc4ddb`: 504 and "Tardé demasiado con ese mensaje. Probá de nuevo." (log D25); catalog pins updated; schemas and TS regenerated; the trace label in `apps/web/src/i18n/es.ts` (its `Record<ErrorCode, string>` fails the typecheck without it). Size guard 117 / 400.
 - [x] 2a.4 Prove the prompt path is untouched: the fingerprint pin test passes unchanged, and both models replay every committed recording unchanged (S9.9).
   - Done 2026-11-26: the v0.1 fingerprint pin passes unchanged; Haiku and Sonnet replay 120 passed each.
-- [ ] 2a.5 Closing: blind review (focus: `request_params`, `fingerprint` and `messages_digest` never read the deadline), PR body with "Known pending items", size guard output.
+- [x] 2a.5 Closing: blind review (focus: `request_params`, `fingerprint` and `messages_digest` never read the deadline), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: one blind review over slices 2a-2d2 found no blocker; its two should-fix items (the last attempt out of time ended as `model_unavailable`; an unguarded `settle`) and five nits were folded into the commits that introduced them (log D29-D31) and re-checked with their regression tests. PR body carries "Known pending items" and the size guard.
 
 ## Phase 2b: Turn check and the startup setting (slice 2b, ~300 lines) [critical: no partial confirmation]
 
@@ -192,7 +193,8 @@ Split (log D26): slice 2b counted 468 / 400 in one branch, so 2b.4 moves to slic
   - Done 2026-11-26 in `4908717` on slice 2b2 (log D26): 12 refused values, the default and three accepted ones; both mains exit 2 on `30` and `abc` before they build an engine, and both pass the value on. Runtime harness: `DALE_TURN_DEADLINE_SECONDS=30 uv run python -m dale.apps.terminal --customer C-001` exits 2. Size guard 182 / 400.
 - [x] 2b.5 RED then GREEN: the terminal shows the `turn_deadline_exceeded` message and creates no order (S9.7), in the terminal session tests.
   - Done 2026-11-26 in `502a748`, in `tests/unit/channels/test_terminal_session.py` (and the S9.8 integration test prints the message through the real terminal).
-- [ ] 2b.6 Closing: blind review (focus: a deadline never yields a partial confirmation), PR body with "Known pending items", size guard output.
+- [x] 2b.6 Closing: blind review (focus: a deadline never yields a partial confirmation), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: one blind review over slices 2a-2d2 found no blocker; its two should-fix items (the last attempt out of time ended as `model_unavailable`; an unguarded `settle`) and five nits were folded into the commits that introduced them (log D29-D31) and re-checked with their regression tests. PR body carries "Known pending items" and the size guard.
 
 ## Phase 2c: Bounded retry loop in the adapter (slice 2c, ~330 lines) [critical: unbounded wait]
 
@@ -205,7 +207,8 @@ Model hint: Opus high.
   - Done 2026-11-26 in `10fab01`. Only `sleep` is injected: the deadline carries its own monotonic clock (DD28), so a second adapter clock is not added (log D27). The client-arguments test stays green; the old pin `max_retries=2` becomes `max_retries=0` and `MAX_ATTEMPTS == 3`.
 - [x] 2c.3 Replay both models unchanged, and test that `RecordingModel` marks a deadline as a failed run (S9.9).
   - Done 2026-11-26 in `10fab01`: Haiku and Sonnet replay 120 passed each; `test_a_call_cut_by_the_deadline_fails_the_record_run` in `tests/unit/evals/test_model.py`. Size guard 336 / 400.
-- [ ] 2c.4 Closing: blind review (focus: no wait path escapes the deadline, SDK retries off), PR body with "Known pending items", size guard output.
+- [x] 2c.4 Closing: blind review (focus: no wait path escapes the deadline, SDK retries off), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: one blind review over slices 2a-2d2 found no blocker; its two should-fix items (the last attempt out of time ended as `model_unavailable`; an unguarded `settle`) and five nits were folded into the commits that introduced them (log D29-D31) and re-checked with their regression tests. PR body carries "Known pending items" and the size guard.
 
 ## Phase 2d: Attempt gate port, app engine and statement timeout (slice 2d, ~280 lines)
 
@@ -220,7 +223,8 @@ Split (log D30): slice 2d counted 448 / 400 in one branch, so 2d.2 and 2d.3 move
   - Done 2026-11-26 in `84b1a1f` on slice 2d2 (log D30): `SHOW` gives `5s`, `3s` and `30s` (the idle timeout is 30 s, log D31); the `pg_sleep(6)` runs inside the search's own statement round (a `before_cursor_execute` hook) and gives `rules_unavailable` and no order, and the same test fails on a plain engine; both mains build their engine through `app_engine`. `web.database_engine` is replaced by `compose.app_engine`, and `CONNECT_TIMEOUT` moves to `compose`.
 - [x] 2d.3 Restate the B61 comments: the page's no-abort comment in `apps/web/src/api/client.ts` and the server-side bound (deadline plus one tool round plus the 30 s verifier); the "no request timeout" pins stay (D17).
   - Done 2026-11-26 in `84b1a1f` and `f395c30`: `apps/web/src/api/client.ts`, `apps/web/vite.proxy.ts` and the `web.py` docstring name the bound; the uvicorn and guard pins in `tests/unit/test_web_app.py` are unchanged. ADR 0011 now lists ADR 0005's "a turn may run for minutes" consequence among what it amends and records the 30 s idle timeout; ADR 0005's status names ADR 0011. Size guard 162 / 400.
-- [ ] 2d.4 Closing: blind review (focus: the gate port changes no request parameter), PR body with "Known pending items", size guard output.
+- [x] 2d.4 Closing: blind review (focus: the gate port changes no request parameter), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: one blind review over slices 2a-2d2 found no blocker; its two should-fix items (the last attempt out of time ended as `model_unavailable`; an unguarded `settle`) and five nits were folded into the commits that introduced them (log D29-D31) and re-checked with their regression tests. PR body carries "Known pending items" and the size guard.
 
 ## Phase 3: Visitor customer write port (slice 3, ~300 lines) [critical: least privilege]
 
