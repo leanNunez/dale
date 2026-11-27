@@ -1,6 +1,7 @@
 """The live adapter with a mocked client (design §7, §11 "Provider timeout"): no network, no
-credentials. Every request carries the timeout and retry budget and is built from the one
-settings value, in the effort field of the pinned SDK; any SDK error is ModelUnavailableError."""
+credentials. Every request carries the timeout and turns the SDK's retries off (the adapter's own
+loop is in test_anthropic_retry.py), and is built from the one settings value, in the effort
+field of the pinned SDK; any SDK error is ModelUnavailableError."""
 
 import inspect
 from dataclasses import fields, replace
@@ -37,8 +38,8 @@ def test_every_request_carries_the_timeout_retries_and_model_constants() -> None
     raw = message(THINKING, SEARCH)
     mock = client(Message.model_validate(raw))
     parsed = live.AnthropicModel(mock).complete(REQUEST)
-    mock.with_options.assert_called_once_with(timeout=live.TIMEOUT_SECONDS, max_retries=2)
-    assert 0 < live.TIMEOUT_SECONDS <= 120 and live.MAX_RETRIES == 2
+    mock.with_options.assert_called_once_with(timeout=live.TIMEOUT_SECONDS, max_retries=0)
+    assert 0 < live.TIMEOUT_SECONDS <= 120 and live.MAX_ATTEMPTS == 3  # our loop (DD29)
     mock.with_options.return_value.messages.create.assert_called_once_with(
         model="claude-haiku-5-5",
         max_tokens=16_000,
@@ -96,7 +97,7 @@ TIMED_OUT = anthropic.APITimeoutError(httpx2.Request("POST", "https://api.invali
 @pytest.mark.parametrize("error", [anthropic.AnthropicError("boom"), TIMED_OUT])
 def test_an_sdk_error_is_model_unavailable(error: Exception) -> None:
     with pytest.raises(ModelUnavailableError):
-        live.AnthropicModel(client(error=error)).complete(REQUEST)
+        live.AnthropicModel(client(error=error), sleep=lambda _: None).complete(REQUEST)
 
 
 def test_the_raw_message_of_the_last_call_is_kept_for_the_eval_recorder() -> None:
