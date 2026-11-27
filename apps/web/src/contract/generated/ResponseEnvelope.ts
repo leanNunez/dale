@@ -31,6 +31,7 @@ export type ErrorCode =
   | "turn_limit_reached"
   | "model_refusal"
   | "model_unavailable"
+  | "turn_deadline_exceeded"
   | "unknown_tool"
   | "invalid_tool_input";
 export type Message = string;

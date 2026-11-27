@@ -23,6 +23,7 @@ class ErrorCode(StrEnum):
     TURN_LIMIT_REACHED = "turn_limit_reached"
     MODEL_REFUSAL = "model_refusal"
     MODEL_UNAVAILABLE = "model_unavailable"
+    TURN_DEADLINE_EXCEEDED = "turn_deadline_exceeded"
     UNKNOWN_TOOL = "unknown_tool"
     INVALID_TOOL_INPUT = "invalid_tool_input"
 
@@ -44,6 +45,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TURN_LIMIT_REACHED: 422,
     ErrorCode.MODEL_REFUSAL: 422,
     ErrorCode.MODEL_UNAVAILABLE: 503,
+    ErrorCode.TURN_DEADLINE_EXCEEDED: 504,  # log D18: the turn ran out of time (ADR 0011)
     ErrorCode.UNKNOWN_TOOL: 500,
     ErrorCode.INVALID_TOOL_INPUT: 422,
 }
@@ -68,6 +70,7 @@ ERROR_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.TURN_LIMIT_REACHED: "Me enredé con tantas vueltas. Probemos de nuevo, de a poco.",
     ErrorCode.MODEL_REFUSAL: "Eso no lo puedo resolver por este medio.",
     ErrorCode.MODEL_UNAVAILABLE: "Estoy con un problema ahora. Probá de nuevo en un rato.",
+    ErrorCode.TURN_DEADLINE_EXCEEDED: "Tardé demasiado con ese mensaje. Probá de nuevo.",
     ErrorCode.UNKNOWN_TOOL: "No pude hacer eso. Probemos de otra manera.",
     ErrorCode.INVALID_TOOL_INPUT: "No pude procesar eso. Probemos de otra manera.",
 }

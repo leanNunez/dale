@@ -41,14 +41,15 @@ EXPECTED: dict[str, tuple[int, str]] = {
     "turn_limit_reached": (422, "Me enredé con tantas vueltas. Probemos de nuevo, de a poco."),
     "model_refusal": (422, "Eso no lo puedo resolver por este medio."),
     "model_unavailable": (503, "Estoy con un problema ahora. Probá de nuevo en un rato."),
+    "turn_deadline_exceeded": (504, "Tardé demasiado con ese mensaje. Probá de nuevo."),
     "unknown_tool": (500, "No pude hacer eso. Probemos de otra manera."),
     "invalid_tool_input": (422, "No pude procesar eso. Probemos de otra manera."),
 }
 PROMISES = ("te paso", "te llamo", "te contacta", "te armo", "te aviso", "te escribo", "confirmé")
 
 
-def test_catalog_has_the_design_codes_plus_invalid_tool_input() -> None:
-    assert len(ErrorCode) == 17
+def test_catalog_has_the_design_codes_plus_invalid_tool_input_and_the_deadline() -> None:
+    assert len(ErrorCode) == 18  # v0.3 adds turn_deadline_exceeded (R9, S11.1)
 
 
 def test_codes_are_unique_snake_case() -> None:
