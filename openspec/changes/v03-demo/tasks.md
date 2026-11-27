@@ -135,9 +135,12 @@ Model hint: Sonnet medium.
 Covers: G3 (S3.1 proof starts), R9 (record), DD28-DD30, design §14, log D12, D18.
 Model hint: Sonnet high.
 
-- [ ] 1a.1 Write `docs/decisions/0013-release-eval-criterion.md` in its own commit, with no data in hand: hard gates at 0 (false confirmations, unexpected writes, `unverifiable` verdicts, applied exceptions in gauchadas), pass^3 of at least 35 of 40, valid only for a 40-case set, `live` and `record` reports accepted and `replay` refused, dated. Test: structural readback.
-- [ ] 1a.2 Write `docs/decisions/0011-turn-deadline-bounded-retries.md`: DD28-DD30, the 90 s default above the 30 s verifier timeout, the 1 s minimum per attempt, HTTP 504; amends ADR 0004 D17 and B61. Test: structural readback.
-- [ ] 1a.3 Verify no v0.3 report exists yet (`git ls-files evals/reports` lists no v0.3 file) and record the result in the PR body (G3 S3.1).
+- [x] 1a.1 Write `docs/decisions/0013-release-eval-criterion.md` in its own commit, with no data in hand: hard gates at 0 (false confirmations, unexpected writes, `unverifiable` verdicts, applied exceptions in gauchadas), pass^3 of at least 35 of 40, valid only for a 40-case set, `live` and `record` reports accepted and `replay` refused, dated. Test: structural readback.
+  - Done 2026-11-26 in `4fc380e`: ADR 0013 in its own commit, before any v0.3 report or data; hard gates at 0, pass^3 of at least 35 of 40, valid only for 40 cases, `live` and `record` accepted and `replay` refused, dated 2026-11-26; structural readback.
+- [x] 1a.2 Write `docs/decisions/0011-turn-deadline-bounded-retries.md`: DD28-DD30, the 90 s default above the 30 s verifier timeout, the 1 s minimum per attempt, HTTP 504; amends ADR 0004 D17 and B61. Test: structural readback.
+  - Done 2026-11-26 in `90e5fd8`: ADR 0011 (DD28-DD30, 90 s default above the 30 s verifier timeout, 1 s minimum per attempt, HTTP 504; amends ADR 0004 D17 and v0.2 B61); structural readback.
+- [x] 1a.3 Verify no v0.3 report exists yet (`git ls-files evals/reports` lists no v0.3 file) and record the result in the PR body (G3 S3.1).
+  - Done 2026-11-26: `git ls-files evals/reports` lists no v0.3 file (only v0.1, v0.2 and the discarded v0.2 run); recorded for the PR body (G3 S3.1).
 - [ ] 1a.4 Closing: blind review (focus: the criterion matches log D12 and release-gate G3 word for word), PR body with "Known pending items", size guard output.
 
 ## Phase 1b: Public demo records (slice 1b, ~330 lines)
