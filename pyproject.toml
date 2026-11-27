@@ -109,13 +109,13 @@ forbidden_modules = [
     "dale.erp_sim.infrastructure",
 ]
 
-# 4. The verifier is independent of the writers' code.
+# 4. The verifier is independent of the writers' code, demo code included.
 [[tool.importlinter.contracts]]
 id = "4"
-name = "verifier is independent of erp_sim, brain and channels"
+name = "verifier is independent of erp_sim, brain, channels and demo code"
 type = "forbidden"
 source_modules = ["dale.verifier", "dale.apps.verifier", "dale.apps.verifier_runner"]
-forbidden_modules = ["dale.erp_sim", "dale.brain", "dale.channels"]
+forbidden_modules = ["dale.erp_sim", "dale.brain", "dale.channels", "dale.apps.demo"]
 
 # 5. Every channel talks to the brain only through its application layer.
 [[tool.importlinter.contracts]]
@@ -229,3 +229,20 @@ ignore_imports = [
     "dale.channels.terminal.** -> prompt_toolkit.**",
 ]
 unmatched_ignore_imports_alerting = "none"
+
+# 13. Demo code (settings, SQL, CLI, reset) never loads the web stack; apps.web_demo maps it onto
+#     the channel (DD26).
+[[tool.importlinter.contracts]]
+id = "13"
+name = "apps.demo imports no channels, apps.web or apps.web_demo"
+type = "forbidden"
+source_modules = ["dale.apps.demo"]
+forbidden_modules = ["dale.channels", "dale.apps.web", "dale.apps.web_demo"]
+
+# 14. The deadline and the attempt gate enter the brain only through its own ports.
+[[tool.importlinter.contracts]]
+id = "14"
+name = "brain and erp_sim import no apps"
+type = "forbidden"
+source_modules = ["dale.brain", "dale.erp_sim"]
+forbidden_modules = ["dale.apps"]
