@@ -58,7 +58,7 @@ Video or recording of any kind; login or accounts; CAPTCHA (breaks W10's CSP); c
 
 ## Approach
 
-- Hexagonal as in v0.1 and v0.2. Demo controls live in `dale.apps` and `dale.channels.web`. The brain changes only for the deadline. The spend cap wraps `ModelPort` in the apps layer.
+- Hexagonal as in v0.1 and v0.2. Demo controls live in `dale.apps` and `dale.channels.web`. The brain changes only for the deadline. The spend cap wraps `ModelPort` in the apps layer. (Superseded: the spend cap is an `AttemptGate` the adapter calls on every attempt, retries included; design DD27, log D19.)
 - A `demo` schema holds control, ledger, sessions and transcripts, so reseed never touches it.
 - Per-visitor customers go through a new `erp_sim` write port. The nightly reseed removes them.
 - The deadline is passed into `TakeTurn`. The adapter makes no SDK retries and runs its own bounded loop with `retry-after` honored only when it fits. Request parameters and the prompt fingerprint do not change.
