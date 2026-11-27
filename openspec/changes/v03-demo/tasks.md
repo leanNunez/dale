@@ -123,9 +123,12 @@ Parallelism: one writer at a time, and all slices stay stacked in table order (s
 Covers: proposal, design §15. Branch `v03-demo-planning` already holds the change folder.
 Model hint: Sonnet medium.
 
-- [ ] 0.1 Confirm `dev` equals `main` after the v0.2 release merge (`git rev-parse dev main`); fast-forward locally if not. No push without the user's usual approval.
-- [ ] 0.2 Commit `openspec/changes/v03-demo/tasks.md` on `v03-demo-planning` as `docs(openspec): add the v03-demo tasks`.
-- [ ] 0.3 Closing: structural readback (passive docs), PR body with "Known pending items" (the list at the end of this file), size guard output (0 counted).
+- [x] 0.1 Confirm `dev` equals `main` after the v0.2 release merge (`git rev-parse dev main`); fast-forward locally if not. No push without the user's usual approval.
+  - Done 2026-11-26: `dev` (`2e8dbe6`) is ahead of `main` (`c5ff98c`) only by #125, the v0.2 archive (openspec, README links, release notes); no code, so no release is needed and the branch starts from `dev`.
+- [x] 0.2 Commit `openspec/changes/v03-demo/tasks.md` on `v03-demo-planning` as `docs(openspec): add the v03-demo tasks`.
+  - Done 2026-11-26 in `ff77325`.
+- [x] 0.3 Closing: structural readback (passive docs), PR body with "Known pending items" (the list at the end of this file), size guard output (0 counted).
+  - Done 2026-11-26: structural readback of the change folder; PR to `dev` with "Known pending items"; size guard 0 counted (`openspec/` excluded).
 
 ## Phase 1a: Release criterion and turn deadline records (slice 1a, ~220 lines) [critical: criterion first]
 
