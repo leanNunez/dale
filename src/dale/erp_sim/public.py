@@ -147,3 +147,19 @@ class ErpFacade(Protocol):
     ) -> Result[OrderConfirmation | None]:
         """The order stored under the proposal id, as `confirm` returns it, or None. Read-only."""
         ...
+
+
+class VisitorCodeConflictError(RuntimeError):
+    """Two fresh visitor codes in a row were already taken (DD31 retries once)."""
+
+
+class VisitorCustomers(Protocol):
+    """The demo's visitor customer write (DD31, log D4). It is its own port, never a method of
+    `ErpFacade`: the brain's tools hold the facade, and they must never gain a customer write."""
+
+    def create_visitor(self, company_slug: str, template_code: str) -> Result[SessionCustomer]:
+        """A new active customer with code `V-` plus 10 random hex digits, a random id, the
+        template's zone and name, and no orders. An unknown or inactive template gives
+        customer_not_found, a failed read or write rules_unavailable; a second code conflict
+        raises `VisitorCodeConflictError`."""
+        ...

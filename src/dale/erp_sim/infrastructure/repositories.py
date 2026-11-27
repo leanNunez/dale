@@ -1,4 +1,5 @@
-"""Rule reads and the order write, SQLAlchemy Core. Every predicate uses `of_company` (R15)."""
+"""Rule reads, the order write and the visitor insert, SQLAlchemy Core. Every predicate uses
+`of_company` (R15), or the company slug for a lookup by code."""
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 
 from dale.erp_sim.application.confirm import Order
+from dale.erp_sim.application.visitors import VisitorTemplate
 from dale.erp_sim.domain.catalog import CatalogProduct
 from dale.erp_sim.domain.rules import Customer, QuotedLine, Zone
 from dale.erp_sim.infrastructure import tables as t
@@ -159,3 +161,31 @@ class SqlOrderStore:
         level = {"isolation_level": "READ COMMITTED"}  # set before the transaction begins
         with self._engine.connect().execution_options(**level) as conn, conn.begin():
             yield SqlOrderData(conn)
+
+
+class SqlVisitorData:
+    """The template read and the visitor insert (DD31); each opens its own transaction."""
+
+    def __init__(self, engine: sa.Engine) -> None:
+        self._engine = engine
+
+    def visitor_template(self, company_slug: str, code: str) -> VisitorTemplate | None:
+        co, c = t.company, t.customer
+        stmt = (
+            sa.select(co.c.id, co.c.name, c.c.zone_id, c.c.name)
+            .join_from(co, c, c.c.company_id == co.c.id)
+            .where(co.c.slug == company_slug, c.c.code == code, c.c.active)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(stmt).first()  # (company_id, code) is unique: one row at most
+        return None if row is None else VisitorTemplate(CompanyId(row[0]), row[1], row[2], row[3])
+
+    def insert_visitor(self, template: VisitorTemplate, customer_id: CustomerId, code: str) -> bool:
+        c = t.customer
+        row = {"company_id": template.company_id, "id": customer_id, "code": code}
+        row |= {"name": template.name, "zone_id": template.zone_id, "active": True}
+        stmt = (
+            insert(c).values(row).on_conflict_do_nothing(index_elements=[c.c.company_id, c.c.code])
+        )
+        with self._engine.begin() as conn:
+            return conn.execute(stmt.returning(c.c.id)).first() is not None
