@@ -237,6 +237,46 @@ def test_an_attempt_never_sent_settles_at_zero_and_only_once(db: Engine) -> None
     assert (committed(db), rows(db)[0].cost_micros) == (0, 0)
 
 
+def _fault(engine: Engine, kind: str) -> None:
+    """After the reservation's statement succeeded: the request row's insert raises, breaks a
+    real CHECK on the server (a reservation of 0), or the COMMIT itself fails."""
+
+    def before(conn: Any, cursor: Any, statement: str, params: Any, *rest: Any) -> Any:
+        if statement.startswith("INSERT INTO demo.spend_request"):
+            if kind == "raise":
+                raise RuntimeError("second statement")
+            params = dict(params, reserved_micros=0)
+        return statement, params
+
+    def commit(conn: Any) -> None:
+        raise RuntimeError("commit")
+
+    if kind == "commit":
+        sa.event.listen(engine, "commit", commit)
+    else:
+        sa.event.listen(engine, "before_cursor_execute", before, retval=True)
+
+
+@pytest.mark.parametrize("kind", ["raise", "check", "commit"])
+def test_a_failure_after_the_reservation_refuses_and_keeps_the_total(
+    db: Engine, kind: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert gate(db, 500_000).admit(SETTINGS, REQUEST) is not None  # the day holds ONE
+    caplog.set_level("INFO", logger="dale.apps.demo.ledger")
+    faulty = create_engine(role_url("dale_app"))
+    try:
+        _fault(faulty, kind)
+        assert gate(faulty, 500_000).admit(SETTINGS, REQUEST) is None
+        live, client = model(gate(faulty, 500_000), REPLY)
+        with pytest.raises(ModelUnavailableError):
+            live.complete(REQUEST)
+        assert client.sent == 0
+    finally:
+        faulty.dispose()
+    assert (committed(db), len(rows(db))) == (ONE, 1)
+    assert [line["outcome"] for line in lines(caplog)] == ["ledger_error", "ledger_error"]
+
+
 def test_settle_never_raises(db: Engine, engines: dict[str, Engine]) -> None:  # log D29
     ticket = gate(db, 500_000).admit(SETTINGS, REQUEST)
     assert ticket is not None
