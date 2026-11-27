@@ -11,7 +11,7 @@ import uvicorn
 from sqlalchemy import Engine
 from starlette.testclient import TestClient
 
-from dale.apps import web
+from dale.apps import compose, web
 from dale.apps.verifier_runner import run_verifier
 from dale.brain.infrastructure import tables as brain
 from dale.channels.web.app import create_app
@@ -46,7 +46,7 @@ def test_health_is_ok_when_the_app_role_can_read(engines: dict[str, Engine]) -> 
 
 
 def test_health_is_unavailable_when_the_database_is_down() -> None:
-    down = web.database_engine("postgresql+psycopg://dale_app@127.0.0.1:1/dale_test")
+    down = compose.app_engine("postgresql+psycopg://dale_app@127.0.0.1:1/dale_test")
     try:
         assert health(down) == (503, "rules_unavailable")
     finally:
@@ -109,7 +109,7 @@ def test_a_turn_returns_its_whole_result_and_a_press_its_mapped_verdict(db: Engi
 
 
 def test_no_conversation_is_built_while_the_database_is_down() -> None:
-    down = web.database_engine("postgresql+psycopg://dale_app@127.0.0.1:1/dale_test")
+    down = compose.app_engine("postgresql+psycopg://dale_app@127.0.0.1:1/dale_test")
     try:
         with pytest.raises(BackendUnavailableError) as raised:
             web.backends(down, "el-hornero", "C-001", never_built, FrozenClock(NOW), run_verifier)()

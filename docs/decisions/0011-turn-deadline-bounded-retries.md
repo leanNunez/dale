@@ -29,7 +29,7 @@ and log D10 and D18.
 | Minimum per attempt (log D18) | An attempt needs at least 1 s left. Under 1 s the adapter raises `DeadlineExceededError` and sends and reserves nothing |
 | No deadline | With no deadline (`None`) a `retry-after` wait is capped at 30 s, so a caller with no deadline is still bounded. `sleep` and the clock are injected, so tests use a fake clock |
 | Startup (R9 S9.11) | A deadline not greater than the verifier timeout (30 s) is refused at startup: the terminal and the web host exit with status 2. The 90 s default sits above it. A deadline at or below 30 s could cut a turn while its verifier still runs |
-| Statement timeout (DD30) | One shared `app_engine(url)` in `dale.apps.compose` (planned) sets `statement_timeout=5000`, `lock_timeout=3000` and `idle_in_transaction_session_timeout=10000` as engine options, on top of the existing `connect_timeout=3` (`src/dale/apps/web.py:202`). The web host and the terminal both use it; the terminal builds a plain engine today (`src/dale/apps/terminal.py:63`). An integration test reads `SHOW statement_timeout` |
+| Statement timeout (DD30) | One shared `app_engine(url)` in `dale.apps.compose` (planned) sets `statement_timeout=5000`, `lock_timeout=3000` and `idle_in_transaction_session_timeout=30000` as engine options (30 s, not 10 s: the proposal lock's transaction sits idle while management confirms on another connection, so it must outlast several statement rounds; `v03-demo` log D31), on top of the existing `connect_timeout=3` (`src/dale/apps/web.py:202`). The web host and the terminal both use it; the terminal builds a plain engine today (`src/dale/apps/terminal.py:63`). An integration test reads `SHOW statement_timeout` |
 
 ## What this amends
 
@@ -45,6 +45,10 @@ and log D10 and D18.
   brain stops waiting, not the host.
 - **0004's closing line** "A turn deadline inside the brain is not part of v0.2 (Known pending)"
   is resolved by this record.
+- **0005, Consequences** ("a turn or press may run for minutes and no request timeout cuts it").
+  It still holds that no request timeout cuts a turn, and the press lock still waits at most
+  60 s. A turn no longer runs for minutes: the brain bounds it as in 0004 above. The Vite proxy
+  comment (`apps/web/vite.proxy.ts`) is restated the same way as the page's.
 
 ## Alternatives rejected
 

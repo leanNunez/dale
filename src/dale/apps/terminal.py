@@ -19,10 +19,8 @@ from functools import partial
 from pathlib import Path
 from typing import Final
 
-import sqlalchemy as sa
-
 from dale.apps import verifier_runner
-from dale.apps.compose import ChannelBackend, TurnDeadlineError, turn_deadline
+from dale.apps.compose import ChannelBackend, TurnDeadlineError, app_engine, turn_deadline
 from dale.apps.compose import compose as compose_channel
 from dale.brain.infrastructure.anthropic_model import AnthropicModel
 from dale.channels.common.pending import Pending
@@ -66,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 2
     company, url = os.environ[COMPANY_VARIABLE], os.environ[URL_VARIABLE]
-    log, engine = log_to_file(), sa.create_engine(url)
+    log, engine = log_to_file(), app_engine(url)
     try:
         model, clock = AnthropicModel, SystemClock()
         composed = compose(engine, company, args.customer, model, clock, turn_seconds=seconds)

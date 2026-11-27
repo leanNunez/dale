@@ -6,8 +6,9 @@ import type { ProxyOptions } from "vite";
  * the proxy presents the target's own names instead of the dev server's. It does so for a page
  * served by the dev server itself (its `Origin` names the `Host` the dev server was called
  * with) and for nothing else: a request from another site keeps its own `Origin`, and the host
- * rejects it as it would in production. No timeout option is set anywhere: a turn can run for
- * minutes and nothing may cut it (design D17, decision B6).
+ * rejects it as it would in production. No timeout option is set anywhere: a sync turn cannot
+ * be cancelled, and the server bounds it at its deadline, plus one round of tool statements,
+ * plus the 30 s verifier (design D17, decision B6, ADR 0011).
  */
 export const API_PATHS = ["/v1", "/health"] as const;
 

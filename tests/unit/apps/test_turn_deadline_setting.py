@@ -55,7 +55,7 @@ def test_the_web_host_exits_2_on_a_refused_deadline(
     for name, value in REQUIRED.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setenv(DEADLINE_VARIABLE, raw)
-    monkeypatch.setattr(web, "database_engine", never)
+    monkeypatch.setattr(web, "app_engine", never)
     assert web.main([]) == 2
     assert capsys.readouterr().err == f"{ERROR}\n"
 
