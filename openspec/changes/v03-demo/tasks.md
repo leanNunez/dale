@@ -42,8 +42,9 @@ Note: the slices with the least slack are 1b, 2c, 6b, 9b, 11a, 13b and 14 (330 e
 | 1a | `docs(decisions): add ADR 0013 on the release criterion and ADR 0011 on the turn deadline` | `v03-slice-01a-criterion` | `v03-demo-planning` | 220 | 0 | yes (criterion first) | Sonnet high |
 | 1b | `docs(decisions): add ADRs 0009, 0010 and 0012 on the public demo` | `v03-slice-01b-records` | `v03-slice-01a-criterion` | 330 | 1a | no | Sonnet high |
 | 2a | `feat(brain): add the turn deadline value and the turn_deadline_exceeded code` | `v03-slice-02a-deadline` | `v03-slice-01b-records` | 240 | 1a | yes (fingerprint) | Opus high |
-| 2b | `feat(brain): end a turn at its deadline and validate the setting at startup` | `v03-slice-02b-turn-check` | `v03-slice-02a-deadline` | 300 | 2a | yes (no partial confirmation) | Opus high |
-| 2c | `feat(brain): bound model retries by the turn deadline` | `v03-slice-02c-retry` | `v03-slice-02b-turn-check` | 330 | 2b | yes (unbounded wait) | Opus high |
+| 2b | `feat(brain): end a turn at its deadline` (split, log D26) | `v03-slice-02b-turn-check` | `v03-slice-02a-deadline` | 290 | 2a | yes (no partial confirmation) | Opus high |
+| 2b2 | `feat(apps): validate the turn deadline setting at startup` | `v03-slice-02b2-deadline-setting` | `v03-slice-02b-turn-check` | 185 | 2b | yes (startup refusal) | Opus high |
+| 2c | `feat(brain): bound model retries by the turn deadline` | `v03-slice-02c-retry` | `v03-slice-02b2-deadline-setting` | 330 | 2b | yes (unbounded wait) | Opus high |
 | 2d | `feat(brain): add the attempt gate port and a statement timeout on the app engine` | `v03-slice-02d-gate-engine` | `v03-slice-02c-retry` | 280 | 2c | no | Opus high |
 | 3 | `feat(erp): add a visitor customer write port` | `v03-slice-03-visitors` | `v03-slice-02d-gate-engine` | 300 | none | yes (least privilege) | Opus high |
 | 4 | `feat(apps): add demo settings, the web mode switch and import contracts 13 and 14` | `v03-slice-04-demo-settings` | `v03-slice-03-visitors` | 325 | 2b | no | Opus high |
@@ -186,7 +187,8 @@ Model hint: Opus high.
   - Done 2026-11-26 in `502a748`: through the composed terminal on the seeded DB; no order before F2, then `VERIFICADO`.
 Split (log D26): slice 2b counted 468 / 400 in one branch, so 2b.4 moves to slice 2b2 (`v03-slice-02b2-deadline-setting`, `feat(apps): validate the turn deadline setting at startup`), stacked on this branch. This branch counts 286 / 400.
 
-- [ ] 2b.4 RED then GREEN: `turn_deadline(env)` in `src/dale/apps/compose.py` reads `DALE_TURN_DEADLINE_SECONDS` (default 90) and exits 2 when the value is invalid or not greater than the verifier's 30 s; `src/dale/apps/terminal.py` and `src/dale/apps/web.py` call it and pass `turn_seconds` to `TakeTurn`. Test in `tests/unit/apps/test_turn_deadline_setting.py` (S9.11).
+- [x] 2b.4 RED then GREEN: `turn_deadline(env)` in `src/dale/apps/compose.py` reads `DALE_TURN_DEADLINE_SECONDS` (default 90) and exits 2 when the value is invalid or not greater than the verifier's 30 s; `src/dale/apps/terminal.py` and `src/dale/apps/web.py` call it and pass `turn_seconds` to `TakeTurn`. Test in `tests/unit/apps/test_turn_deadline_setting.py` (S9.11).
+  - Done 2026-11-26 in `4908717` on slice 2b2 (log D26): 12 refused values, the default and three accepted ones; both mains exit 2 on `30` and `abc` before they build an engine, and both pass the value on. Runtime harness: `DALE_TURN_DEADLINE_SECONDS=30 uv run python -m dale.apps.terminal --customer C-001` exits 2. Size guard 182 / 400.
 - [x] 2b.5 RED then GREEN: the terminal shows the `turn_deadline_exceeded` message and creates no order (S9.7), in the terminal session tests.
   - Done 2026-11-26 in `502a748`, in `tests/unit/channels/test_terminal_session.py` (and the S9.8 integration test prints the message through the real terminal).
 - [ ] 2b.6 Closing: blind review (focus: a deadline never yields a partial confirmation), PR body with "Known pending items", size guard output.

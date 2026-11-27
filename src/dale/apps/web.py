@@ -6,8 +6,9 @@ bind address, and no request timeout is configured: a turn may legitimately run 
 Settings come from the environment: `DALE_WEB_PORT` (default 8000), `DALE_WEB_COMPANY`,
 `DALE_WEB_CUSTOMER` (the fixed seeded customer, default `C-001`), `DALE_APP_DATABASE_URL`, and
 extra allowed names in `DALE_WEB_ALLOWED_HOSTS` and `DALE_WEB_ALLOWED_ORIGINS` (comma-separated;
-the loopback names on the port are always allowed). The company and the customer are resolved
-through `erp_sim.public` at start, so a wrong one stops the host (exit 2) before it serves.
+the loopback names on the port are always allowed), and `DALE_TURN_DEADLINE_SECONDS` (default
+90; at or below the verifier's 30 s the host exits 2, R9 S9.11). The company and the customer are
+resolved through `erp_sim.public` at start, so a wrong one stops the host (exit 2) before it serves.
 `DALE_VERIFIER_DATABASE_URL` is required: the verifier process runs as that read-only role after
 every press and after a turn that showed a confirmation (W13). Each conversation gets its own
 composed backend and model (`backends`).
@@ -32,7 +33,14 @@ import uvicorn
 from starlette.types import ASGIApp
 
 from dale.apps import verifier_runner
-from dale.apps.compose import ChannelBackend, Verifier, compose
+from dale.apps.compose import (
+    DEFAULT_TURN_SECONDS,
+    ChannelBackend,
+    TurnDeadlineError,
+    Verifier,
+    compose,
+    turn_deadline,
+)
 from dale.apps.verifier_runner import StoredOrder, VerifierVerdict, run_verifier
 from dale.brain.application.model_port import ModelPort
 from dale.brain.application.take_turn import TurnResult
@@ -75,6 +83,7 @@ class WebSettings:
     database_url: str
     verifier_url: str
     allow: AllowList
+    turn_seconds: float = DEFAULT_TURN_SECONDS
 
 
 def settings(env: Mapping[str, str]) -> WebSettings:
@@ -87,7 +96,11 @@ def settings(env: Mapping[str, str]) -> WebSettings:
     customer = env.get(CUSTOMER_VARIABLE) or DEFAULT_CUSTOMER
     allow = AllowList.loopback(port, hosts, origins)
     urls = env[URL_VARIABLE], env[verifier_runner.URL_VARIABLE]
-    return WebSettings(port, env[COMPANY_VARIABLE], customer, *urls, allow)
+    try:
+        seconds = turn_deadline(env)
+    except TurnDeadlineError as error:
+        raise SettingsError(str(error)) from error
+    return WebSettings(port, env[COMPANY_VARIABLE], customer, *urls, allow, seconds)
 
 
 def _names(env: Mapping[str, str], variable: str) -> list[str]:
@@ -183,13 +196,21 @@ def backends(
     model: Callable[[], ModelPort],
     clock: Clock,
     verifier: Verifier,
+    turn_seconds: float | None = None,
 ) -> Callable[[], WebBackend]:
     """A fresh backend for each new conversation, on the `web` channel. A customer that cannot
     be resolved now (the database is down) creates no conversation."""
 
     def build() -> WebBackend:
         composed = compose(
-            engine, company, customer, model, clock, verifier=verifier, channel=CHANNEL
+            engine,
+            company,
+            customer,
+            model,
+            clock,
+            verifier=verifier,
+            channel=CHANNEL,
+            turn_seconds=turn_seconds,
         )
         if isinstance(composed, Failure):
             raise BackendUnavailableError(composed.code)
@@ -236,8 +257,9 @@ def main(argv: Sequence[str] | None = None, erp: Callable[[sa.Engine], ErpFacade
             print(failed[1], file=sys.stderr)
             return failed[0]
         verifier = partial(run_verifier, database_url=config.verifier_url)
+        clock, seconds = SystemClock(), config.turn_seconds
         build = backends(
-            engine, config.company, config.customer, AnthropicModel, SystemClock(), verifier
+            engine, config.company, config.customer, AnthropicModel, clock, verifier, seconds
         )
         app = create_app(config.allow, database_ready(engine), PAGE, InMemoryRegistry(build))
         uvicorn.Server(server_config(app, config.port)).run()
