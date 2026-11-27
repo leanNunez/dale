@@ -79,7 +79,7 @@ def parse(env: Mapping[str, str], *, turn_seconds: float, press_wait: float) -> 
         formula += f" + {DRAIN_MARGIN:g} s"
         raise DemoSettingsError(f"{DRAIN} must be above {formula}")
     return DemoSettings(
-        secret.encode(), template, contact, _cap(env), _reset_at(env), drain, **counts
+        secret.encode(), template, contact, daily_cap(env), _reset_at(env), drain, **counts
     )
 
 
@@ -106,7 +106,7 @@ def _number(env: Mapping[str, str], variable: str, default: str) -> float:
     return value
 
 
-def _cap(env: Mapping[str, str]) -> int:
+def daily_cap(env: Mapping[str, str]) -> int:
     """US dollars to whole micro-USD: above 0, at most the bound, no finer than a micro-dollar."""
     try:
         dollars = Decimal(_raw(env, CAP, DEFAULT_CAP) or "NaN")

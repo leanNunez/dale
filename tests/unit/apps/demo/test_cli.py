@@ -19,7 +19,7 @@ def no_engine(url: str) -> sa.Engine:
 
 @pytest.mark.parametrize(
     "argv", [[], ["unpause"], ["pause", "--reason", "reset"], ["pause", "--reason", "initial"],
-             ["resume", "--if-reason", "reset"], ["resume", "extra"]],
+             ["resume", "--if-reason", "reset"], ["resume", "extra"], ["status", "--all"]],
 )  # fmt: skip
 def test_bad_arguments_exit_2(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
     assert main(argv, {URL_VARIABLE: SECRET_URL}, engine_for=no_engine) == 2
@@ -49,6 +49,20 @@ def test_a_failed_connection_exits_1_and_prints_no_url(
     failed = f"{argv[0]} failed: cannot write the control row: unreachable or failed"
     failed += " (OperationalError)\n"
     assert capsys.readouterr() == ("", failed)
+
+
+def test_status_with_no_database_prints_every_field_as_unknown_and_exits_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["status"], {URL_VARIABLE: SECRET_URL}) == 1
+    out, err = capsys.readouterr()
+    lines = out.splitlines()
+    assert lines[:2] == [
+        "control: unknown, so the host treats it as paused",
+        "daily cap (this command's settings): 0.500000 USD",
+    ]
+    assert len(lines) == 11 and all(line.endswith(": unknown") for line in lines[2:])
+    assert err == "" and "hunter2" not in out and "127.0.0.1" not in out
 
 
 def test_the_module_runs_with_no_web_stack() -> None:
