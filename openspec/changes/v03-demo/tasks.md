@@ -207,7 +207,7 @@ Model hint: Opus high.
 Covers: O1 (S1.1, S1.2), W17 (local mode), DD26, design §2 (contracts 4, 13, 14).
 Model hint: Opus high.
 
-- [ ] 4.1 RED in `tests/unit/apps/demo/test_settings.py`: every O1 setting parses with its default; a missing privacy contact is an error (S1.1); a missing session secret or template code, an invalid limit, a cap of 0 or below, a non-positive retention, or a drain bound not above deadline + 30 is an error; the secret never appears in `repr`.
+- [ ] 4.1 RED in `tests/unit/apps/demo/test_settings.py`: every O1 setting parses with its default; a missing privacy contact is an error (S1.1); a missing session secret or template code, an invalid limit, a cap of 0 or below, a non-positive retention, or a drain bound not above max(deadline + 5 + 30, 60 + 30) + 30 is an error, and the default drain bound is 240 s (S11.7); the secret never appears in `repr`.
 - [ ] 4.2 GREEN: `src/dale/apps/demo/__init__.py` and `src/dale/apps/demo/settings.py`.
 - [ ] 4.3 RED then GREEN in `src/dale/apps/web.py` (tests in `tests/unit/test_web_app.py`): `DALE_WEB_MODE` (`local` by default, or `demo`) and `DALE_WEB_PAGE_DIR` (default: the source checkout path). Demo mode exits 2 on invalid settings or a missing page directory, and exits 2 with "demo wiring not available" until slice 9e. Local mode reads no demo setting (S1.2).
 - [ ] 4.4 Add a docstring-only `src/dale/apps/web_demo.py` so contract 13 names an existing module, then edit `pyproject.toml`: contract 4 gains `dale.apps.demo`; new contract 13 (`dale.apps.demo` may not import `dale.channels`, `dale.apps.web` or `dale.apps.web_demo`); new contract 14 (`dale.brain` and `dale.erp_sim` may not import `dale.apps`). Test: `uv run lint-imports` keeps 17 contracts; a deliberate violation is tried, fails, and is recorded in the PR body.
@@ -295,10 +295,10 @@ Model hint: Opus high.
 
 ## Phase 8c: Session cookie (slice 8c, ~280 lines) [critical: session, CSRF]
 
-Covers: W8 (S8.8, S8.10 cookie half), O2 (S2.1), DD34, DD35.
+Covers: W8 (S8.8, S8.10 cookie half), O2 (S2.1, S2.3, S2.4), DD34, DD35.
 Model hint: Opus high.
 
-- [ ] 8c.1 RED in `tests/unit/channels/web/test_session.py`: a request with no cookie gets `__Host-dale_session` with `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400` (S8.8, S2.1); the token is 32 random bytes in base64url; a malformed cookie gets a new one; the stored subject is HMAC-SHA256 of `"session|" + token`, and the raw token is never stored or logged; local mode sets no cookie on any route (S8.10); no GET route changes state.
+- [ ] 8c.1 RED in `tests/unit/channels/web/test_session.py`: a request with no cookie gets `__Host-dale_session` with `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400` (S8.8, S2.1); only `POST /v1/conversations` (read-only) issues it, and a `GET` of the page, `/privacidad` or a static file with no cookie sets none (S2.3); a request carrying a valid cookie that arrives cross-site without it leaves the existing session untouched (S2.4); the token is 32 random bytes in base64url; a malformed cookie on a create gets a new one, and on any other route gets `conversation_not_found`; the stored subject is HMAC-SHA256 of `"session|" + token`, and the raw token is never stored or logged; local mode sets no cookie on any route (S8.10); no GET route changes state.
 - [ ] 8c.2 GREEN: `src/dale/channels/web/session.py`, wired for demo mode in `src/dale/channels/web/app.py`.
 - [ ] 8c.3 Closing: blind review (focus: CSRF closed by two independent checks on every path), PR body with "Known pending items", size guard output.
 
@@ -389,10 +389,10 @@ Model hint: Opus high.
 
 ## Phase 12b: Nightly reset (slice 12b, ~320 lines) [critical: no reseed under a live conversation]
 
-Covers: O11 (S11.1-S11.6), O6 (S6.1 remaining fields), DD32, DD33.
+Covers: O11 (S11.1-S11.7), O6 (S6.1 remaining fields), DD32, DD33.
 Model hint: Opus high.
 
-- [ ] 12b.1 RED in `tests/integration/test_nightly_reset.py` (threads, fake clock, real Postgres): with none in flight, conversations end, ids get `demo_reset`, visitors are gone, the template stays and the demo resumes (S11.1); a turn in flight delays the reseed until it ends and a request meanwhile gets `demo_paused` (S11.2); a drain timeout runs no reseed, stays paused and records `drain_timeout` (S11.3); a failing reseed stays paused and `status` reports it (S11.4); an operator pause survives (S11.5); ledger and transcripts are unchanged (S11.6); a failed step-1 write changes nothing and retries after 5 minutes; a missed 04:00 runs at the first tick.
+- [ ] 12b.1 RED in `tests/integration/test_nightly_reset.py` (threads, fake clock, real Postgres): with none in flight, conversations end, ids get `demo_reset`, visitors are gone, the template stays and the demo resumes (S11.1); a turn in flight delays the reseed until it ends and a request meanwhile gets `demo_paused` (S11.2); a drain timeout runs no reseed, stays paused and records `drain_timeout` (S11.3); the startup refusal for a drain bound at or below max(deadline + 5 + 30, 60 + 30) + 30, which is also covered in 4.1 (S11.7); a failing reseed stays paused and `status` reports it (S11.4); an operator pause survives (S11.5); ledger and transcripts are unchanged (S11.6); a failed step-1 write changes nothing and retries after 5 minutes; a missed 04:00 runs at the first tick.
 - [ ] 12b.2 GREEN: the reset steps in `src/dale/apps/demo/reset.py` and the `reset` command (sets `reset_requested_at`) in `src/dale/apps/demo/cli.py`.
 - [ ] 12b.3 RED then GREEN: the remaining `status` fields in `src/dale/apps/demo/status.py`: heartbeat age ("host not reporting" after 2 minutes), live conversations, turns today, failures in the last 24 hours, last reset result, transcript and reset failures (S6.1).
 - [ ] 12b.4 Closing: blind review (focus: the reseed runs only at zero in flight with every conversation ended), PR body with "Known pending items", size guard output.
@@ -432,27 +432,27 @@ Model hint: Sonnet high.
 
 - [ ] 14.1 RED in `tests/unit/test_deploy_files.py`: `db` publishes only `127.0.0.1:5432:5432`; `app` runs on `network_mode: host` with `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `stop_grace_period: 150s` and `env_file` paths under the root-only /etc/dale directory on the server; `migrate` is in profile `ops`; every image is pinned by digest; the Caddyfile has HSTS `max-age=31536000`, `request_body max_size 16KB`, `reverse_proxy 127.0.0.1:8000` and no response timeout; the Dockerfile runs as user 10001 with `DALE_WEB_PAGE_DIR=/app/page`; `.dockerignore` is an allow-list.
 - [ ] 14.2 GREEN: `Dockerfile`, `.dockerignore`, `deploy/compose.yml`, `deploy/Caddyfile`, `deploy/db/init.sh`.
-- [ ] 14.3 RED then GREEN: `scripts/check_no_api_key.sh` also scans `Dockerfile` and `deploy/Caddyfile`, with cases in `tests/unit/test_no_api_key_script.py`.
+- [ ] 14.3 RED then GREEN: `scripts/check_no_api_key.sh` today scans only `*.py *.sh *.toml *.yml *.yaml *.cfg *.ini *.json *.jsonl` outside `openspec`, with assignment-shaped patterns; extend it to `Dockerfile`, `deploy/Caddyfile`, `.env*`, `.dockerignore` and the extensionless scripts under `deploy/`, with cases in `tests/unit/test_no_api_key_script.py` (a key-shaped assignment in each new file kind fails; Markdown stays unread).
 - [ ] 14.4 Runtime harness (local, no key, no model call): build the image and run it with a throwaway database; the page is served with no source tree mounted (S6.3), and `ss -ltn` shows the app and Postgres on `127.0.0.1` only (S9.1). Results go in the PR body.
 - [ ] 14.5 Closing: blind review (focus: nothing listens on a public interface, no key name in any file), PR body with "Known pending items", size guard output.
 
 ## Phase 15a: Live report and criterion check (slice 15a, ~300 lines) [critical: release gate]
 
-Covers: G4 (S4.1-S4.5), G3 (S3.2 report side), threat matrix (Git repository selection).
+Covers: G4 (S4.1-S4.5), G3 (S3.2 report side, S3.4, S3.7), threat matrix (Git repository selection).
 Model hint: Opus high.
 
-- [ ] 15a.1 RED in `tests/unit/test_check_release.py` (temporary git repositories): gates at 0 and pass^3 36 of 40 pass (S4.1); a missing report fails (S4.2); one false confirmation fails (S4.3); 34 of 40 fails (S4.4); `replay` fails while `live` and `record` pass (S4.5); a `-dirty` commit, a model other than `MODEL_SETTINGS.model`, empty `snapshot_ids` or `pass_3.cases` other than 40 fail (S3.2). Threat cases: a `commit` value holding `--upload-pack=…` text and a malformed tag are refused before any git call.
+- [ ] 15a.1 RED in `tests/unit/test_check_release.py` (temporary git repositories): gates at 0 and pass^3 36 of 40 pass (S4.1); a missing report fails (S4.2); one false confirmation fails (S4.3); 34 of 40 fails (S4.4); `replay` fails while `live` and `record` pass (S4.5); a `-dirty` commit, a model other than `MODEL_SETTINGS.model`, empty `snapshot_ids` or `pass_3.cases` other than 40 fail (S3.2); `gates.disallowed_writes` 0 with `metrics.unexpected_writes` 1, or the reverse, fails (S3.7); of two reports for the same commit the newer by adding commit is the one read (S3.4). Threat cases: a `commit` value holding `--upload-pack=…` text and a malformed tag are refused before any git call.
 - [ ] 15a.2 GREEN: `scripts/check_release.py` (fixed argv, no shell, `cwd` from `__file__`, 40-hex commit and tag regex).
 - [ ] 15a.3 Closing: blind review (focus: every field is checked, nothing defaults to pass), PR body with "Known pending items", size guard output.
 
 ## Phase 15b: Stale report, prices, case count and history (slice 15b, ~240 lines) [critical: release gate]
 
-Covers: G5 (S5.1-S5.3), G4 (S4.6), G3 (S3.1, S3.2), threat matrix (literal pathspecs).
+Covers: G5 (S5.1-S5.4), G4 (S4.6), G3 (S3.1, S3.2, S3.5, S3.6), threat matrix (literal pathspecs).
 Model hint: Opus high.
 
-- [ ] 15b.1 RED in `tests/unit/test_check_release.py`: only `README.md` and release notes changed after the report commit passes (S5.1); a changed file in the `dale` package fails (S5.2); a report commit that is not an ancestor fails (S5.3); a runtime price that differs from the eval pricing file fails (S4.6); 41 case files fail (S3.2); ADR 0013's commit after the first report commit fails (S3.1); pathspecs after `--` are literal (a path named `:(glob)*` matches only itself).
-- [ ] 15b.2 GREEN in `scripts/check_release.py`: the guarded-path constant (the script itself included), `git diff --quiet <commit> <tag> -- …`, the price comparison, the case count and the history order.
-- [ ] 15b.3 Closing: blind review (focus: the guarded paths match design §9), PR body with "Known pending items", size guard output.
+- [ ] 15b.1 RED in `tests/unit/test_check_release.py`: only `README.md` and release notes changed after the report commit passes (S5.1); a changed file in the `dale` package fails (S5.2); a changed `db/roles.sql` fails (S5.4); a report commit that is not an ancestor fails (S5.3); a runtime price that differs from the eval pricing file fails (S4.6); 41 case files fail (S3.2); ADR 0013's commit after the first report commit fails (S3.1); a changed case file or `evals/harness/grader.py` between ADR 0013's commit and the report commit fails with no decision record added under `docs/decisions/` in that range and passes this rule with one (S3.5, S3.6); pathspecs after `--` are literal (a path named `:(glob)*` matches only itself).
+- [ ] 15b.2 GREEN in `scripts/check_release.py`: the guarded-path constant (the script itself and `db/roles.sql` included), the measurement-path rule, `git diff --quiet <commit> <tag> -- …`, the price comparison, the case count and the history order.
+- [ ] 15b.3 Closing: blind review (focus: the guarded paths, including `db/roles.sql`, match design §9), PR body with "Known pending items", size guard output.
 
 ## Phase 15c: Release workflow and image scan (slice 15c, ~300 lines) [critical: credentials]
 
@@ -498,7 +498,7 @@ Model hint: Sonnet medium.
 - [ ] 17.7 **GATED (user)**: create the demo API workspace and key with its USD 15/month limit, place the key in the root-only app env file on the server, and set the other root-only files per the runbook. No key in any tracked file or CI. Never automated.
 - [ ] 17.8 Confirm every slice from 1a to 16b and this slice's docs are on `dev`, and that `prompt_fingerprint()` still equals the pin.
 - [ ] 17.9 Re-check both models' published prices. If they changed, update `evals/pricing.toml` and `src/dale/apps/demo/prices.py` in one commit on `dev` before the live run (guarded paths).
-- [ ] 17.10 **GATED (user, spends API credit)**: the owner runs the live Haiku release eval (40 cases, k = 3, effort medium, record mode) with their own `ant` profile on a clean `dev` commit after ADR 0013's commit, then commits `evals/reports/v0.3-claude-haiku-5-5.json` and its markdown twin. Evals never read the key variable or the key files. Never automated.
+- [ ] 17.10 **GATED (user, spends API credit)**: the owner runs the live Haiku release eval (40 cases, k = 3, effort medium, record mode) with their own `ant` profile on a clean `dev` commit after ADR 0013's commit, then commits `evals/reports/v0.3-claude-haiku-5-5.json` and its markdown twin. Every run is committed, a failed one too (a rerun adds `-2`, `-3`, … to the name), and the newest report for the release commit is the one that counts (log D21, G3 S3.3, S3.4). Changing a case file, the grader or the claim list after ADR 0013's commit needs a new decision record before the next run (S3.5). Evals never read the key variable or the key files. Never automated.
 - [ ] 17.11 Run `scripts/check_release.py` locally against `dev`; fill the release notes with the result (0 false confirmations, pass^3, turn latency p50 and p95 for log D10).
 - [ ] 17.12 **GATED (user)**: merge the release PR `dev` to `main` with a merge commit (not squash or rebase), so the report commit stays an ancestor of the tag (G5 S5.3). Never automated.
 - [ ] 17.13 **GATED (user)**: tag `v0.3` on `main` and push it; the release workflow runs (S1.1) and records the digest (S6.1). The orchestrator only reads the result. Never automated.
@@ -545,7 +545,7 @@ Every requirement and scenario of the four specs maps to at least one task. Unco
 | R S9.8 | 2b.3 | R S9.9 | 2a.4, 2c.3 |
 | R S9.10 | 2d.2 | R S9.11 | 2b.4 |
 | O S1.1 | 4.1 | O S1.2 | 4.3, 9e.4 |
-| O S2.1 | 8c.1 | O S2.2 | 9b.1, 9d.1 |
+| O S2.1, S2.3, S2.4 | 8c.1 | O S2.2 | 9b.1, 9d.1 |
 | O S3.1 | 10.1 | O S3.2 | 9b.1 |
 | O S3.3 | 10.1 | O S3.4 | 9d.1 |
 | O S3.5 | 10.1 | O S3.6 | 8b.2, 10.1, 11a.1, 11a.3 |
@@ -560,10 +560,13 @@ Every requirement and scenario of the four specs maps to at least one task. Unco
 | O S9.5 | 11b.3 | O S9.6 | 11b.1, 13b.1, 13c.1 |
 | O S10.1, S10.2 | 11b.1 | O S11.1 | 12b.1 |
 | O S11.2 | 9c.1, 12b.1 | O S11.3-S11.6 | 12b.1 |
+| O S11.7 | 4.1, 12b.1 | | |
 | G S1.1 | 15c.1, 17.13 | G S1.2, S1.3 | 15c.1 |
 | G S2.1, S2.2 | 15c.1 | G S3.1 | 1a.1, 1a.3, 15b.1, 17.10 |
-| G S3.2 | 15a.1, 15b.1 | G S4.1-S4.5 | 15a.1 |
-| G S4.6 | 6a.1, 15b.1 | G S5.1-S5.3 | 15b.1, 17.12 |
+| G S3.2 | 15a.1, 15b.1 | G S3.3 | 17.10 |
+| G S3.4, S3.7 | 15a.1 | G S3.5, S3.6 | 15b.1 |
+| G S4.1-S4.5 | 15a.1 | | |
+| G S4.6 | 6a.1, 15b.1 | G S5.1-S5.4 | 15b.1, 17.12 |
 | G S6.1 | 15c.1, 17.13 | G S6.2 | 15c.3 |
 | G S6.3 | 14.4, 16b.2 | G S7.1 | 14.3, 15c.4 |
 | G S7.2 | 15c.1 | G S8.1 | 16a.1, 16b.1, 17.14 |

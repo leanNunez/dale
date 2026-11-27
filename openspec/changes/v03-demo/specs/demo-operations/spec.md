@@ -25,6 +25,7 @@ All values are settings (decisions D6, D8, D9, D10, D11); defaults:
 | Daily spend cap | USD 0.50 |
 | Transcript retention | 30 days |
 | Nightly reset | 04:00 America/Argentina/Buenos_Aires |
+| Reset drain bound | 240 s |
 
 ## O1. Demo mode
 
@@ -35,9 +36,11 @@ Demo controls MUST be active only in demo mode. In demo mode the host MUST refus
 
 ## O2. Visitor session
 
-The host MUST identify each visitor by a random, unguessable session ID carried in the session cookie (`web-channel` W8) and MUST store only a keyed hash of it. A conversation MUST be bound to the session that created it. A request for a conversation with no session cookie, or with another session's, MUST be rejected with `conversation_not_found`. A request with no valid session MUST receive a new session.
+The host MUST identify each visitor by a random, unguessable session ID carried in the session cookie (`web-channel` W8) and MUST store only a keyed hash of it. A conversation MUST be bound to the session that created it. A request for a conversation with no session cookie, or with another session's, MUST be rejected with `conversation_not_found`. A conversation-creation request (`POST /v1/conversations` (read-only)) with no valid session MUST receive a new session. No other route sets the cookie: a page, static or other `GET` MUST NOT set it, and any other request with no valid session gets `conversation_not_found`. A cross-site top-level arrival (such as the CV link, where `SameSite=Strict` sends no cookie) therefore cannot overwrite an existing session (D24).
 
-- **S2.1 Issued** Given a visitor with no cookie, when the page is loaded or a conversation requested, then a session cookie is set and only its keyed hash is stored.
+- **S2.1 Issued** Given a visitor with no cookie, when a conversation is requested, then a session cookie is set and only its keyed hash is stored.
+- **S2.3 No cookie on a page (negative)** Given a visitor with no cookie, when the page, `/privacidad` or a static file is requested with `GET`, then the response sets no cookie.
+- **S2.4 Cross-site arrival keeps the session** Given a visitor with a live session who arrives from another site by a top-level link, so that the browser sends no cookie, when the page loads, then no cookie is set and the next conversation request from the same browser still carries the original session cookie, unchanged.
 - **S2.2 Foreign session (negative)** Given a conversation created by session A, when session B sends a message or presses Dale for it, then the request gets `conversation_not_found` and nothing executes.
 
 ## O3. Visitor and global limits
@@ -127,11 +130,12 @@ In demo mode the host MUST save, per conversation: customer text, shown events, 
 
 ## O11. Nightly reset
 
-At the reset time the host MUST, in order: pause with reason `reset`; drain, waiting until no turn or press is in flight, up to a bound (setting) above the turn deadline plus the verifier timeout; end every live conversation; reseed the `erp` data, removing visitor customers and their orders, and delete brain rows of ended conversations; purge expired transcripts (O9); resume. The reseed MUST NOT touch the control state, spend ledger, sessions or transcripts. Until the host restarts, an ID ended by the reset MUST get `demo_reset`. The reseed MUST NOT run while any conversation is live or any request is in flight. If the drain exceeds its bound or the reseed fails, the demo MUST stay paused and `status` MUST report the failure. The reset MUST NOT resume a demo the operator paused.
+At the reset time the host MUST, in order: pause with reason `reset`; drain, waiting until no turn or press is in flight, up to the drain bound (setting, default 240 s); end every live conversation; reseed the `erp` data, removing visitor customers and their orders, and delete brain rows of ended conversations; purge expired transcripts (O9); resume. The reseed MUST NOT touch the control state, spend ledger, sessions or transcripts. Until the host restarts, an ID ended by the reset MUST get `demo_reset`. The reseed MUST NOT run while any conversation is live or any request is in flight. If the drain exceeds its bound or the reseed fails, the demo MUST stay paused and `status` MUST report the failure. The reset MUST NOT resume a demo the operator paused. The host MUST refuse to start unless the drain bound is above max(turn deadline + 5 s statement round + 30 s verifier timeout, 60 s press wait + 30 s verifier timeout) + 30 s margin (D23). A reply that trickles in has no hard upper bound, because the HTTP read timeout applies to each chunk: this is a residual risk, and a drain that times out keeps the demo paused.
 
 - **S11.1 Reset** Given live conversations and none in flight, when the reset runs, then they end, their IDs get `demo_reset`, visitor customers are gone, the template remains, and the demo resumes.
 - **S11.2 In flight waits** Given a turn in flight at 04:00, then the reseed starts only after it ends, and a request arriving meanwhile gets `demo_paused`.
 - **S11.3 Drain timeout (negative)** Given a request still in flight when the drain bound elapses, then no reseed runs and the demo stays paused.
+- **S11.7 Drain bound too small (negative)** Given a turn deadline of 90 s and a drain bound of 155 s or less, or a drain bound of 240 s with a turn deadline of 180 s, then the host refuses to start.
 - **S11.4 Reseed fails (negative)** Given the reseed raises an error, then the demo stays paused and `status` reports it.
 - **S11.5 Operator pause kept** Given the operator paused the demo before the reset, then after the reset it is still paused.
 - **S11.6 Demo data kept** Given ledger entries and transcripts within retention, then the reset leaves them unchanged.
