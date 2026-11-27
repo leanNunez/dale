@@ -163,10 +163,14 @@ Model hint: Sonnet high.
 Covers: R9 (S9.9), W11 (S11.1), W5 (S5.2, S5.3 regeneration), DD28, log D18.
 Model hint: Opus high.
 
-- [ ] 2a.1 RED in `tests/unit/brain/test_deadline.py`: `Deadline.after(seconds, monotonic)` reports `remaining()` and `expired()` on a fake clock; `None` seconds gives no deadline; two `ModelRequest`s that differ only in `deadline` are equal and `repr` omits it; `DeadlineExceededError` is a subclass of `ModelUnavailableError`.
-- [ ] 2a.2 GREEN: `src/dale/brain/application/deadline.py`; `ModelRequest.deadline` (default `None`, `compare=False`, `repr=False`) and `DeadlineExceededError` in `src/dale/brain/application/model_port.py`. Satisfies DD28.
-- [ ] 2a.3 RED then GREEN: `ErrorCode.TURN_DEADLINE_EXCEEDED` in `src/dale/shared/errors.py` with status 504 and a Spanish message; the catalog tests cover it (S11.1). Regenerate the contract schemas and TS types (generated, excluded from the count).
-- [ ] 2a.4 Prove the prompt path is untouched: the fingerprint pin test passes unchanged, and both models replay every committed recording unchanged (S9.9).
+- [x] 2a.1 RED in `tests/unit/brain/test_deadline.py`: `Deadline.after(seconds, monotonic)` reports `remaining()` and `expired()` on a fake clock; `None` seconds gives no deadline; two `ModelRequest`s that differ only in `deadline` are equal and `repr` omits it; `DeadlineExceededError` is a subclass of `ModelUnavailableError`.
+  - Done 2026-11-26 in `fbc4ddb` (RED and GREEN in one commit, as v0.2 did): 6 tests, including one that `request_params`, `request_fingerprint` and `messages_digest` are equal with and without a deadline.
+- [x] 2a.2 GREEN: `src/dale/brain/application/deadline.py`; `ModelRequest.deadline` (default `None`, `compare=False`, `repr=False`) and `DeadlineExceededError` in `src/dale/brain/application/model_port.py`. Satisfies DD28.
+  - Done 2026-11-26 in `fbc4ddb`: `deadline.py`; the field and the error in `model_port.py`.
+- [x] 2a.3 RED then GREEN: `ErrorCode.TURN_DEADLINE_EXCEEDED` in `src/dale/shared/errors.py` with status 504 and a Spanish message; the catalog tests cover it (S11.1). Regenerate the contract schemas and TS types (generated, excluded from the count).
+  - Done 2026-11-26 in `fbc4ddb`: 504 and "Tardé demasiado con ese mensaje. Probá de nuevo." (log D25); catalog pins updated; schemas and TS regenerated; the trace label in `apps/web/src/i18n/es.ts` (its `Record<ErrorCode, string>` fails the typecheck without it). Size guard 117 / 400.
+- [x] 2a.4 Prove the prompt path is untouched: the fingerprint pin test passes unchanged, and both models replay every committed recording unchanged (S9.9).
+  - Done 2026-11-26: the v0.1 fingerprint pin passes unchanged; Haiku and Sonnet replay 120 passed each.
 - [ ] 2a.5 Closing: blind review (focus: `request_params`, `fingerprint` and `messages_digest` never read the deadline), PR body with "Known pending items", size guard output.
 
 ## Phase 2b: Turn check and the startup setting (slice 2b, ~300 lines) [critical: no partial confirmation]
