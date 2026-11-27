@@ -2,6 +2,7 @@
 a frozen clock: every attempt, retries included, reserves its worst case first and is refused
 past the cap; settling replaces the reservation with the cost; every failure refuses."""
 
+import json
 import threading
 import time
 from collections.abc import Iterator
@@ -21,9 +22,11 @@ from dale.apps.demo.ledger import (
 )
 from dale.apps.demo.prices import PRICES
 from dale.apps.demo.tables import spend_day, spend_request
+from dale.brain.application.fencing import customer_message
 from dale.brain.application.model_port import (
     MODEL_SETTINGS,
     AttemptTicket,
+    ModelRequest,
     ModelUnavailableError,
     Usage,
 )
@@ -246,3 +249,62 @@ def test_a_model_with_no_price_is_refused(db: Engine) -> None:
     ledger = SqlSpendLedger(db, 500_000, Frozen(), prices={})
     assert ledger.admit(SETTINGS, REQUEST) is None
     assert not ledger.has_room(SETTINGS, REQUEST)
+
+
+class Steps:
+    """A monotonic clock that moves 0.25 s each time it is read."""
+
+    def __init__(self) -> None:
+        self.at = -0.25
+
+    def __call__(self) -> float:
+        self.at += 0.25
+        return self.at
+
+
+def lines(caplog: pytest.LogCaptureFixture) -> list[dict[str, Any]]:
+    return [json.loads(r.getMessage()) for r in caplog.records if r.getMessage()[:1] == "{"]
+
+
+def test_one_log_line_per_attempt_with_no_customer_text(
+    db: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    secret = ModelRequest((), (), (customer_message("SECRETO-del-cliente"),))
+    cap = 2 * reserve_micros(secret, SETTINGS.max_tokens, PRICES[SETTINGS.model])
+    ledger = SqlSpendLedger(db, cap, Frozen(), monotonic=Steps())
+    caplog.set_level("INFO", logger="dale.apps.demo.ledger")
+    for usage in (USED, None):
+        ticket = ledger.admit(SETTINGS, secret)
+        assert ticket is not None
+        ledger.settle(ticket, usage)
+    assert ledger.admit(SETTINGS, secret) is None
+    found = lines(caplog)
+    assert [line["outcome"] for line in found] == ["settled", "unknown", "refused"]
+    assert [line["wait_ms"] for line in found] == [250, 250, 250]  # admit's own time
+    assert [line.get("elapsed_ms") for line in found] == [500, 500, None]  # admit to settle
+    assert (found[0]["cost_micros"], found[1]["cost_micros"]) == (COST, found[1]["reserved_micros"])
+    assert found[0]["input_tokens"] == USED.input_tokens and found[1]["input_tokens"] is None
+    assert {line["event"] for line in found} == {"model_attempt"}
+    assert all("SECRETO" not in r.getMessage() for r in caplog.records)
+
+
+def test_a_failed_attempt_logs_its_outcome(
+    db: Engine, engines: dict[str, Engine], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="dale.apps.demo.ledger")
+    ticket = gate(db, 500_000).admit(SETTINGS, REQUEST)
+    assert ticket is not None
+    broken = gate(engines["dale_verifier"], 500_000)
+    assert broken.admit(SETTINGS, REQUEST) is None
+    broken.settle(ticket, USED)
+    gate(db, 500_000).settle(ticket, None)
+    gate(db, 500_000).settle(ticket, None)
+    assert SqlSpendLedger(db, 500_000, Frozen(), prices={}).admit(SETTINGS, REQUEST) is None
+    gate(db, 500_000).settle(AttemptTicket("not ours"), USED)
+    found = lines(caplog)
+    assert [line["outcome"] for line in found] == [
+        "ledger_error", "settle_failed", "unknown", "already_settled", "no_price", "foreign_ticket",
+    ]  # fmt: skip
+    assert [line.get("charged") for line in found] == [None, False, True, False, None, False]
+    assert (found[2]["cost_micros"], found[3]["cost_micros"]) == (ONE, 0)  # nothing charged twice
+    assert committed(db) == ONE
