@@ -3,8 +3,9 @@ python -m dale.apps.terminal --customer C-001`. The company comes from config an
 from the flag, both resolved through `erp_sim.public` before the model is even built; an
 unknown customer exits with `customer_not_found`. After each Dale press the verifier process
 judges the run, and its verdict is printed (§9, R12). `DALE_VERIFIER_DATABASE_URL` is required
-at startup too. Logs go to `DALE_TERMINAL_LOG` (default `~/.local/state/dale/terminal.log`),
-never into the chat.
+at startup too, and `DALE_TURN_DEADLINE_SECONDS` (default 90) must be above the verifier's 30 s
+or the terminal exits 2 (R9 S9.11). Logs go to `DALE_TERMINAL_LOG` (default
+`~/.local/state/dale/terminal.log`), never into the chat.
 
 `compose` is `apps.compose.compose` for the terminal channel; the eval harness reuses it with a
 frozen clock, a replay model and its own verifier call."""
@@ -21,7 +22,7 @@ from typing import Final
 import sqlalchemy as sa
 
 from dale.apps import verifier_runner
-from dale.apps.compose import ChannelBackend
+from dale.apps.compose import ChannelBackend, TurnDeadlineError, turn_deadline
 from dale.apps.compose import compose as compose_channel
 from dale.brain.infrastructure.anthropic_model import AnthropicModel
 from dale.channels.common.pending import Pending
@@ -59,10 +60,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if missing := [name for name in REQUIRED if not os.environ.get(name)]:
         print(f"{', '.join(missing)} must be set", file=sys.stderr)
         return 2
+    try:
+        seconds = turn_deadline(os.environ)
+    except TurnDeadlineError as error:
+        print(error, file=sys.stderr)
+        return 2
     company, url = os.environ[COMPANY_VARIABLE], os.environ[URL_VARIABLE]
     log, engine = log_to_file(), sa.create_engine(url)
     try:
-        composed = compose(engine, company, args.customer, AnthropicModel, SystemClock())
+        model, clock = AnthropicModel, SystemClock()
+        composed = compose(engine, company, args.customer, model, clock, turn_seconds=seconds)
         if isinstance(composed, Failure):
             print(f"{composed.code.value}: {message_for(composed.code)}", file=sys.stderr)
             return 1

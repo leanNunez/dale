@@ -1,14 +1,19 @@
 """The wiring every channel's composition root shares (design D11): one conversation for one
 resolved customer, with the brain's turn and confirm and the verifier call. The terminal, the
 web host and the eval harness call `compose`; `channel` names the conversation's channel in the
-brain's tables, the only thing that differs between them."""
+brain's tables, the only thing that differs between them.
 
-from collections.abc import Callable, Sequence
+`turn_deadline` reads the turn deadline both hosts start with (R9 S9.11, ADR 0011); the eval
+harness passes none, so its turns run as recorded."""
+
+import math
+from collections.abc import Callable, Mapping, Sequence
 from typing import Literal
 from uuid import uuid4
 
 import sqlalchemy as sa
 
+from dale.apps import verifier_runner
 from dale.apps.verifier_runner import VerifierVerdict, request_json, run_verifier
 from dale.brain.application.confirm_proposal import ConfirmProposal
 from dale.brain.application.model_port import ModelPort
@@ -29,6 +34,25 @@ from dale.shared.shown_events import ShownEvent
 
 type Channel = Literal["terminal", "web"]
 type Verifier = Callable[[str], VerifierVerdict]
+DEADLINE_VARIABLE, DEFAULT_TURN_SECONDS = "DALE_TURN_DEADLINE_SECONDS", 90.0  # log D10
+
+
+class TurnDeadlineError(ValueError):
+    """The configured deadline is not a number above the verifier timeout: the host exits 2."""
+
+
+def turn_deadline(env: Mapping[str, str]) -> float:
+    """Seconds per turn. A deadline at or below the verifier's own timeout could cut a turn
+    while its verifier still runs, so it is refused (S9.11); the message names no value."""
+    raw = env.get(DEADLINE_VARIABLE) or str(DEFAULT_TURN_SECONDS)
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = math.nan
+    if not (math.isfinite(seconds) and seconds > verifier_runner.TIMEOUT_SECONDS):
+        bound = f"{verifier_runner.TIMEOUT_SECONDS:g}"
+        raise TurnDeadlineError(f"{DEADLINE_VARIABLE} must be a number of seconds above {bound}")
+    return seconds
 
 
 class ChannelBackend:
