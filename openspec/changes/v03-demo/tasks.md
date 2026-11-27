@@ -141,7 +141,8 @@ Model hint: Sonnet high.
   - Done 2026-11-26 in `90e5fd8`: ADR 0011 (DD28-DD30, 90 s default above the 30 s verifier timeout, 1 s minimum per attempt, HTTP 504; amends ADR 0004 D17 and v0.2 B61); structural readback.
 - [x] 1a.3 Verify no v0.3 report exists yet (`git ls-files evals/reports` lists no v0.3 file) and record the result in the PR body (G3 S3.1).
   - Done 2026-11-26: `git ls-files evals/reports` lists no v0.3 file (only v0.1, v0.2 and the discarded v0.2 run); recorded for the PR body (G3 S3.1).
-- [ ] 1a.4 Closing: blind review (focus: the criterion matches log D12 and release-gate G3 word for word), PR body with "Known pending items", size guard output.
+- [x] 1a.4 Closing: blind review (focus: the criterion matches log D12 and release-gate G3 word for word), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: blind review (criterion vs log D12 and G3) found no blocker; its findings became log D21-D24 and were folded into ADRs 0013 and 0011; touched points re-checked. Size guard 168 / 400.
 
 ## Phase 1b: Public demo records (slice 1b, ~330 lines)
 
