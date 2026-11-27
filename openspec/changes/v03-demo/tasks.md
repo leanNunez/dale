@@ -45,8 +45,9 @@ Note: the slices with the least slack are 1b, 2c, 6b, 9b, 11a, 13b and 14 (330 e
 | 2b | `feat(brain): end a turn at its deadline` (split, log D26) | `v03-slice-02b-turn-check` | `v03-slice-02a-deadline` | 290 | 2a | yes (no partial confirmation) | Opus high |
 | 2b2 | `feat(apps): validate the turn deadline setting at startup` | `v03-slice-02b2-deadline-setting` | `v03-slice-02b-turn-check` | 185 | 2b | yes (startup refusal) | Opus high |
 | 2c | `feat(brain): bound model retries by the turn deadline` | `v03-slice-02c-retry` | `v03-slice-02b2-deadline-setting` | 330 | 2b | yes (unbounded wait) | Opus high |
-| 2d | `feat(brain): add the attempt gate port and a statement timeout on the app engine` | `v03-slice-02d-gate-engine` | `v03-slice-02c-retry` | 280 | 2c | no | Opus high |
-| 3 | `feat(erp): add a visitor customer write port` | `v03-slice-03-visitors` | `v03-slice-02d-gate-engine` | 300 | none | yes (least privilege) | Opus high |
+| 2d | `feat(brain): add the attempt gate port around every model attempt` (split, log D30) | `v03-slice-02d-gate-engine` | `v03-slice-02c-retry` | 290 | 2c | no | Opus high |
+| 2d2 | `feat(apps): add a statement timeout on the app engine` | `v03-slice-02d2-app-engine` | `v03-slice-02d-gate-engine` | 165 | 2d | no | Opus high |
+| 3 | `feat(erp): add a visitor customer write port` | `v03-slice-03-visitors` | `v03-slice-02d2-app-engine` | 300 | none | yes (least privilege) | Opus high |
 | 4 | `feat(apps): add demo settings, the web mode switch and import contracts 13 and 14` | `v03-slice-04-demo-settings` | `v03-slice-03-visitors` | 325 | 2b | no | Opus high |
 | 5a | `feat(db): add the demo schema` | `v03-slice-05a-demo-schema` | `v03-slice-04-demo-settings` | 250 | 4 | yes (grants) | Opus high |
 | 5b | `test(db): pin the demo grants and keep migrations additive` | `v03-slice-05b-grants` | `v03-slice-05a-demo-schema` | 180 | 5a | yes (grants) | Opus high |
@@ -211,7 +212,10 @@ Model hint: Opus high.
 Covers: R9 (S9.10), DD27 (port only), DD30, B61, log D15, D19.
 Model hint: Opus high.
 
-- [ ] 2d.1 RED then GREEN: `AttemptGate` and `AttemptTicket` in `src/dale/brain/application/model_port.py`; the adapter calls `admit` before each attempt and `settle(ticket, usage | None)` in `finally`; a `None` gate makes no call; a refused `admit` raises `ModelUnavailableError` and sends nothing; under 1 s left there is no `admit`. Test with a fake gate that records every attempt, retries included.
+- [x] 2d.1 RED then GREEN: `AttemptGate` and `AttemptTicket` in `src/dale/brain/application/model_port.py`; the adapter calls `admit` before each attempt and `settle(ticket, usage | None)` in `finally`; a `None` gate makes no call; a refused `admit` raises `ModelUnavailableError` and sends nothing; under 1 s left there is no `admit`. Test with a fake gate that records every attempt, retries included.
+  - Done 2026-11-26 in `53aba4b` (RED and GREEN in one commit): 12 tests in `tests/unit/brain/test_attempt_gate.py`: admit, send and settle per attempt over two retries; a refusal on the first attempt and on a retry; no `admit` under 1 s; the attempt timeout taken after `admit`, and an `admit` that uses up the time sends nothing and settles at zero usage; a reply the parser refuses settles with the usage it carries, one with none with `None`; an `admit` that raises fails closed; a `settle` that raises never replaces the reply or the attempt's error; same request parameters and options with and without a gate. Port shape in log D28, failure handling in log D29. Size guard 286 / 400.
+Split (log D30): slice 2d counted 448 / 400 in one branch, so 2d.2 and 2d.3 move to slice 2d2 (`v03-slice-02d2-app-engine`, `feat(apps): add a statement timeout on the app engine`), stacked on this branch; slice 3 stacks on 2d2.
+
 - [ ] 2d.2 RED then GREEN: `app_engine(url)` in `src/dale/apps/compose.py` (`statement_timeout=5000`, `lock_timeout=3000`, `idle_in_transaction_session_timeout=10000`, `connect_timeout=3`), used by `src/dale/apps/web.py` and `src/dale/apps/terminal.py`. Integration `tests/integration/test_statement_timeout.py`: `SHOW statement_timeout` gives 5 s, and a `pg_sleep(6)` on a tool's data path gives `rules_unavailable` and no order (S9.10).
 - [ ] 2d.3 Restate the B61 comments: the page's no-abort comment in `apps/web/src/api/client.ts` and the server-side bound (deadline plus one tool round plus the 30 s verifier); the "no request timeout" pins stay (D17).
 - [ ] 2d.4 Closing: blind review (focus: the gate port changes no request parameter), PR body with "Known pending items", size guard output.
