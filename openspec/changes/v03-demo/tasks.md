@@ -178,11 +178,17 @@ Model hint: Opus high.
 Covers: R9 (S9.3, S9.7, S9.8, S9.11), v0.1 B75.
 Model hint: Opus high.
 
-- [ ] 2b.1 RED in `tests/unit/brain/test_take_turn_deadline.py`: with a fake model whose every call advances a fake clock by 40 s, a turn needing four calls ends at or before 90 s with `turn_deadline_exceeded`, no order and no `OrderConfirmed` (S9.3); completed exchanges are kept (v0.1 B75); a `DeadlineExceededError` from the model maps to `turn_deadline_exceeded`, caught before `ModelUnavailableError`; every `ModelRequest` carries the turn's deadline.
-- [ ] 2b.2 GREEN in `src/dale/brain/application/take_turn.py`: `turn_seconds` and `monotonic` parameters, the check before each model call, and `_failed(TURN_DEADLINE_EXCEEDED, …)`.
-- [ ] 2b.3 RED then GREEN in `tests/integration/test_deadline_confirm.py`: a turn that showed a proposal summary and then hit the deadline; typed "dale" confirms nothing, and the Dale action revalidates and confirms (S9.8).
+- [x] 2b.1 RED in `tests/unit/brain/test_take_turn_deadline.py`: with a fake model whose every call advances a fake clock by 40 s, a turn needing four calls ends at or before 90 s with `turn_deadline_exceeded`, no order and no `OrderConfirmed` (S9.3); completed exchanges are kept (v0.1 B75); a `DeadlineExceededError` from the model maps to `turn_deadline_exceeded`, caught before `ModelUnavailableError`; every `ModelRequest` carries the turn's deadline.
+  - Done 2026-11-26 in `502a748` (RED and GREEN in one commit): 7 tests in `test_take_turn_deadline.py`; a fake model that honors the request's deadline is cut at 90 s on the third 40 s call, a model that ignores it is stopped by the check before the next call.
+- [x] 2b.2 GREEN in `src/dale/brain/application/take_turn.py`: `turn_seconds` and `monotonic` parameters, the check before each model call, and `_failed(TURN_DEADLINE_EXCEEDED, …)`.
+  - Done 2026-11-26 in `502a748`; `compose` gains a `turn_seconds` passthrough (the eval harness passes none).
+- [x] 2b.3 RED then GREEN in `tests/integration/test_deadline_confirm.py`: a turn that showed a proposal summary and then hit the deadline; typed "dale" confirms nothing, and the Dale action revalidates and confirms (S9.8).
+  - Done 2026-11-26 in `502a748`: through the composed terminal on the seeded DB; no order before F2, then `VERIFICADO`.
+Split (log D26): slice 2b counted 468 / 400 in one branch, so 2b.4 moves to slice 2b2 (`v03-slice-02b2-deadline-setting`, `feat(apps): validate the turn deadline setting at startup`), stacked on this branch. This branch counts 286 / 400.
+
 - [ ] 2b.4 RED then GREEN: `turn_deadline(env)` in `src/dale/apps/compose.py` reads `DALE_TURN_DEADLINE_SECONDS` (default 90) and exits 2 when the value is invalid or not greater than the verifier's 30 s; `src/dale/apps/terminal.py` and `src/dale/apps/web.py` call it and pass `turn_seconds` to `TakeTurn`. Test in `tests/unit/apps/test_turn_deadline_setting.py` (S9.11).
-- [ ] 2b.5 RED then GREEN: the terminal shows the `turn_deadline_exceeded` message and creates no order (S9.7), in the terminal session tests.
+- [x] 2b.5 RED then GREEN: the terminal shows the `turn_deadline_exceeded` message and creates no order (S9.7), in the terminal session tests.
+  - Done 2026-11-26 in `502a748`, in `tests/unit/channels/test_terminal_session.py` (and the S9.8 integration test prints the message through the real terminal).
 - [ ] 2b.6 Closing: blind review (focus: a deadline never yields a partial confirmation), PR body with "Known pending items", size guard output.
 
 ## Phase 2c: Bounded retry loop in the adapter (slice 2c, ~330 lines) [critical: unbounded wait]
