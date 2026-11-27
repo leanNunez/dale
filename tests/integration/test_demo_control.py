@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine, create_engine
 
 from dale.apps.compose import app_engine
+from dale.apps.demo.cli import URL_VARIABLE, main
 from dale.apps.demo.control import (
     ControlState,
     ControlUnreadableError,
@@ -202,3 +203,57 @@ def test_a_write_waiting_past_the_lock_timeout_fails_as_busy(engines: dict[str, 
 def test_a_null_or_unknown_value_is_unreadable(row: object) -> None:
     with pytest.raises(ControlUnreadableError):
         state_of(row)
+
+
+def cli(capsys: pytest.CaptureFixture[str], *argv: str, role: str = "dale_app") -> tuple[int, str]:
+    code = main(list(argv), {URL_VARIABLE: role_url(role)}, clock=FrozenClock(NOW))
+    out, err = capsys.readouterr()
+    assert role_url(role) not in out + err and "127.0.0.1" not in out + err
+    return code, out + err
+
+
+def test_the_cli_pauses_twice_and_stays_paused(
+    switch: SqlControl, capsys: pytest.CaptureFixture[str]
+) -> None:  # S6.3
+    since = NOW.isoformat()
+    assert cli(capsys, "pause") == (0, f"pause: done; paused (operator) since {since}\n")
+    assert cli(capsys, "pause") == (0, f"pause: no change; paused (operator) since {since}\n")
+    assert switch.read() == ControlState(True, "operator", NOW)
+
+
+def test_the_cli_deploy_cycle_never_lifts_an_operator_pause(
+    switch: SqlControl, capsys: pytest.CaptureFixture[str]
+) -> None:
+    switch.resume()
+    assert cli(capsys, "pause", "--reason", "deploy")[0] == 0
+    assert cli(capsys, "resume", "--if-reason", "deploy")[0] == 0
+    assert switch.read().paused is False
+    switch.pause()
+    assert cli(capsys, "pause", "--reason", "deploy")[1].startswith("pause: no change")
+    kept = f"resume: not resumed; paused (operator) since {NOW.isoformat()}\n"
+    assert cli(capsys, "resume", "--if-reason", "deploy") == (3, kept)
+    assert switch.read() == ControlState(True, "operator", NOW)
+
+
+@pytest.mark.parametrize("argv", [["pause"], ["pause", "--reason", "deploy"], ["resume"]])
+def test_the_cli_exits_non_zero_when_it_cannot_write(
+    engines: dict[str, Engine], capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:  # S6.2
+    failed = f"{argv[0]} failed:"
+    code, said = cli(capsys, *argv, role="dale_verifier")
+    refused = f"{failed} cannot write the control row: unreachable or failed (ProgrammingError)\n"
+    assert (code, said) == (1, refused)
+    delete_row(engines)
+    assert cli(capsys, *argv) == (1, f"{failed} the control row is missing\n")
+
+
+def test_the_cli_exits_1_when_the_row_stays_busy_past_the_lock_timeout(
+    engines: dict[str, Engine], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with engines["dale_owner"].connect() as holder:
+        holder.execute(sa.select(control).with_for_update())
+        code, said = cli(capsys, "pause")
+        holder.rollback()
+    assert (code, said) == (1, "pause failed: the control row is busy: another write holds it"
+                               " (OperationalError)\n")  # fmt: skip
+    assert SqlControl(engines["dale_app"], FrozenClock(NOW)).read() == INITIAL
