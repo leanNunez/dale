@@ -159,7 +159,7 @@ def test_no_table_outside_the_dale_schemas(engines: dict[str, Engine]) -> None:
             SELECT n.nspname || '.' || c.relname
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
-              AND n.nspname NOT IN ('erp', 'brain', 'information_schema')
+              AND n.nspname NOT IN ('erp', 'brain', 'demo', 'information_schema')
               AND n.nspname !~ '^pg_'""")
         ).scalars()
         assert list(tables) == ["public.alembic_version"]
