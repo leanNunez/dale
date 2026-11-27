@@ -3,17 +3,25 @@ closed tool dispatch, fenced customer text. Only an `end_turn` with text is an a
 refusal is code's to handle. Any other ending shows a fixed message and keeps the exchanges
 that completed (B75): every tool call in the history has its result, so every request is well
 formed. Typed text reaches only the model: this class has no path to management's confirm
-(S4.2)."""
+(S4.2).
+
+A turn may have a wall-clock deadline (R9, ADR 0011), measured from its start. Every request
+carries it, so the adapter bounds each attempt by the time left; before each model call an
+expired deadline ends the turn with `turn_deadline_exceeded`, which a deadline error from the
+model does too. Either way the turn fails as any other does: no order, what completed stays."""
 
 import json
 import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from dale.brain.application.deadline import Deadline, Monotonic
 from dale.brain.application.fencing import CUSTOMER, customer_message
 from dale.brain.application.model_port import (
+    DeadlineExceededError,
     Json,
     ModelPort,
     ModelRequest,
@@ -72,15 +80,18 @@ class TakeTurn:
         handoffs: HandoffPort,
         proposals: ProposalRepository,
         system: Sequence[Json],
+        turn_seconds: float | None = None,
+        monotonic: Monotonic = time.monotonic,
     ) -> None:
         self._session, self._model, self._tools, self._handoffs = session, model, tools, handoffs
-        self._proposals = proposals
+        self._proposals, self._turn_seconds, self._monotonic = proposals, turn_seconds, monotonic
         self._system, self._history = tuple(system), list[Json]()
         self._conversations, self._opened = conversations, False
 
     def __call__(self, said: CustomerText) -> TurnResult:
         if not isinstance(said, CustomerText):  # a KeyPress goes to ConfirmProposal only
             raise TypeError("only customer text reaches the model")
+        deadline = Deadline.after(self._turn_seconds, self._monotonic)  # R9: from the start
         shown, usage, trace = list[ShownEvent](), list[Usage](), list[ToolCallTrace]()
         messages = _bounded(_joined(self._history, customer_message(said.text)))
         if not self._opened:  # B61: the row proposals and handoffs need, before any tool runs
@@ -91,9 +102,15 @@ class TakeTurn:
                 return self._failed(ErrorCode.RULES_UNAVAILABLE, messages, shown, usage, why, trace)
             self._opened = True
         while len(usage) < MAX_MODEL_CALLS:
-            request = ModelRequest(self._system, TOOL_SCHEMAS, tuple(messages))
+            if deadline is not None and deadline.expired():  # S9.3: no call starts late
+                code, why = ErrorCode.TURN_DEADLINE_EXCEEDED, "deadline before a model call"
+                return self._failed(code, messages, shown, usage, why, trace)
+            request = ModelRequest(self._system, TOOL_SCHEMAS, tuple(messages), deadline)
             try:
                 reply = self._model.complete(request)
+            except DeadlineExceededError as error:  # before its parent class (ADR 0011)
+                code, why = ErrorCode.TURN_DEADLINE_EXCEEDED, str(error)
+                return self._failed(code, messages, shown, usage, why, trace)
             except ModelUnavailableError as error:
                 why = str(error)
                 return self._failed(ErrorCode.MODEL_UNAVAILABLE, messages, shown, usage, why, trace)

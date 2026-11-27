@@ -18,9 +18,16 @@ from dale.channels.terminal.session import (
     TerminalSession,
 )
 from dale.shared.customer_input import CustomerInput, CustomerText, Key, KeyPress
+from dale.shared.errors import ErrorCode, message_for
 from dale.shared.ids import OrderId, ProposalId
 from dale.shared.money import Money
-from dale.shared.shown_events import AssistantText, OrderConfirmed, ProposalSummary, ShownEvent
+from dale.shared.shown_events import (
+    AssistantText,
+    OrderConfirmed,
+    ProposalSummary,
+    ShownEvent,
+    SystemNotice,
+)
 from tests.unit.channels.test_terminal_render import FakeVerdict
 
 PID, OTHER = ProposalId(UUID(int=1)), ProposalId(UUID(int=2))
@@ -123,6 +130,15 @@ def test_a_turn_that_fails_prints_a_notice_and_the_session_goes_on(error: BaseEx
         CustomerText("20 colas"),
     ]
     assert backend.pressed == [DALE]
+
+
+def test_a_turn_cut_by_its_deadline_shows_the_message_and_confirms_nothing() -> None:
+    """R9 S9.7: the catalog message is printed; typed text never presses, so no order."""
+    code = ErrorCode.TURN_DEADLINE_EXCEEDED
+    backend = FakeBackend([[SystemNotice(code, message_for(code))]], FakeVerdict("verified"))
+    printed = session(backend, CustomerText("20 colas"))
+    assert message_for(code) in printed
+    assert (backend.pressed, backend.verified) == ([], [])
 
 
 def test_a_verifier_that_fails_is_printed_as_not_verified() -> None:

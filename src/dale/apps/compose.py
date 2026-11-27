@@ -63,8 +63,10 @@ def compose(
     verifier: Verifier = run_verifier,
     *,
     channel: Channel,
+    turn_seconds: float | None = None,
 ) -> Result[ChannelBackend]:
-    """`model` is called only once the customer is resolved, so nothing reaches it first."""
+    """`model` is called only once the customer is resolved, so nothing reaches it first.
+    `turn_seconds` is each turn's deadline; `None` (the eval harness) sets none."""
     ids = ids or Uuid4Generator()
     erp: ErpFacade = SqlErpFacade(engine, clock, ids)
     found = erp.find_customer(company, customer)
@@ -75,7 +77,6 @@ def compose(
     proposals, handoffs = SqlProposalRepository(engine), SqlHandoffRepository(engine)
     tools = Tools(session, erp, proposals, ids, handoffs)
     rows = SqlConversationRepository(engine, clock, channel)
-    turn = TakeTurn(
-        session, model(), tools, rows, handoffs, proposals, system_blocks(who.company_name)
-    )
+    system = system_blocks(who.company_name)
+    turn = TakeTurn(session, model(), tools, rows, handoffs, proposals, system, turn_seconds)
     return Ok(ChannelBackend(session, turn, ConfirmProposal(session, proposals, erp), verifier))
