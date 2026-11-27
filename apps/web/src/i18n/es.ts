@@ -84,6 +84,7 @@ export const es = {
         turn_limit_reached: "Límite de vueltas alcanzado",
         model_refusal: "El modelo se negó",
         model_unavailable: "Modelo no disponible",
+        turn_deadline_exceeded: "Tiempo del turno agotado",
         unknown_tool: "Herramienta desconocida",
         invalid_tool_input: "Datos de la herramienta no válidos",
       } satisfies Record<ErrorCode, string>,

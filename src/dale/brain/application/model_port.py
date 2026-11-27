@@ -3,14 +3,22 @@ their `ModelResponse` with `parse_response`, from the API's message as JSON: rep
 SDK, and the one parser is tested once."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from dale.brain.application.deadline import Deadline
 
 type Json = dict[str, Any]
 
 
 class ModelUnavailableError(Exception):
     """The provider failed, or answered in a shape this parser does not know: act on nothing."""
+
+
+class DeadlineExceededError(ModelUnavailableError):
+    """The turn's deadline left no time for the call (R9, ADR 0011): nothing was sent. A
+    subclass, so a handler of `ModelUnavailableError` (the eval recorder) still sees a failure;
+    `TakeTurn` catches it first."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +40,9 @@ class ModelRequest:
     system: tuple[Json, ...]  # code's text only: customer text never goes here (R8)
     tools: tuple[Json, ...]
     messages: tuple[Json, ...]
+    # The turn's deadline (DD28): it bounds the call and is never part of it. Equality, repr,
+    # the request parameters, the fingerprint and the messages digest all leave it out (S9.9).
+    deadline: Deadline | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
