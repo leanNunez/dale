@@ -246,3 +246,12 @@ name = "brain and erp_sim import no apps"
 type = "forbidden"
 source_modules = ["dale.brain", "dale.erp_sim"]
 forbidden_modules = ["dale.apps"]
+
+# 15. The product never loads the eval harness: the runtime price table lives inside dale, and
+#     a test compares it with evals/pricing.toml (DD39).
+[[tool.importlinter.contracts]]
+id = "15"
+name = "dale imports no evals"
+type = "forbidden"
+source_modules = ["dale"]
+forbidden_modules = ["evals"]
