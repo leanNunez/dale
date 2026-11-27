@@ -155,7 +155,8 @@ Model hint: Sonnet high.
   - Done 2026-11-26 in `fd2cda2`: ADR 0010 (cookie session, CSRF without a token, client IP from the loopback proxy only; amends ADR 0005's no-cookie premise); structural readback.
 - [x] 1b.3 Write `docs/decisions/0012-hosting-release-deploy.md`: VPS with Compose and host Caddy, image by digest, tag-only release workflow, owner-run deploy, no key or SSH credential in CI, additive migrations (DD44-DD46, log D1-D3, D5). Test: structural readback.
   - Done 2026-11-26 in `9340e20`: ADR 0012 (VPS with Compose and host Caddy, image by digest, tag-only release workflow, owner-run deploy, no key or SSH credential in CI, additive migrations); structural readback.
-- [ ] 1b.4 Closing: blind review (focus: no record contradicts ADRs 0004, 0005 or 0007), PR body with "Known pending items", size guard output.
+- [x] 1b.4 Closing: blind review (focus: no record contradicts ADRs 0004, 0005 or 0007), PR body with "Known pending items", size guard output.
+  - Done 2026-11-26: blind review found no blocker; drain bound (D23), cookie issuance (D24), scanner scope and guarded paths folded into ADRs 0009, 0010 and 0012; ADR 0004 and 0005 carry amendment notes; touched points re-checked. Size guard 215 / 400.
 
 ## Phase 2a: Deadline value and the new brain code (slice 2a, ~240 lines) [critical: fingerprint]
 
