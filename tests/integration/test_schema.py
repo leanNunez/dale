@@ -6,13 +6,15 @@ import pytest
 from alembic import command
 from sqlalchemy import Engine, Row, text
 
+from dale.apps.demo.tables import METADATA as DEMO
 from dale.brain.infrastructure.tables import METADATA as BRAIN
 from dale.erp_sim.infrastructure.tables import METADATA as ERP
 from tests.conftest import alembic_config
 
 pytestmark = pytest.mark.integration
 
-METADATAS = (ERP, BRAIN)
+METADATAS = (ERP, BRAIN)  # the tenant schemas; demo holds no company rows
+DEFINED = (*METADATAS, DEMO)
 TENANT_ROOT = ("erp", "company")  # its own id is the company_id of every other row
 
 CONSTRAINTS = """
@@ -128,10 +130,10 @@ def test_every_constraint_name_follows_the_convention(constraints: list[Row[Any]
 def test_database_and_metadata_define_the_same_constraints(engines: dict[str, Engine]) -> None:
     """Names and bodies: the metadata is built in scratch schemas (rolled back) and the
     catalog's own text of every constraint and index is compared, CHECK bodies included."""
-    scratch = {m.schema: f"expected_{m.schema}" for m in METADATAS if m.schema}
+    scratch = {m.schema: f"expected_{m.schema}" for m in DEFINED if m.schema}
     with engines["dale_owner"].connect() as conn:
         conn.exec_driver_sql("; ".join(f"CREATE SCHEMA {s}" for s in scratch.values()))
-        for m in METADATAS:
+        for m in DEFINED:
             m.create_all(conn.execution_options(schema_translate_map=scratch), checkfirst=False)
         rows = conn.execute(text(DEFINITIONS)).all()
     defs = {(s, t, n): d for s, t, n, d in rows}
@@ -152,7 +154,7 @@ def test_migrations_refuse_to_run_as_another_role(migrated_db: None) -> None:
 
 
 def test_no_table_outside_the_dale_schemas(engines: dict[str, Engine]) -> None:
-    """Every schema and grant check looks only at erp and brain; nothing else may hold data."""
+    """Every schema and grant check looks only at the Dale schemas; nothing else holds data."""
     with engines["dale_owner"].connect() as conn:
         tables = conn.execute(
             text("""
