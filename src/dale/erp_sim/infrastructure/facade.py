@@ -1,6 +1,7 @@
-"""The facade wiring: `erp_sim.public.ErpFacade` over a database. Only composition roots use it."""
+"""The facade wiring: `erp_sim.public.ErpFacade` and `VisitorCustomers` over a database. Only
+composition roots use them."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import sqlalchemy as sa
 
@@ -12,7 +13,8 @@ from dale.erp_sim.application.catalog import (
 )
 from dale.erp_sim.application.confirm import confirm, find_order
 from dale.erp_sim.application.quote import quote
-from dale.erp_sim.infrastructure.repositories import SqlOrderStore, SqlRuleData
+from dale.erp_sim.application.visitors import create_visitor, random_code
+from dale.erp_sim.infrastructure.repositories import SqlOrderStore, SqlRuleData, SqlVisitorData
 from dale.erp_sim.public import (
     ConfirmRequest,
     Delivery,
@@ -66,3 +68,18 @@ class SqlErpFacade:
         self, company_id: CompanyId, proposal_id: ProposalId
     ) -> Result[OrderConfirmation | None]:
         return find_order(company_id, proposal_id, self._orders)
+
+
+class SqlVisitorCustomers:
+    """Kept apart from `SqlErpFacade`, so whoever holds the facade cannot create customers."""
+
+    def __init__(
+        self,
+        engine: sa.Engine,
+        ids: IdGenerator | None = None,
+        codes: Callable[[], str] = random_code,
+    ) -> None:
+        self._data, self._ids, self._codes = SqlVisitorData(engine), ids or Uuid4Generator(), codes
+
+    def create_visitor(self, company_slug: str, template_code: str) -> Result[SessionCustomer]:
+        return create_visitor(company_slug, template_code, self._data, self._ids, self._codes)
