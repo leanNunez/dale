@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "DemoInfo": {
+      "additionalProperties": false,
+      "description": "What the page reads of demo mode: the notice its banner text belongs to and the retention\nthat text states. `contracts/v1/notice.json` has the same two keys.",
+      "properties": {
+        "notice_version": {
+          "title": "Notice Version",
+          "type": "integer"
+        },
+        "retention_days": {
+          "title": "Retention Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "notice_version",
+        "retention_days"
+      ],
+      "title": "DemoInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The body of `GET /v1/contract`: the version, every event type and command, and `demo`\n(v0.3, additive), which is null in local mode.",
+  "properties": {
+    "commands": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Commands",
+      "type": "array"
+    },
+    "demo": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DemoInfo"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "events": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "v": {
+      "const": 1,
+      "default": 1,
+      "title": "V",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "events",
+    "commands",
+    "demo"
+  ],
+  "title": "ContractInfo",
+  "type": "object"
+}

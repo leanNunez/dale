@@ -2,8 +2,9 @@
 
 Counts ``git diff --numstat`` additions + deletions, skipping ``openspec/``, the generated
 eval files (``evals/recordings/`` and ``evals/reports/``), ``uv.lock``, the generated contract
-files (``contracts/**/*.schema.json`` and ``contracts/v1/components.json``; the authored samples
-under ``contracts/v1/samples/`` still count) and the page's lockfile and generated types
+files (``contracts/**/*.schema.json``, ``contracts/v1/components.json`` and
+``contracts/v1/notice.json``; the authored samples under
+``contracts/v1/samples/`` still count) and the page's lockfile and generated types
 (``apps/web/package-lock.json`` and ``apps/web/src/contract/generated/``; ``package.json`` still
 counts, so a dependency change is always reviewed). The release PR
 (``dev`` of this same repository into ``main``) is skipped: it carries slices that were already
@@ -24,7 +25,12 @@ EXCLUDED_PREFIXES = (
     "evals/reports/",
     "apps/web/src/contract/generated/",
 )
-EXCLUDED_FILES = ("uv.lock", "contracts/v1/components.json", "apps/web/package-lock.json")
+EXCLUDED_FILES = (
+    "uv.lock",
+    "contracts/v1/components.json",
+    "contracts/v1/notice.json",
+    "apps/web/package-lock.json",
+)
 
 
 def is_generated_schema(path: str) -> bool:

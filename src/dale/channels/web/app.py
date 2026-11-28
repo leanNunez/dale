@@ -2,14 +2,14 @@
 request guard, which sees every request first.
 
 Conversation routes (`routes.py`) answer with one `ResponseEnvelope`; the metadata routes answer
-with their documented bodies: `/v1/contract` with `{v, events, commands}` and `/health` with an
-empty envelope. Every error, on any path, is one `ResponseEnvelope`. The exception handlers replace
-FastAPI's default bodies (its validation body echoes the input): an unknown path or method, an
-invalid body and an unexpected exception each answer with their catalog code and fixed message,
-never with the exception text, which goes only to the log. `/docs`, `/redoc` and `/openapi.json`
-are off, there is no CORS middleware and no trailing-slash redirect (`/health/` is unknown, and
-no `Location` echoes the `Host`). The built page is served from the same origin when its
-directory exists; until it is built, `/` answers `not_found` like any unknown path.
+with their documented bodies: `/v1/contract` with `{v, events, commands, demo}` and `/health`
+with an empty envelope. Every error, on any path, is one `ResponseEnvelope`. The exception
+handlers replace FastAPI's default bodies (its validation body echoes the input): an unknown path
+or method, an invalid body and an unexpected exception each answer with their catalog code and
+fixed message, never with the exception text, which goes only to the log. `/docs`, `/redoc` and
+`/openapi.json` are off, there is no CORS middleware and no trailing-slash redirect (`/health/` is
+unknown, and no `Location` echoes the `Host`). The built page is served from the same origin when
+its directory exists; until it is built, `/` answers `not_found` like any unknown path.
 """
 
 import logging
@@ -21,8 +21,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
-from dale.channels.web.contract import COMMANDS, COMPONENTS, VERSION, ResponseEnvelope
+from dale.channels.web.contract import (
+    COMMANDS,
+    COMPONENTS,
+    ContractInfo,
+    DemoInfo,
+    ResponseEnvelope,
+)
 from dale.channels.web.conversations import ConversationRegistry
+from dale.channels.web.demo import Notice
 from dale.channels.web.errors import WebErrorCode
 from dale.channels.web.guard import AllowList, RequestGuard
 from dale.channels.web.routes import add_routes, envelope_response, error_response
@@ -52,8 +59,11 @@ async def _unexpected(request: Request, error: Exception) -> Response:
     return error_response(WebErrorCode.INTERNAL_ERROR)
 
 
-def build_api(ready: Ready, page: Path | None, registry: ConversationRegistry) -> FastAPI:
-    """The routes and handlers without the guard (`create_app` adds it)."""
+def build_api(
+    ready: Ready, page: Path | None, registry: ConversationRegistry, demo: Notice | None = None
+) -> FastAPI:
+    """The routes and handlers without the guard (`create_app` adds it). `demo` is the notice of
+    demo mode, which the page reads to show its banner; `None` is local mode (DD42)."""
     api = FastAPI(
         docs_url=None,
         redoc_url=None,
@@ -67,8 +77,13 @@ def build_api(ready: Ready, page: Path | None, registry: ConversationRegistry) -
     )
 
     @api.api_route("/v1/contract", methods=["GET", "HEAD"])
-    def contract() -> dict[str, object]:
-        return {"v": VERSION, "events": list(COMPONENTS), "commands": list(COMMANDS)}
+    def contract() -> ContractInfo:
+        found = (
+            None
+            if demo is None
+            else DemoInfo(notice_version=demo.version, retention_days=demo.retention_days)
+        )
+        return ContractInfo(events=tuple(COMPONENTS), commands=tuple(COMMANDS), demo=found)
 
     @api.api_route("/health", methods=["GET", "HEAD"])
     def health() -> Response:
@@ -94,6 +109,10 @@ def build_api(ready: Ready, page: Path | None, registry: ConversationRegistry) -
 
 
 def create_app(
-    allow: AllowList, ready: Ready, page: Path | None, registry: ConversationRegistry
+    allow: AllowList,
+    ready: Ready,
+    page: Path | None,
+    registry: ConversationRegistry,
+    demo: Notice | None = None,
 ) -> RequestGuard:
-    return RequestGuard(build_api(ready, page, registry), allow)
+    return RequestGuard(build_api(ready, page, registry, demo), allow)

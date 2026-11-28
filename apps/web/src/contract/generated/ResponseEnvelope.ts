@@ -14,7 +14,12 @@ export type WebErrorCode =
   | "conversation_busy"
   | "turn_failed"
   | "confirm_outcome_unknown"
-  | "internal_error";
+  | "internal_error"
+  | "rate_limited"
+  | "demo_paused"
+  | "demo_busy"
+  | "demo_reset"
+  | "notice_not_accepted";
 export type ErrorCode =
   | "customer_not_found"
   | "product_not_found"

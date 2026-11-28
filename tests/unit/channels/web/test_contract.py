@@ -202,8 +202,8 @@ def test_a_malformed_or_overreaching_command_is_rejected(
         command.model_validate(body)
 
 
-def test_the_page_has_exactly_three_commands() -> None:
-    assert set(COMMANDS) == {"SendMessage", "PressDale", "CancelProposal"}
+def test_the_page_still_has_the_three_commands_of_v02() -> None:
+    assert {"SendMessage", "PressDale", "CancelProposal"} <= set(COMMANDS)
     assert SendMessage(text="x" * 2000).text == "x" * 2000
     assert SendMessage(text="dos\n\tbolsas").text == "dos\n\tbolsas"
     assert COMMANDS["PressDale"].model_validate({"proposal_id": PROPOSAL.upper()})

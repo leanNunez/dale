@@ -814,7 +814,12 @@
         "conversation_busy",
         "turn_failed",
         "confirm_outcome_unknown",
-        "internal_error"
+        "internal_error",
+        "rate_limited",
+        "demo_paused",
+        "demo_busy",
+        "demo_reset",
+        "notice_not_accepted"
       ],
       "title": "WebErrorCode",
       "type": "string"

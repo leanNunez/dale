@@ -146,7 +146,8 @@ def test_a_trailing_slash_is_unknown_and_never_redirected(
 def test_the_contract_route_reports_version_1(client: TestClient) -> None:
     """S5.1 host side: the version, every event type and every command."""
     response = client.get("/v1/contract")
-    assert response.json() == {"v": 1, "events": list(COMPONENTS), "commands": list(COMMANDS)}
+    body = {"v": 1, "events": list(COMPONENTS), "commands": list(COMMANDS)}
+    assert body.items() <= response.json().items()  # v0.3 only adds keys (`demo`)
 
 
 @pytest.mark.parametrize(("up", "status"), [(True, 200), (False, 503)])

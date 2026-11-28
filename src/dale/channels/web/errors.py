@@ -23,6 +23,12 @@ class WebErrorCode(StrEnum):
     TURN_FAILED = "turn_failed"
     CONFIRM_OUTCOME_UNKNOWN = "confirm_outcome_unknown"
     INTERNAL_ERROR = "internal_error"
+    # v0.3, additive to contract v1 (W11): the demo's limits, pause, reset and notice.
+    RATE_LIMITED = "rate_limited"
+    DEMO_PAUSED = "demo_paused"
+    DEMO_BUSY = "demo_busy"
+    DEMO_RESET = "demo_reset"
+    NOTICE_NOT_ACCEPTED = "notice_not_accepted"
 
 
 WEB_STATUS: dict[WebErrorCode, int] = {
@@ -38,6 +44,11 @@ WEB_STATUS: dict[WebErrorCode, int] = {
     WebErrorCode.TURN_FAILED: 500,
     WebErrorCode.CONFIRM_OUTCOME_UNKNOWN: 503,
     WebErrorCode.INTERNAL_ERROR: 500,
+    WebErrorCode.RATE_LIMITED: 429,
+    WebErrorCode.DEMO_PAUSED: 503,
+    WebErrorCode.DEMO_BUSY: 503,
+    WebErrorCode.DEMO_RESET: 410,
+    WebErrorCode.NOTICE_NOT_ACCEPTED: 403,
 }
 
 WEB_MESSAGES: dict[WebErrorCode, str] = {
@@ -53,6 +64,14 @@ WEB_MESSAGES: dict[WebErrorCode, str] = {
     WebErrorCode.TURN_FAILED: "Tuve un problema con ese mensaje. Probá de nuevo.",
     WebErrorCode.CONFIRM_OUTCOME_UNKNOWN: "No pude confirmar el resultado. Probá de nuevo.",
     WebErrorCode.INTERNAL_ERROR: "Algo salió mal de nuestro lado. Probá de nuevo en un rato.",
+    # Fixed text: no count, limit, session or address of anyone (S11.5).
+    WebErrorCode.RATE_LIMITED: "Llegaste al límite de uso por ahora. Probá de nuevo más tarde.",
+    WebErrorCode.DEMO_PAUSED: "La demo está en pausa por ahora. Volvé a probar más tarde.",
+    WebErrorCode.DEMO_BUSY: "Hay mucha gente probando la demo. Probá de nuevo en unos minutos.",
+    WebErrorCode.DEMO_RESET: (
+        "Esta conversación se borró con el reinicio de la demo. Empezá una nueva."
+    ),
+    WebErrorCode.NOTICE_NOT_ACCEPTED: "Para empezar tenés que aceptar el aviso de la demo.",
 }
 
 

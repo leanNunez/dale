@@ -1,6 +1,7 @@
 """Writes contract v1 from the Python types (D20): `python -m dale.channels.web.schema_gen`.
 
-One `<Type>.schema.json` per wire type plus `components.json`. The output is deterministic
+One `<Type>.schema.json` per wire type, plus `components.json` and `notice.json` (the notice
+version the page's banner text belongs to, DD42). The output is deterministic
 (sorted keys, 2-space indent, trailing newline) and committed; a golden test and CI fail when a
 regeneration differs, so a removed or renamed field cannot slip by (S5.2, S5.4).
 """
@@ -12,13 +13,22 @@ from typing import Any
 from pydantic import TypeAdapter
 from pydantic.json_schema import JsonSchemaMode
 
-from dale.channels.web.contract import COMMANDS, COMPONENTS, ResponseEnvelope, WebEvent
+from dale.channels.web.contract import (
+    COMMANDS,
+    COMPONENTS,
+    ContractInfo,
+    DemoInfo,
+    ResponseEnvelope,
+    WebEvent,
+)
+from dale.channels.web.demo import NOTICE
 
 # A repository tool: this path resolves only in a source or editable checkout, not an install.
 CONTRACT_DIR = Path(__file__).resolve().parents[4] / "contracts" / "v1"
 SCHEMA_TYPES: dict[str, Any] = {
     "WebEvent": WebEvent,
     "ResponseEnvelope": ResponseEnvelope,
+    "ContractInfo": ContractInfo,
     **COMMANDS,
 }
 
@@ -48,7 +58,12 @@ def render_schema(name: str, wire_type: Any) -> str:
 
 def render() -> dict[str, str]:
     files = {f"{name}.schema.json": render_schema(name, t) for name, t in SCHEMA_TYPES.items()}
-    return {**files, "components.json": _dump(COMPONENTS)}
+    notice = DemoInfo(notice_version=NOTICE.version, retention_days=NOTICE.retention_days)
+    return {
+        **files,
+        "components.json": _dump(COMPONENTS),
+        "notice.json": _dump(notice.model_dump()),
+    }
 
 
 def main(out: Path = CONTRACT_DIR) -> None:

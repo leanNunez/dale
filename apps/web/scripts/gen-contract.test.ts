@@ -35,9 +35,11 @@ it("regenerating from contracts/v1 reproduces the committed types exactly (S5.3)
 it("emits one module per wire type and the components map", () => {
   expect(readdirSync(committed).sort()).toEqual([
     "CancelProposal.ts",
+    "ContractInfo.ts",
     "PressDale.ts",
     "ResponseEnvelope.ts",
     "SendMessage.ts",
+    "StartConversation.ts",
     "WebEvent.ts",
     "components.ts",
   ]);
