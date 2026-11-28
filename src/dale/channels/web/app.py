@@ -9,7 +9,8 @@ or method, an invalid body and an unexpected exception each answer with their ca
 fixed message, never with the exception text, which goes only to the log. `/docs`, `/redoc` and
 `/openapi.json` are off, there is no CORS middleware and no trailing-slash redirect (`/health/` is
 unknown, and no `Location` echoes the `Host`). The built page is served from the same origin when
-its directory exists; until it is built, `/` answers `not_found` like any unknown path.
+its directory exists; until it is built, `/` answers `not_found` like any unknown path. Demo mode
+adds the session layer (`session.py`) between the guard and the routes; local mode sets no cookie.
 """
 
 import logging
@@ -20,6 +21,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
+from starlette.types import ASGIApp
 
 from dale.channels.web.contract import (
     COMMANDS,
@@ -33,6 +35,7 @@ from dale.channels.web.demo import Notice
 from dale.channels.web.errors import WebErrorCode
 from dale.channels.web.guard import AllowList, RequestGuard
 from dale.channels.web.routes import add_routes, envelope_response, error_response
+from dale.channels.web.session import SessionLayer
 from dale.shared.errors import ErrorCode
 
 log = logging.getLogger(__name__)
@@ -114,6 +117,13 @@ def create_app(
     page: Path | None,
     registry: ConversationRegistry,
     demo: Notice | None = None,
+    session_key: bytes | None = None,
 ) -> RequestGuard:
-    """The guarded application. A notice also turns on the guard's client IP step (DD36)."""
-    return RequestGuard(build_api(ready, page, registry, demo), allow, demo=demo is not None)
+    """The guarded application. Demo mode (a notice) needs the session key, local mode takes
+    none: demo mode adds the guard's client IP step (DD36) and the session layer (DD34)."""
+    if (demo is None) != (session_key is None):
+        raise ValueError("demo mode needs a session key, and local mode takes none")
+    app: ASGIApp = build_api(ready, page, registry, demo)
+    if session_key is not None:
+        app = SessionLayer(app, session_key)
+    return RequestGuard(app, allow, demo=demo is not None)

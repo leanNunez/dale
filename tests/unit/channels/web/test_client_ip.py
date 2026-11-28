@@ -192,9 +192,8 @@ def test_local_mode_ignores_the_forwarded_header(app: Seen, forwarded: str | Non
 
 def hosts(demo: bool, peer: str = "127.0.0.1") -> TestClient:
     registry = InMemoryRegistry(FakeBackend)
-    app = create_app(
-        AllowList.loopback(PORT), lambda: True, None, registry, NOTICE if demo else None
-    )
+    modes = (NOTICE, b"k" * 32) if demo else (None, None)
+    app = create_app(AllowList.loopback(PORT), lambda: True, None, registry, *modes)
     return TestClient(app, base_url=LOOPBACK, client=(peer, 50000), raise_server_exceptions=False)
 
 
@@ -232,7 +231,7 @@ def test_no_log_line_holds_a_clear_ip(
         with hosts(True, REMOTE) as remote:
             responses += [remote.get(path, headers=forwarded) for path in ("/v1/contract", "/v")]
     codes = [response.status_code for response in responses]
-    assert codes == [200, 422, 422, 400, 201, 422, 403, 200, 404]  # demo mode is on
+    assert codes == [200, 422, 422, 400, 201, 404, 403, 200, 404]  # demo mode (404: no session)
     lines = [f"{r.getMessage()} {r.exc_text or ''} {r.__dict__}" for r in caplog.records]
     assert lines and not [line for line in lines if any(ip in line for ip in (SENT, APPENDED))]
     assert not [line for line in lines if REMOTE in line]
