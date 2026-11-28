@@ -77,6 +77,10 @@ domain shared with other applications relies on these two checks alone.
 
 - The session is a convenience for limits and ownership, not an identity: a visitor who clears the
   cookie gets a new session. Per-IP limits are the real bound (0009, log D17).
+- The session has no server-side expiry: the server accepts any well-formed token, even one a
+  client minted itself, until the secret changes. Only the browser enforces the 24 hour `Max-Age`,
+  and a valid cookie is never refreshed, so a conversation still active at 24 hours gets
+  `conversation_not_found` (log D75).
 - Several visitors behind one address (an office, a shared network) share the per-IP limits.
 - The `__Host-` cookie needs `Secure`, so demo mode is meant to run behind HTTPS ([decision 0012](0012-hosting-release-deploy.md)). Local mode sets no cookie.
 - The correctness of the client IP depends on the proxy appending the address it saw. The tests
