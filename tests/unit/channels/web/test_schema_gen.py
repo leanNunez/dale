@@ -106,12 +106,17 @@ def test_the_schemas_name_nothing_in_spanish() -> None:
     assert all(k.isascii() and not SPANISH.search(k) for k in COMPONENTS)
 
 
-def test_there_is_one_schema_file_per_wire_type_plus_the_components_map() -> None:
-    assert set(render()) == {f"{name}.schema.json" for name in SCHEMA_TYPES} | {"components.json"}
+def test_there_is_one_schema_file_per_wire_type_plus_the_components_map_and_the_notice() -> None:
+    assert set(render()) == {f"{name}.schema.json" for name in SCHEMA_TYPES} | {
+        "components.json",
+        "notice.json",
+    }
     assert set(SCHEMA_TYPES) == {
         "WebEvent",
         "ResponseEnvelope",
+        "ContractInfo",
         "SendMessage",
         "PressDale",
         "CancelProposal",
+        "StartConversation",
     }

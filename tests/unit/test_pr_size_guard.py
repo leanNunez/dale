@@ -28,12 +28,15 @@ def test_generated_contract_files_are_excluded_but_samples_and_lookalikes_count(
         ("500", "0", "contracts/v1/send_message.schema.json"),
         ("500", "0", "contracts/v2/nested/x.schema.json"),
         ("500", "0", "contracts/v1/components.json"),
+        ("500", "0", "contracts/v1/notice.json"),
         ("4", "0", "contracts/v1/samples/send_message.json"),
         ("3", "0", "contracts/v1/samples/odd.schema.json"),  # a sample is authored, never generated
         ("2", "0", "contracts/v2/components.json"),  # only v1's components map is generated
+        ("2", "0", "contracts/v2/notice.json"),  # and only v1's notice
+        ("1", "0", "contracts/v1/samples/notice.json"),  # a sample is authored
         ("1", "0", "docs/contracts/x.schema.json"),  # not under the top-level contracts/
     )
-    assert guard.count_changed_lines(rows) == 10
+    assert guard.count_changed_lines(rows) == 13
 
 
 def test_the_page_lockfile_and_generated_types_are_excluded_but_the_rest_counts() -> None:

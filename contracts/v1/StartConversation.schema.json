@@ -1,0 +1,20 @@
+{
+  "additionalProperties": false,
+  "description": "The create request of demo mode (v0.3, additive): the notice version the visitor accepted.\nAn absent field is a refusal for the host to answer (`notice_not_accepted`), not a 422.",
+  "properties": {
+    "notice_version": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notice Version"
+    }
+  },
+  "title": "StartConversation",
+  "type": "object"
+}

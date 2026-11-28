@@ -233,8 +233,16 @@ class CancelProposal(BaseModel):
     proposal_id: ProposalIdText
 
 
+class StartConversation(BaseModel):
+    """The create request of demo mode (v0.3, additive): the notice version the visitor accepted.
+    An absent field is a refusal for the host to answer (`notice_not_accepted`), not a 422."""
+
+    model_config = COMMAND
+    notice_version: Annotated[int, Strict()] | None = None
+
+
 COMMANDS: dict[str, type[BaseModel]] = {
-    c.__name__: c for c in (SendMessage, PressDale, CancelProposal)
+    c.__name__: c for c in (SendMessage, PressDale, CancelProposal, StartConversation)
 }
 
 
@@ -270,6 +278,26 @@ class ResponseEnvelope(BaseModel):
         ):
             raise ValueError("the events and the envelope disagree on conversation or seq")
         return self
+
+
+class DemoInfo(BaseModel):
+    """What the page reads of demo mode: the notice its banner text belongs to and the retention
+    that text states. `contracts/v1/notice.json` has the same two keys."""
+
+    model_config = CLOSED
+    notice_version: int
+    retention_days: int
+
+
+class ContractInfo(BaseModel):
+    """The body of `GET /v1/contract`: the version, every event type and command, and `demo`
+    (v0.3, additive), which is null in local mode."""
+
+    model_config = CLOSED
+    v: Version = VERSION
+    events: tuple[str, ...]
+    commands: tuple[str, ...]
+    demo: DemoInfo | None
 
 
 # Event type -> the typed component that shows it (W4); the page switches over it exhaustively.

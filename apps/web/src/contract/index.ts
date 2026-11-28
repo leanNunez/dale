@@ -3,8 +3,10 @@
 import type { ResponseEnvelope } from "./generated/ResponseEnvelope";
 
 export type { CancelProposal } from "./generated/CancelProposal";
+export type { ContractInfo, DemoInfo } from "./generated/ContractInfo";
 export type { PressDale } from "./generated/PressDale";
 export type { SendMessage } from "./generated/SendMessage";
+export type { StartConversation } from "./generated/StartConversation";
 export type {
   AssistantTextEvent,
   ErrorBody,
