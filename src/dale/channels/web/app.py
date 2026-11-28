@@ -115,4 +115,5 @@ def create_app(
     registry: ConversationRegistry,
     demo: Notice | None = None,
 ) -> RequestGuard:
-    return RequestGuard(build_api(ready, page, registry, demo), allow)
+    """The guarded application. A notice also turns on the guard's client IP step (DD36)."""
+    return RequestGuard(build_api(ready, page, registry, demo), allow, demo=demo is not None)

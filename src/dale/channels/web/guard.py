@@ -12,6 +12,11 @@ Checks, in this order, each rejecting with the one error envelope:
    (`payload_too_large`). The guard reads the whole capped body before the application runs,
    so an oversized body is never handed to a parser.
 
+In demo mode (design §4 step 2, DD36), after the header checks and before the body is read, the
+request needs a client IP (`client.py`), else `invalid_request`; the guard hands it to the
+application in the scope's state. Local mode never reads `X-Forwarded-For`, and no forwarded
+header ever changes the `Host` or `Origin` decision (W8).
+
 Every response the guard or the application sends, a rejection included, carries the CSP,
 `nosniff` and `no-referrer` headers; API paths also carry `Cache-Control: no-store`. A request
 that is not valid HTTP never reaches the guard: uvicorn (h11) answers it with its own plain-text
@@ -27,6 +32,7 @@ from typing import Final, Self
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from dale.channels.web.client import STATE_KEY, client_ip
 from dale.channels.web.contract import ErrorBody, ResponseEnvelope
 from dale.channels.web.errors import WebErrorCode, message_for, status_for
 from dale.shared.errors import ErrorCode
@@ -77,8 +83,10 @@ def is_api(path: str) -> bool:
 
 
 class RequestGuard:
-    def __init__(self, app: ASGIApp, allow: AllowList, max_body: int = MAX_BODY) -> None:
-        self.app, self.allow, self.max_body = app, allow, max_body
+    def __init__(
+        self, app: ASGIApp, allow: AllowList, max_body: int = MAX_BODY, *, demo: bool = False
+    ) -> None:
+        self.app, self.allow, self.max_body, self.demo = app, allow, max_body, demo
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "lifespan":
@@ -89,7 +97,15 @@ class RequestGuard:
                 await send({"type": "websocket.close", "code": 1008})
             return
         secured = _secured(scope["path"], send)
-        rejected = self._check(scope["method"], Headers(scope=scope))
+        headers = Headers(scope=scope)
+        rejected = self._check(scope["method"], headers)
+        if rejected is None and self.demo:
+            client = scope.get("client")
+            ip = client_ip(client[0] if client else None, headers.getlist("x-forwarded-for"))
+            if ip is None:
+                rejected = WebErrorCode.INVALID_REQUEST
+            else:  # a new state dict: the server's copy is left as it was
+                scope = {**scope, "state": {**scope.get("state", {}), STATE_KEY: ip}}
         body = rejected or await _read(receive, self.max_body)
         if isinstance(body, WebErrorCode):
             log.info("request rejected: %s", body.value)
